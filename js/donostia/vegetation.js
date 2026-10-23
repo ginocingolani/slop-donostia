@@ -247,15 +247,21 @@ export async function buildVegetation(GEO, terrain) {
       for (let k = 0; k < 4; k++) da[slot * 4 + k] = data[i * 4 + k];
     }
     for (const attr of [instances.matrices, instances.data]) attr.clearUpdateRanges();
+    let any = false;
     for (let m = 0; m < meshes.length; m++) {
       const mesh = meshes[m], n = counts[m];
-      for (const attr of [instances.matrices, instances.data]) if (n > 0) attr.addUpdateRange(bases[m] * attr.itemSize, n * attr.itemSize);
+      if (n > 0) {
+        for (const attr of [instances.matrices, instances.data]) attr.addUpdateRange(bases[m] * attr.itemSize, n * attr.itemSize);
+        any = true;
+      }
       mesh.geometry.instanceCount = n;
       // (the first mesh stays in the scene with or without trees: its pipeline, which all of them share, compiles
       // behind the loading screen wherever the camera starts)
       mesh.visible = n > 0 || m === 0;
     }
-    instances.matrices.needsUpdate = instances.data.needsUpdate = true;
+    // With no tree near or mid there is nothing to upload (no mesh draws an instance), and an update without ranges
+    // would make three's WebGPU backend write both whole buffers (~8 MB)
+    if (any) instances.matrices.needsUpdate = instances.data.needsUpdate = true;
   }
 
   const lastPick = new THREE.Vector3(Infinity, Infinity, Infinity);
