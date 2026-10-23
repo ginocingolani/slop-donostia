@@ -8,13 +8,21 @@ import { Terrain } from './terrain.js';
 import { createGroundMaterial } from './ground.js';
 import { createWater } from './water.js';
 import { buildDonostiaBuildings } from './buildings.js';
+import { buildLandmarks } from './landmarks/index.js';
+import { buildVegetation } from './vegetation.js';
+import { buildStreetscape } from './streetscape.js';
+import { buildBridges } from './bridges.js';
 import { GodCamera } from './god-camera.js';
+import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
 // municipal 1:500 map and b5m building heights. Map, topography & models first, explored with a free god-mode camera;
 // the travel modes of slop-newyork (js/main.js) come back once the city stands.
+//
+// Every builder returns an Object3D (or null); one whose userData.update is a function gets
+// update(dt, elapsed, camera) every frame.
 
 const STORAGE_KEY = 'donostia-god-camera';
 
@@ -47,16 +55,36 @@ async function initApp() {
   const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS);
   markInit('lighting');
 
+  const updaters = [];
+  const add = (object) => {
+    if (!object) return;
+    scene.add(object);
+    if (typeof object.userData.update === 'function') updaters.push(object.userData.update);
+  };
+
   status('Loading LiDAR terrain & sea floor…');
   const terrain = await Terrain.load(GEO.terrain);
   markInit('terrain data');
   status('Building the bay, the hills & the streets…');
-  scene.add(terrain.build(createGroundMaterial(terrain)));
-  scene.add(createWater(terrain));
+  add(terrain.build(await createGroundMaterial(terrain)));
+  add(await createWater(terrain));
   markInit('terrain mesh');
+
+  status('Raising the landmarks…');
+  const landmarks = buildLandmarks(GEO, terrain);
+  add(landmarks.group);
+  markInit('landmarks');
   status(`Raising ${GEO.buildings.length.toLocaleString('en-US')} buildings…`);
-  scene.add(buildDonostiaBuildings(GEO));
+  add(buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
   markInit('buildings');
+  status('Planting trees & dressing the streets…');
+  const [vegetation, streetscape, bridges] = await Promise.all([
+    buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain)
+  ]);
+  add(vegetation);
+  add(streetscape);
+  add(bridges);
+  markInit('details');
 
   const god = new GodCamera(renderer.domElement, terrain);
   const camera = god.camera;
@@ -98,56 +126,13 @@ async function initApp() {
   const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask));
   const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
 
-  // HUD
-  const timeButtons = document.querySelectorAll('[data-time]');
-  const selectTime = (id) => {
-    lighting.applyPreset(id);
-    grade.applyPreset(lighting.activePresetId);
-    timeButtons.forEach((b) => b.classList.toggle('active', b.dataset.time === id));
-  };
-  timeButtons.forEach((b) => b.addEventListener('click', () => selectTime(b.dataset.time)));
-  selectTime('golden');
-
-  const teleportList = document.getElementById('teleport-list');
-  for (const t of GEO.teleports) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pop-item tp-btn';
-    const name = document.createElement('span');
-    name.className = 'pop-name';
-    name.textContent = t.name;
-    const sub = document.createElement('span');
-    sub.className = 'pop-sub';
-    sub.textContent = t.name_es;
-    btn.append(name, sub);
-    btn.addEventListener('click', () => {
-      god.flyTo(t);
-      document.getElementById('teleport-popover')?.hidePopover?.();
-    });
-    teleportList?.appendChild(btn);
-  }
-  document.addEventListener('click', (e) => {
-    const btn = e.target instanceof Element ? e.target.closest('button') : null;
-    if (btn && e.detail > 0) btn.blur();
-  });
-  const hudToggle = document.getElementById('btn-toggle-hud');
-  hudToggle?.addEventListener('click', () => {
-    const min = document.body.classList.toggle('hud-minimized');
-    hudToggle.setAttribute('aria-pressed', String(min));
-  });
-  window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
-    if (e.code === 'KeyH') hudToggle?.click();
-    const digit = /^Digit([1-4])$/.exec(e.code);
-    if (digit) selectTime(['golden', 'midday', 'twilight', 'midnight'][digit[1] - 1]);
-  });
+  const hud = initHud({ GEO, god, terrain, lighting, grade, renderer });
   window.addEventListener('resize', () => {
     god.onResize(window.innerWidth, window.innerHeight);
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // Compile the pipelines behind the loading screen (a frame with frustum culling off reaches every material, the
-  // shadow passes included)
+  // Compile the pipelines behind the loading screen
   status('Compiling shaders…', 0.6);
   scene.visible = false;
   pipeline.render();
@@ -159,19 +144,19 @@ async function initApp() {
   renderer.setRenderTarget(null);
   markInit('compile');
 
-  const elFps = document.getElementById('hud-fps');
-  const elAlt = document.getElementById('hud-altitude');
-  const elSpeed = document.getElementById('hud-speed');
-  let last = performance.now(), frames = 0, fpsTime = 0, saveAt = 0, first = true;
+  let last = performance.now(), elapsed = 0, frames = 0, fpsTime = 0, saveAt = 0, first = true;
   renderer.setAnimationLoop((now) => {
     const raw = (now - last) / 1000;
     last = now;
     const dt = Math.min(Math.max(raw, 0.001), 0.05);
+    elapsed += dt;
     god.update(dt);
     terrain.update(camera.position);
     lighting.update(camera.position);
+    for (const update of updaters) update(dt, elapsed, camera);
     if (first) {
-      // every terrain level of detail too, so later switches never build a draw mid-flight
+      // a warm-up frame with frustum culling off and every terrain level of detail shown, so pipelines and draws all
+      // exist before the loading screen lifts
       const culled = [];
       scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
       terrain.setAllVisible(true);
@@ -193,15 +178,9 @@ async function initApp() {
     frames++;
     fpsTime += raw;
     if (fpsTime >= 0.25) {
-      const fps = Math.round(frames / fpsTime);
+      hud.update(Math.round(frames / fpsTime));
       frames = 0;
       fpsTime = 0;
-      if (elFps) {
-        elFps.textContent = String(fps);
-        elFps.className = fps >= 50 ? 'fps-ok' : fps >= 30 ? 'fps-warn' : 'fps-bad';
-      }
-      if (elAlt) elAlt.textContent = Math.round(camera.position.y).toLocaleString('en-US');
-      if (elSpeed) elSpeed.textContent = String(Math.round(god.velocity.length() * 3.6));
     }
     if (now > saveAt) { save(); saveAt = now + 4000; }
   });

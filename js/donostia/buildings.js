@@ -3,7 +3,7 @@ import {
   Fn, attribute, float, vec2, vec3, vec4, floor, fract, abs, max, min, mix, smoothstep, step, sin, dot, clamp,
   positionWorld, normalWorld, select, uniform
 } from 'three/tsl';
-import { cityUniforms } from '../tsl-materials.js';
+import { cityUniforms } from '../city-uniforms.js';
 
 // js/donostia/buildings.js
 // Every building of the municipal 1:500 map (Donostiako Udala, CC BY-SA 3.0) extruded from its LiDAR ground to the
