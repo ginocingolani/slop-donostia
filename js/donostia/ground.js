@@ -6,6 +6,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { decodePNGOffThread } from './png.js';
+import { releaseImageData } from './terrain.js';
 
 // js/donostia/ground.js
 // Ground surfaces over the LiDAR terrain, one material for every terrain chunk. In the core the baked maps of
@@ -52,6 +53,8 @@ function dataTexture(data, w, h, format) {
   t.magFilter = t.minFilter = THREE.NearestFilter; // read with textureLoad, exact bytes
   t.generateMipmaps = false;
   t.needsUpdate = true;
+  // only the shader reads the maps: the decoded bytes (86 MB for the core map) go once they are on the GPU
+  t.onUpdate = releaseImageData;
   return t;
 }
 
