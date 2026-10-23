@@ -1,0 +1,33 @@
+/* css/donostia.css — Slop Donostia additions on top of css/style.css (slop-newyork) */
+
+/* Popovers open against their invoker in js/main.js upstream; here they simply hang under the toolbar */
+#teleport-popover,
+#credits-popover {
+  position: fixed;
+  inset: auto 16px auto auto;
+  top: 72px;
+  margin: 0;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+}
+
+.credits {
+  max-width: min(420px, calc(100vw - 32px));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.credits p {
+  margin: 0 0 8px;
+  opacity: 0.86;
+}
+
+.credits a,
+.brand-subtitle a {
+  color: inherit;
+}
+
+.mta-bullet {
+  font-size: 0.62em;
+  letter-spacing: -0.02em;
+}

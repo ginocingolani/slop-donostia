@@ -1,15 +1,23 @@
-# Slop New York
+# Slop Donostia
 
-A New York City simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore Manhattan on foot, by car, by bicycle, or by helicopter.
+Donostia / San Sebastián from the top of Igeldo to the end of Sagüés, built with [three.js](https://threejs.org/),
+WebGPURenderer and TSL on real data: the Basque Government's LiDAR terrain and isobaths, the municipal 1:500 map and
+b5m's measured building heights.
 
-[Try it live](https://mrdoob.github.io/slop-newyork/)
+A fork of [Slop New York](https://github.com/mrdoob/slop-newyork) by Mr.doob, whose renderer, lighting, materials,
+actors and audio it builds on. The New York simulation is still here as [`newyork.html`](newyork.html).
 
-## Make it your own
+Right now: map, topography and buildings, explored with a free god-mode camera. Next: facades, landmarks, trees,
+then the travel modes (walk, drive, cycle, helicopter and a trainera).
 
-Fork it, remix it, improve it, break it. Make games, animations, films, experiments, or something completely different. Use it as a starting point and take it wherever you want. Have fun!
+## Data
+
+See [`tools/donostia/README.md`](tools/donostia/README.md) for the pipeline, sources and licences.
 
 ## License and data
 
-The project code is available under the [MIT License](LICENSE).
+The project code is available under the [MIT License](LICENSE) (© Mr.doob and contributors).
 
-Geographic data: NYC Open Data and © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL). Third-party data and dependencies retain their respective licenses.
+Geographic data: Eusko Jaurlaritza / Gobierno Vasco – geoEuskadi (CC BY 4.0); b5m – Gipuzkoako Foru Aldundia (CC BY
+4.0); Donostiako Udala / Ayuntamiento de San Sebastián (CC BY-SA 3.0); © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
+(ODbL). The New York data keeps its original sources (NYC Open Data, OpenStreetMap).
