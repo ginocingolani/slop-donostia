@@ -301,11 +301,11 @@ export async function buildVegetation(GEO, terrain) {
   // The far trees in view and those in shadow range, packed at the front of their instance buffers
   const cullCamera = new THREE.PerspectiveCamera();
   const frustum = new THREE.Frustum(), bounds = new THREE.Box3(), projScreen = new THREE.Matrix4();
-  const lastCull = { pos: new THREE.Vector3(Infinity, 0, 0), dir: new THREE.Vector3(), fov: 0, aspect: 0, reach: -1 };
+  // (quat: the whole orientation, roll included; turn: how far it may turn from there, see cull)
+  const lastCull = { pos: new THREE.Vector3(Infinity, 0, 0), quat: new THREE.Quaternion(), turn: 0, fov: 0, aspect: 0, reach: -1 };
   let billboardStart = BILLBOARD_START;
   // (a quality knob: the distance where far trees turn into billboards; Infinity keeps the cards; refills next frame)
   group.userData.setBillboardStart = (d) => { billboardStart = d; lastCull.reach = -Infinity; };
-  const dir = new THREE.Vector3();
   const pack = ([p, s, d], n, i) => {
     for (let k = 0; k < 4; k++) {
       p.array[n * 4 + k] = farPos[i * 4 + k];
@@ -327,13 +327,19 @@ export async function buildVegetation(GEO, terrain) {
   function cull(camera, reach) {
     const cam = camera.position;
     lastCull.pos.copy(cam);
-    lastCull.dir.copy(dir);
+    lastCull.quat.copy(camera.quaternion);
     lastCull.fov = camera.fov;
     lastCull.aspect = camera.aspect;
     lastCull.reach = reach;
     // the view frustum widened by VIEW_MARGIN on every side and reaching FAR_END, so a small turn needs no refill
     const halfV = THREE.MathUtils.degToRad(camera.fov / 2), halfH = Math.atan(Math.tan(halfV) * camera.aspect);
     const wideV = Math.min(halfV + VIEW_MARGIN, 1.5), wideH = Math.min(halfH + VIEW_MARGIN, 1.5);
+    // How far the view can then turn, about any axis, before a ray of it leaves the widened frustum: a rotation by an
+    // angle moves no ray further than that angle, and the rays nearest a widened side are the view's corners,
+    // asin(sin(margin) * cos(the corner's angle off the side's mid-line)) from it (7.7 degrees for 55 degrees at 16:9)
+    const tanV = Math.tan(halfV), tanH = Math.tan(halfH), corner = Math.hypot(1, tanV, tanH);
+    lastCull.turn = Math.min(Math.asin(Math.sin(wideV - halfV) * Math.hypot(1, tanV) / corner),
+      Math.asin(Math.sin(wideH - halfH) * Math.hypot(1, tanH) / corner));
     cullCamera.fov = THREE.MathUtils.radToDeg(2 * wideV);
     cullCamera.aspect = Math.tan(wideH) / Math.tan(wideV);
     cullCamera.near = 0.5;
@@ -375,16 +381,16 @@ export async function buildVegetation(GEO, terrain) {
 
   // the sun's shadow range (main.js points it at lighting.js); without one, no far tree casts
   group.userData.shadowReach = () => LOD_MID - SHADOW_MARGIN;
-  const cosTurn = Math.cos(VIEW_MARGIN * 0.8);
   group.userData.update = (dt, elapsed, camera) => {
     const cam = camera.position;
     far.uniforms.view.value.copy(cam);
-    const moved = cam.distanceToSquared(lastPick) >= REPICK * REPICK;
-    if (moved) pick(cam);
+    if (cam.distanceToSquared(lastPick) >= REPICK * REPICK) pick(cam);
     const reach = group.userData.shadowReach();
-    camera.getWorldDirection(dir);
-    if (cam.distanceToSquared(lastCull.pos) >= RECULL * RECULL || dir.dot(lastCull.dir) < cosTurn || camera.fov !== lastCull.fov ||
-      camera.aspect !== lastCull.aspect || Math.abs(reach - lastCull.reach) > 10) cull(camera, reach);
+    // Refill before the view can turn out of the widened frustum. The whole rotation since the last refill counts, not
+    // just the view direction's: yawing while looking steeply down is mostly a roll about the view axis, which swings
+    // the frustum's sides & corners round while the direction barely moves.
+    if (cam.distanceToSquared(lastCull.pos) >= RECULL * RECULL || camera.quaternion.angleTo(lastCull.quat) > lastCull.turn ||
+      camera.fov !== lastCull.fov || camera.aspect !== lastCull.aspect || Math.abs(reach - lastCull.reach) > 10) cull(camera, reach);
   };
 
   const triangles = kits.map((v) => v.map((k) => k.geometries.map((g) => g.userData.triangles)));
