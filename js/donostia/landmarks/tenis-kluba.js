@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, float, vec3, mix, abs, floor, fract, sin, step, clamp, smoothstep, positionWorld, mx_noise_float } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, Frame, WORLD, westMaterials as M, rgb, strut } from './igeldo.js';
+import { pointInRing } from './geom.js';
 
 // js/donostia/landmarks/tenis-kluba.js
 // Real Club de Tenis de San Sebastián at Ondarreta, between the Paseo de Eduardo Chillida and the foot of Igeldo, a
@@ -95,7 +96,7 @@ function groundOver(ctx, ring) {
     minX = Math.min(minX, ring[k]); maxX = Math.max(maxX, ring[k]); minZ = Math.min(minZ, ring[k + 1]); maxZ = Math.max(maxZ, ring[k + 1]);
   }
   const hs = [];
-  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) if (inside(ring, x, z)) hs.push(ctx.terrain.heightAt(x, z));
+  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) if (pointInRing(x, z, ring)) hs.push(ctx.terrain.heightAt(x, z));
   hs.sort((p, q) => p - q);
   return hs.length ? hs[Math.floor(hs.length / 2)] : ctx.terrain.heightAt(ring[0], ring[1]);
 }
@@ -142,7 +143,7 @@ function buildCourts(ctx, bin, clay) {
     }
     COURTS.forEach((c) => {
       const cx = (c[0] + c[2] + c[4] + c[6]) / 4, cz = (c[1] + c[3] + c[5] + c[7]) / 4;
-      if (!inside(ring, cx, cz)) return;
+      if (!pointInRing(cx, cz, ring)) return;
       buildCourt(c, level, bin);
     });
   });
@@ -389,14 +390,4 @@ export function build(sites, ctx) {
   group.name = 'TenisKluba';
   bin.build(group);
   return group;
-}
-
-// point in a flat [x0, z0, ...] ring (even-odd)
-function inside(ring, x, z) {
-  let c = false;
-  for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-    const xi = ring[i], zi = ring[i + 1], xj = ring[j], zj = ring[j + 1];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-  }
-  return c;
 }

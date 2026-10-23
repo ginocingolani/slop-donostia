@@ -3,8 +3,8 @@ import {
   Fn, float, vec2, vec3, abs, floor, fract, sin, cos, dot, max, min, mix, clamp, pow, step, smoothstep, fwidth, length,
   normalize, uv, positionWorld, positionView, normalView, normalWorld, cameraPosition, mx_noise_float
 } from 'three/tsl';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { cityUniforms } from '../../city-uniforms.js';
+import { Parts, wound, cleanRing, pointInRing } from './geom.js';
 
 // js/donostia/landmarks/kursaal.js
 // Kursaal (1999, Rafael Moneo): two leaning translucent glass prisms — the large auditorium (~27 m) and the chamber hall — on a stone podium at the mouth of the Urumea facing Zurriola beach; grey-green ribbed glass by day that glows from inside at night. The three OSM sites (palace, auditorium, chamber hall) are one model.
@@ -57,39 +57,7 @@ const BASE_BAND = 3.0; // dark stone & doors at the foot of the skin, metres abo
 const SKIN_OUT = 0.3; // the skin stands just outside the outline, so the podium's walls under it stay hidden
 const PODIUM_ABOVE = 0.15; // the podium roof sits just over the LiDAR's terrace (which the DTM records as ground)
 
-// --- small geometry kit (kept local so each landmark module stands alone) ------------------------------------------------
-
-// Pieces collected per material and merged into one mesh each: one draw call per material
-class Parts {
-  constructor() { this.byMaterial = new Map(); }
-
-  add(material, geometry) {
-    const g = geometry.index ? geometry.toNonIndexed() : geometry;
-    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
-    if (!g.attributes.normal) g.computeVertexNormals();
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-    g.clearGroups();
-    if (!this.byMaterial.has(material)) this.byMaterial.set(material, []);
-    this.byMaterial.get(material).push(g);
-  }
-
-  build(name) {
-    const group = new THREE.Group();
-    group.name = name;
-    for (const [material, list] of this.byMaterial) {
-      const geometry = mergeGeometries(list);
-      if (!geometry) continue;
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      group.add(mesh);
-    }
-    return group;
-  }
-}
+// --- local helpers ----------------------------------------------------------------------------------------------------
 
 // Flat-shaded faces with uvs; each face is turned so its normal agrees with the `out` hint
 class Soup {
@@ -131,32 +99,6 @@ class Soup {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     return g;
   }
-}
-
-function signedArea(r) {
-  let a = 0;
-  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) a += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
-  return a / 2;
-}
-
-// Ring wound so edge normals (dz, -dx) point out of the solid. From wound() in js/donostia/buildings.js.
-function wound(r) {
-  if (signedArea(r) > 0) return r;
-  const out = [];
-  for (let k = r.length - 2; k >= 0; k -= 2) out.push(r[k], r[k + 1]);
-  return out;
-}
-
-// Drops a closing vertex that repeats the first (OSM rings) and near-duplicate neighbours
-function cleanRing(r) {
-  const out = [];
-  for (let k = 0; k < r.length; k += 2) {
-    const n = out.length;
-    if (n && Math.hypot(r[k] - out[n - 2], r[k + 1] - out[n - 1]) < 0.05) continue;
-    out.push(r[k], r[k + 1]);
-  }
-  while (out.length > 6 && Math.hypot(out[0] - out[out.length - 2], out[1] - out[out.length - 1]) < 0.05) out.length -= 2;
-  return out;
 }
 
 const bearing = (deg) => [Math.sin(THREE.MathUtils.degToRad(deg)), -Math.cos(THREE.MathUtils.degToRad(deg))]; // (x east, z south)
@@ -422,15 +364,6 @@ function awnings(walls, y, soup) {
         at(s0, 1.78, -0.92), at(s1, 1.78, -0.92), at(s1, 1.84, -0.92), at(s0, 1.84, -0.92)]);
     }
   }
-}
-
-function pointInRing(x, z, r) {
-  let inside = false;
-  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) {
-    const xi = r[2 * i], zi = r[2 * i + 1], xj = r[2 * j], zj = r[2 * j + 1];
-    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-  }
-  return inside;
 }
 
 // --- build --------------------------------------------------------------------------------------------------------------

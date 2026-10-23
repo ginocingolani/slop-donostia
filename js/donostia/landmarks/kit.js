@@ -1,9 +1,12 @@
 import * as THREE from 'three/webgpu';
-import { float, vec3, mix, positionWorld, mx_noise_float, normalWorld, abs, smoothstep, fract } from 'three/tsl';
+import {
+  Fn, float, vec3, mix, max, min, positionWorld, mx_noise_float, normalWorld, abs, smoothstep, fract, fwidth
+} from 'three/tsl';
 
 // js/donostia/landmarks/kit.js
-// Shared helpers for the hand-modelled landmarks (js/donostia/landmarks/*.js): a few materials in the city's palette
-// and small geometry utilities. Landmark modules may build their own materials too; keep this file stable.
+// Shared helpers for the hand-modelled landmarks (js/donostia/landmarks/*.js): a few materials in the city's palette,
+// a shader helper and small geometry utilities (more in geom.js). Landmark modules may build their own materials too;
+// keep this file stable.
 
 function stoneMaterial(rgb, { roughness = 0.82, grain = 0.12, courses = 0 } = {}) {
   const mat = new THREE.MeshStandardNodeMaterial();
@@ -37,8 +40,22 @@ export const materials = {
   glass: new THREE.MeshStandardNodeMaterial({ color: 0x1c2a33, roughness: 0.08, metalness: 0.5 }),
   // the Kursaal's laminated glass prisms read as frosted, faintly green slabs by day and glow at night
   frostedGlass: new THREE.MeshStandardNodeMaterial({ color: 0xc9d6cf, roughness: 0.35, metalness: 0.05 }),
-  lamp: new THREE.MeshStandardNodeMaterial({ color: 0xfff1d0, emissive: 0xffd9a0, emissiveIntensity: 2.0, roughness: 0.4 })
+  lamp: new THREE.MeshStandardNodeMaterial({ color: 0xfff1d0, emissive: 0xffd9a0, emissiveIntensity: 2.0, roughness: 0.4 }),
+  // the near-black of deep openings: doors, niches and belfry arches in the stone fronts
+  dark: new THREE.MeshStandardNodeMaterial({ color: 0x15120e, roughness: 0.9, metalness: 0 })
 };
+
+// Filter-width anti-aliased repeating grid line (panel joints, mullions): gridLine() in js/tsl-materials.js
+export const gridLine = Fn(([coord, period, halfWidth]) => {
+  const p = float(period).toVar();
+  const g = float(coord).div(p).toVar();
+  const d = float(0.5).sub(abs(fract(g).sub(0.5))).toVar();
+  const aa = fwidth(g).max(0.0001).toVar();
+  const hw = float(halfWidth).div(p).toVar();
+  const effHw = max(hw, aa.mul(0.5)).toVar();
+  const cov = smoothstep(effHw.add(aa), effHw.sub(aa), d);
+  return cov.mul(min(float(1.0), hw.div(effHw)));
+});
 
 // Ground height under a point (the LiDAR DTM): ctx.terrain.heightAt(x, z)
 export function groundAt(ctx, x, z) {
