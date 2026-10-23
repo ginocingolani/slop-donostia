@@ -4,14 +4,28 @@ import * as THREE from 'three/webgpu';
 // Free-flying "god mode" camera for exploring the map before the travel modes arrive: WASD moves along the view,
 // Space / E climbs, Q / C descends, Shift boosts, dragging looks around (arrow keys too) and the wheel scales the speed.
 // On touch screens one finger looks, a pinch flies along the view and hud.js feeds its virtual stick & buttons into
-// `touch`. Speed grows with the height above the ground; the camera never goes under the terrain or the sea.
+// `touch`. Speed grows with the height above the ground; the camera never goes under the terrain or the sea, nor
+// further out than a little past the context grid's horizon hills.
 
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+// Keys a focused control acts on itself (Space & Enter press a button, the arrows scroll a list): left to it
+const CONTROL_KEYS = /^(Space|Enter|NumpadEnter|Arrow(Up|Down|Left|Right))$/;
+const onControl = (e) => e.target instanceof Element &&
+  e.target.closest('button, a[href], summary, [role=button], [popover], [role=dialog]') !== null;
+
+const BOUNDS_MARGIN = 500; // m past the context grid
+const CEILING = 5000; // m
+const EYE = 1.7; // m above the ground or the sea
 
 export class GodCamera {
   constructor(dom, terrain) {
     this.dom = dom;
     this.terrain = terrain;
+    const c = terrain.context;
+    this.bounds = c ? {
+      minX: c.x0 - BOUNDS_MARGIN, maxX: c.x0 + c.width + BOUNDS_MARGIN,
+      minZ: c.z0 - BOUNDS_MARGIN, maxZ: c.z0 + c.depth + BOUNDS_MARGIN
+    } : null;
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.3, 80000);
     this.position = new THREE.Vector3(0, 120, 600);
     this.velocity = new THREE.Vector3();
@@ -33,6 +47,8 @@ export class GodCamera {
   _bind() {
     window.addEventListener('keydown', (e) => {
       if (isTyping(e) || e.metaKey || e.ctrlKey) return;
+      // a keyboard user on a HUD button still flies with WASD, but Space presses the button
+      if (CONTROL_KEYS.test(e.code) && onControl(e)) return;
       this.keys.add(e.code);
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     });
@@ -43,7 +59,10 @@ export class GodCamera {
     let pinch = 0;
     // the page must not pan or zoom under the fingers
     this.dom.style.touchAction = 'none';
+    // the right button would open the context menu over the view (and must not drag)
+    this.dom.addEventListener('contextmenu', (e) => e.preventDefault());
     this.dom.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dom.setPointerCapture(e.pointerId);
       this.flight = null;
@@ -51,6 +70,9 @@ export class GodCamera {
     this.dom.addEventListener('pointermove', (e) => {
       const prev = pointers.get(e.pointerId);
       if (!prev) return;
+      // a mouse whose release never reached us (dropped outside the window, a system dialog...) must not keep
+      // turning the view as it merely hovers
+      if (e.pointerType === 'mouse' && e.buttons === 0) { release(e); return; }
       const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
       prev.x = e.clientX;
       prev.y = e.clientY;
@@ -65,9 +87,13 @@ export class GodCamera {
         pinch = d;
       }
     });
-    const release = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = 0; };
+    function release(e) {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinch = 0;
+    }
     this.dom.addEventListener('pointerup', release);
     this.dom.addEventListener('pointercancel', release);
+    this.dom.addEventListener('lostpointercapture', release);
     this.dom.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.speedScale = THREE.MathUtils.clamp(this.speedScale * Math.pow(1.0015, -e.deltaY), 0.1, 12);
@@ -139,9 +165,22 @@ export class GodCamera {
     wish.multiplyScalar(speed);
     this.velocity.lerp(wish, 1 - Math.exp(-6 * dt));
     this.position.addScaledVector(this.velocity, dt);
-    const floorY = this.groundHeight + 1.7;
-    if (this.position.y < floorY) { this.position.y = floorY; this.velocity.y = Math.max(0, this.velocity.y); }
+    this._confine();
     this._apply();
+  }
+
+  // Keeps the camera above the ground or the sea, under the ceiling and over the world: past its edges there is only
+  // empty space to get lost in
+  _confine() {
+    const p = this.position, v = this.velocity, b = this.bounds;
+    if (b) {
+      const x = THREE.MathUtils.clamp(p.x, b.minX, b.maxX), z = THREE.MathUtils.clamp(p.z, b.minZ, b.maxZ);
+      if (x !== p.x) { p.x = x; v.x = 0; }
+      if (z !== p.z) { p.z = z; v.z = 0; }
+    }
+    const floorY = this.groundHeight + EYE;
+    if (p.y < floorY) { p.y = floorY; v.y = Math.max(0, v.y); }
+    if (p.y > CEILING) { p.y = CEILING; v.y = Math.min(0, v.y); }
   }
 
   _apply() {
@@ -160,10 +199,25 @@ export class GodCamera {
   }
 
   set state(s) {
-    if (![s.x, s.y, s.z, s.yaw, s.pitch].every(Number.isFinite)) return;
+    this.restore(s);
+  }
+
+  /**
+   * Puts the camera at a saved `state` if it is a view of the world: false (camera untouched) for anything else, e.g.
+   * a corrupt save or one off the edge of the map. A view under the ground or above the ceiling is lifted or lowered
+   * to the nearest allowed height, the pitch kept within the drag's range.
+   */
+  restore(s) {
+    if (!s || typeof s !== 'object' || ![s.x, s.y, s.z, s.yaw, s.pitch].every(Number.isFinite)) return false;
+    const b = this.bounds;
+    if (b && (s.x < b.minX || s.x > b.maxX || s.z < b.minZ || s.z > b.maxZ)) return false;
     this.position.set(s.x, s.y, s.z);
-    this.yaw = s.yaw;
-    this.pitch = s.pitch;
+    this.velocity.set(0, 0, 0);
+    this.yaw = THREE.MathUtils.euclideanModulo(s.yaw + Math.PI, 2 * Math.PI) - Math.PI;
+    this.pitch = THREE.MathUtils.clamp(s.pitch, -1.5, 1.5);
+    this.flight = null;
+    this._confine();
     this._apply();
+    return true;
   }
 }
