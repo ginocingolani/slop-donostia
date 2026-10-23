@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HERE, FRAME, loadLayer, lonLatToLocal, simplifyRing, ringArea, pointInRing, log } from './lib.mjs';
+import { HERE, FRAME, loadLayer, lonLatToLocal, osmPolygons, simplifyRing, ringArea, pointInRing, log } from './lib.mjs';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'data-streets.js');
@@ -263,9 +263,7 @@ function bakePlaces() {
   const out = [];
   for (const e of loadLayer('osm_places.json').elements) {
     const t = e.tags || {};
-    if (e.type !== 'way' || !t.name || !e.geometry || e.geometry.length < 4) continue;
-    const g = e.geometry;
-    if (g[0].lat !== g[g.length - 1].lat || g[0].lon !== g[g.length - 1].lon) continue;
+    if (!t.name) continue;
     const kind = t.place === 'square' ? 'square'
       : t.natural === 'beach' ? 'beach'
         : t.leisure === 'park' || t.leisure === 'garden' ? 'park'
@@ -275,9 +273,13 @@ function bakePlaces() {
     let [eu, es] = PLACE_ALIAS[t.name] || [t['name:eu'] || t.name, t['name:es'] || null];
     if (!t['name:eu'] && !PLACE_ALIAS[t.name] && SPANISH.test(t.name)) [eu, es] = [t.name, null];
     if (es === eu) es = null;
-    const ring = roundPoints(simplifyRing(flatLocal(g), 1.0), true);
-    if (ring.length < 6 || !inKeep(ring)) continue;
-    out.push({ name: eu, es, kind, area: round(Math.abs(ringArea(ring))), ring });
+    // closed ways, and multipolygons (a square or park split over several ways): each outer ring makes a place of the
+    // same name; holes do not matter to "where am I"
+    for (const [outer] of osmPolygons(e)) {
+      const ring = roundPoints(simplifyRing(outer, 1.0), true);
+      if (ring.length < 6 || !inKeep(ring)) continue;
+      out.push({ name: eu, es, kind, area: round(Math.abs(ringArea(ring))), ring });
+    }
   }
   out.push({ name: BAY[0], es: BAY[1], kind: 'bay', area: round(Math.abs(ringArea(BAY[2]))), ring: BAY[2] });
   // smallest first: the first place containing a point is the most specific one

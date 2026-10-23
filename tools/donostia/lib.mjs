@@ -44,41 +44,63 @@ export function lonLatToLocal(lon, lat) {
 }
 export const log = (...args) => console.log('[donostia]', ...args);
 
+// `--preview <dir>` on the command line: the folder (resolved), or null without the flag. Fails at startup when the
+// folder is missing, rather than skipping the previews after a long bake.
+export function previewDir() {
+  const at = process.argv.indexOf('--preview');
+  if (at < 0) return null;
+  const dir = process.argv[at + 1];
+  if (!dir || dir.startsWith('--')) throw new Error('--preview needs a folder');
+  return path.resolve(dir);
+}
+
 // ESRI ASCII grid (geoEuskadi writes decimal commas). Returns { ncols, nrows, x0, z0, cell, data } in the local frame,
-// with row 0 at the northern edge (smallest z) and NaN for NODATA.
+// with row 0 at the northern edge (smallest z) and NaN for NODATA. Throws on anything it cannot read as a plain decimal
+// (an exponent, 'nan', a truncated file...) rather than filling the rest of the grid with zeros.
 export function readAscGrid(file) {
   const buf = fs.readFileSync(file);
+  const n = buf.length;
+  const space = (c) => c === 32 || c === 10 || c === 13 || c === 9;
   let pos = 0;
+  // header lines start with a keyword (NODATA_value is optional; xllcenter / yllcenter replace the corners in some files)
   const header = {};
-  for (let line = 0; line < 6; line++) {
+  while (pos < n && /[A-Za-z]/.test(String.fromCharCode(buf[pos]))) {
     let end = buf.indexOf(10, pos);
-    const text = buf.toString('latin1', pos, end).trim();
-    pos = end + 1;
-    const [key, value] = text.split(/\s+/);
+    if (end < 0) end = n;
+    const [key, value = ''] = buf.toString('latin1', pos, end).trim().split(/\s+/);
     header[key.toLowerCase()] = Number(value.replace(',', '.'));
+    pos = end + 1;
   }
-  const { ncols, nrows, xllcorner, yllcorner, cellsize } = header;
+  const { ncols, nrows, cellsize } = header;
+  if (!(ncols > 0 && nrows > 0 && cellsize > 0)) throw new Error(`${file}: bad header ${JSON.stringify(header)}`);
+  const xll = header.xllcorner ?? header.xllcenter - cellsize / 2, yll = header.yllcorner ?? header.yllcenter - cellsize / 2;
+  if (!Number.isFinite(xll) || !Number.isFinite(yll)) throw new Error(`${file}: no lower-left corner in the header`);
   const nodata = header.nodata_value;
   const data = new Float32Array(ncols * nrows);
   let k = 0;
-  const n = buf.length;
   while (pos < n && k < data.length) {
     let c = buf[pos];
-    if (c === 32 || c === 10 || c === 13 || c === 9) { pos++; continue; }
-    let neg = false;
-    if (c === 45) { neg = true; pos++; c = buf[pos]; }
+    if (space(c)) { pos++; continue; }
+    const start = pos;
+    let neg = false, digits = 0;
+    if (c === 45 || c === 43) { neg = c === 45; c = buf[++pos]; }
     let int = 0;
-    while (c >= 48 && c <= 57) { int = int * 10 + (c - 48); c = buf[++pos]; }
+    while (c >= 48 && c <= 57) { int = int * 10 + (c - 48); digits++; c = buf[++pos]; }
     let frac = 0, scale = 1;
     if (c === 44 || c === 46) {
       c = buf[++pos];
-      while (c >= 48 && c <= 57) { frac = frac * 10 + (c - 48); scale *= 10; c = buf[++pos]; }
+      while (c >= 48 && c <= 57) { frac = frac * 10 + (c - 48); scale *= 10; digits++; c = buf[++pos]; }
+    }
+    if (!digits || (pos < n && !space(c))) {
+      throw new Error(`${file}: unreadable value '${buf.toString('latin1', start, Math.min(n, start + 16)).split(/\s/)[0]}' at byte ${start}`);
     }
     const v = (neg ? -1 : 1) * (int + frac / scale);
     data[k++] = v === nodata ? NaN : v;
   }
   if (k !== data.length) throw new Error(`${file}: read ${k} of ${data.length} values`);
-  return { ncols, nrows, x0: xllcorner - E0, z0: N0 - (yllcorner + nrows * cellsize), cell: cellsize, data };
+  while (pos < n && space(buf[pos])) pos++;
+  if (pos < n) throw new Error(`${file}: more values than ncols x nrows (${ncols} x ${nrows})`);
+  return { ncols, nrows, x0: xll - E0, z0: N0 - (yll + nrows * cellsize), cell: cellsize, data };
 }
 
 // A float grid in the local frame: sample (i, j) is the cell whose centre is (x0 + (i + .5) res, z0 + (j + .5) res).
@@ -154,6 +176,66 @@ export function pointInRing(x, z, r) {
     if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
   }
   return inside;
+}
+
+// Whether flat ring `inner` lies inside flat ring `outer`: a majority of (up to 15 of) its edge midpoints do, since an
+// inner ring may touch its outer ring at a vertex or along an edge, where a single point decides nothing
+function ringInside(inner, outer) {
+  const n = inner.length / 2, step = Math.max(1, Math.floor(n / 15));
+  let hits = 0, tests = 0;
+  for (let a = 0; a < n; a += step) {
+    const b = (a + 1) % n;
+    tests++;
+    if (pointInRing((inner[2 * a] + inner[2 * b]) / 2, (inner[2 * a + 1] + inner[2 * b + 1]) / 2, outer)) hits++;
+  }
+  return 2 * hits > tests;
+}
+
+// OpenStreetMap area (Overpass `out geom`) -> polygons [[outer, ...holes], ...] of flat local rings, each closed by
+// repeating its first point as OSM does. A closed way is one polygon; an open way is a line, not an area. A
+// multipolygon relation's rings are often split over several member ways: they are chained end to end per role (a
+// member without a role counts as outer), a chain that never closes is dropped (logged; filling it would close it with
+// a straight chord), and each inner ring goes to the smallest outer ring around it.
+export function osmPolygons(e) {
+  const flat = (geom) => geom.flatMap((p) => lonLatToLocal(p.lon, p.lat));
+  const key = (p) => `${p.lat},${p.lon}`;
+  const closed = (g) => g.length >= 4 && key(g[0]) === key(g[g.length - 1]);
+  if (e.type === 'way') return e.geometry && closed(e.geometry) ? [[flat(e.geometry)]] : [];
+  if (e.type !== 'relation' || !e.members) return [];
+  let open = 0;
+  const join = (roles) => {
+    const parts = e.members.filter((m) => m.type === 'way' && roles.includes(m.role) && m.geometry?.length >= 2).map((m) => m.geometry);
+    const rings = [];
+    while (parts.length) {
+      let chain = parts.shift();
+      for (let grown = true; grown && !closed(chain);) {
+        grown = false;
+        const head = key(chain[chain.length - 1]);
+        for (let i = 0; i < parts.length; i++) {
+          const p = parts[i];
+          if (key(p[0]) === head) chain = chain.concat(p.slice(1));
+          else if (key(p[p.length - 1]) === head) chain = chain.concat(p.slice(0, -1).reverse());
+          else continue;
+          parts.splice(i, 1);
+          grown = true;
+          break;
+        }
+      }
+      if (closed(chain)) rings.push(flat(chain));
+      else open++;
+    }
+    return rings;
+  };
+  const outers = join(['outer', '']), inners = join(['inner']);
+  if (open) log(`OSM relation ${e.id} (${e.tags?.name || e.tags?.type || '?'}): ${open} ring(s) do not close, left out`);
+  const polys = outers.map((o) => [o]);
+  const area = outers.map((o) => Math.abs(ringArea(o)));
+  for (const r of inners) {
+    let host = -1;
+    outers.forEach((o, k) => { if ((host < 0 || area[k] < area[host]) && ringInside(r, o)) host = k; });
+    if (host >= 0) polys[host].push(r);
+  }
+  return polys;
 }
 
 // Douglas-Peucker on a closed flat ring (keeps at least 3 vertices)

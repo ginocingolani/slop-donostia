@@ -6,19 +6,19 @@
 //   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
 //   js/donostia/geodata.js             frame, terrain metadata, buildings, landmark sites & teleports
 // --preview writes debug images (hillshade, building heights) into the given folder.
+// Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, encodeHeightPNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds,
-  pointInRing, lonLatToLocal, loadLayer, log
+  HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
+  lonLatToLocal, loadLayer, osmPolygons, previewDir, log
 } from './lib.mjs';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
-const previewIdx = process.argv.indexOf('--preview');
-const PREVIEW = previewIdx > 0 ? process.argv[previewIdx + 1] : null;
+const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
 
@@ -33,9 +33,14 @@ const r2 = (v) => Math.round(v * 100) / 100;
 function mosaicDTM() {
   const dir = path.join(RAW, 'dtm');
   const tiles = fs.readdirSync(dir).filter((f) => f.endsWith('.asc')).sort().map((f) => readAscGrid(path.join(dir, f)));
+  if (!tiles.length) throw new Error(`no DTM tiles in ${dir} (run tools/donostia/build-all.sh --fetch)`);
   const grid = Grid.over(CONTEXT, 1);
   for (const t of tiles) {
-    const di = Math.round(t.x0 - grid.x0), dj = Math.round(t.z0 - grid.z0);
+    // the mosaic copies cells one to one: every tile must sit on the context grid's 1 m lattice
+    if (t.cell !== 1 || !Number.isInteger(t.x0 - grid.x0) || !Number.isInteger(t.z0 - grid.z0)) {
+      throw new Error(`DTM tile at (${t.x0}, ${t.z0}) with ${t.cell} m cells is not on the 1 m lattice`);
+    }
+    const di = t.x0 - grid.x0, dj = t.z0 - grid.z0;
     for (let r = 0; r < t.nrows; r++) {
       const j = dj + r;
       if (j < 0 || j >= grid.h) continue;
@@ -203,40 +208,6 @@ function carveBridges(dtm, water) {
     }
   }
   log(`bridges: ${spans} OSM bridge ways cross the water, ${carved} m² of deck kept as ground carved to the river bed`);
-}
-
-// OSM way / multipolygon relation -> [[outer, ...holes], ...] local flat rings (good enough for rasterising)
-function osmPolygons(e) {
-  const ring = (geom) => geom.flatMap((p) => lonLatToLocal(p.lon, p.lat));
-  if (e.type === 'way' && e.geometry && e.geometry.length >= 4) return [[ring(e.geometry)]];
-  if (e.type === 'relation' && e.members) {
-    // multipolygon rings are often split over several member ways: chain them end to end per role
-    const join = (role) => {
-      const parts = e.members.filter((m) => m.type === 'way' && m.role === role && m.geometry?.length >= 2).map((m) => m.geometry.slice());
-      const key = (p) => `${p.lat},${p.lon}`;
-      const rings = [];
-      while (parts.length) {
-        let chain = parts.shift();
-        for (let grown = true; grown && key(chain[0]) !== key(chain[chain.length - 1]);) {
-          grown = false;
-          for (let i = 0; i < parts.length; i++) {
-            const p = parts[i], head = key(chain[chain.length - 1]);
-            if (key(p[0]) === head) chain = chain.concat(p.slice(1));
-            else if (key(p[p.length - 1]) === head) chain = chain.concat(p.slice(0, -1).reverse());
-            else continue;
-            parts.splice(i, 1);
-            grown = true;
-            break;
-          }
-        }
-        if (chain.length >= 4) rings.push(ring(chain));
-      }
-      return rings;
-    };
-    const outers = join('outer'), inners = join('inner');
-    return outers.map((o, k) => (k === 0 ? [o, ...inners] : [o]));
-  }
-  return [];
 }
 
 // --- 3. Sea floor: isobaths + shoreline as fixed values, harmonic fill in between (coarse-to-fine Gauss-Seidel) ---------
@@ -916,6 +887,7 @@ fs.writeFileSync(OUT_JS, js);
 log(`${path.relative(ROOT, OUT_JS)}: ${(js.length / 1e6).toFixed(2)} MB, ${buildings.length} buildings, ${landmarks.length} landmarks, ${teleports.length} teleports`);
 
 if (PREVIEW) {
+  fs.mkdirSync(PREVIEW, { recursive: true });
   hillshade(core.grid, core.wet, path.join(PREVIEW, 'core-hillshade.png'));
   hillshade(context.grid, context.wet, path.join(PREVIEW, 'context-hillshade.png'));
   buildingPreview(buildings, path.join(PREVIEW, 'buildings.png'));
