@@ -137,8 +137,8 @@ function deckWidth(t) {
   }[t.highway] || 4;
 }
 
-// Deck surface bands: 0 asphalt, 1 paving, 2 bidegorri (red cycle lane), 3 timber, 4 ballast & track
-const SURFACE = { asphalt: 0, paving: 1, bike: 2, wood: 3, track: 4 };
+// Deck surface bands: 0 asphalt, 1 paving, 2 bidegorri (red cycle lane), 3 timber, 4 ballast & track, 5 coloured tiles
+const SURFACE = { asphalt: 0, paving: 1, bike: 2, wood: 3, track: 4, tiles: 5 };
 function surfaceOf(t) {
   if (t.railway) return SURFACE.track;
   if (t.surface === 'wood') return SURFACE.wood;
@@ -260,26 +260,83 @@ ways.forEach((w, i) => {
   groups.get(g).push(w);
 });
 
-// --- structures ----------------------------------------------------------------------------------------------------------
+// --- what the map can't tell ---------------------------------------------------------------------------------------------
 
-function styleOf(members, overWater) {
-  const names = members.map((m) => m.t.name || '').join('|');
-  if (/Zurriola/.test(names)) return 'zurriola';
-  if (/Santa Katalina/.test(names)) return 'stone';
-  if (/Maria Kristina/.test(names)) return 'mariakristina';
-  if (members.some((m) => m.t.railway)) return overWater ? 'truss' : 'viaduct';
+// The Urumea's bridges as built: style, spans (n equal spans over the water, or their lengths in metres centred on it,
+// null = what's left of the water; between pier faces when `clear`), pier thickness, true deck width, girder depths,
+// deck levels. `from` names the end that per-end values
+// (width, depth, y) start at, whichever way the OSM ways run. Sources: Donostiako Udala, PEPPUC 2021 (heritage
+// catalogue sheets A-30 Zurriola, F-10 Santa Katalina); Wikipedia; Structurae; Metalocus (Mikel Laboa); ondavasca.com
+// (Astiñene); Gipuzkoa's tourism board (María Kristina obelisks, Lehendakari Agirre tiles).
+const KNOWN = [
+  // Zurriola (J. Eugenio Ribera's 1915 project for three 30 m arches gave way in 1917 to straight reinforced-concrete
+  // spans on three central piers; opened 1921): four spans; Víctor Arana's lamp columns crown the cutwaters
+  // (its banks are too ragged at the river mouth to measure a skew; the photos show its piers square to the deck)
+  { name: /^Zurriolako zubia$/, style: 'zurriola', spans: 4, pier: 3, skew: 0 },
+  // Santa Katalina (Antonio Cortázar, 1869-72; widened to 25 m by Juan Machimbarrena in 1924): five elliptical vaults,
+  // one blinded when the Paseo de Francia quay was built, so four
+  { name: /^Santa Katalina Zubia$/, style: 'katalina', spans: 4, pier: 4.6 },
+  // María Kristina (José Eugenio Ribera & Julio Martínez-Zapata, 1905): three 24 m arches, 88 m x 20 m, four 18 m obelisks
+  { name: /^Maria Kristina zubia$/, style: 'mariakristina', spans: [24, 24, 24], clear: true, pier: 5, width: 20 },
+  // Mundaiz (Julio Martínez Calzón & José Antonio Fernández Ordóñez, 2000): composite girder, one 79.84 m span, the
+  // first Urumea bridge without supports in the river
+  { name: /^(Mundaiz zubia|Puente de Mundaiz)$/, style: 'girder', spans: [79.84], depth: [3.2, 1.8, 3.2], colour: 'light' },
+  // Lehendakari Agirre (2010): no supports in the river bed either; paved with 45,000 tiles in eight colours
+  { name: /^(Jose Antonio Agirre zubia|Puente del Lehendakari Aguirre)$/, style: 'girder', spans: 1, depth: [3.0, 1.6, 3.0], tiles: true, colour: 'light' },
+  // Real Sociedad (2010, on the site of the 1864 Puente de Hierro): two piers, in line with the railway bridge's
+  { name: /^Puente de la Real Sociedad$/, style: 'modern', spans: 3, pier: 2.4 },
+  // the Adif railway bridge beside it (OSM keeps the old iron bridge's name on it): two piers
+  { name: /^Puente de Hierro$/, style: 'railgirder', spans: 3, pier: 2.4 },
+  // Mikel Laboa footbridge (Anta IC & Agence TER, 2009): a continuous steel box girder of 9.24 + 73.92 + 9.24 m, nil
+  // deep at its ends, 2.9 m over the park pier, 1.2 m at mid-span, 2.2 m over the Riberas pier; 6.4 m wide on the
+  // Cristina Enea side narrowing to 3 m; timber deck
+  {
+    name: /^Mikel Laboa$/, style: 'girder', spans: [9.24, 73.92, 9.24], from: [1120.5, 1057.6], width: [6.4, 3],
+    depth: [0, 2.9, 1.2, 2.2, 0], colour: 'steel'
+  },
+  // Astiñene (2022): steel girders, a 40 m central span lifted in one piece; deck levels from the LiDAR road at its
+  // abutments (Egia's approach climbs steeply away from the north end)
+  {
+    name: /^Astiñene zubia$/, style: 'girder', spans: [null, 40, null], pier: 2, depth: [1.4, 2.2, 1.5, 2.2, 1.4],
+    colour: 'steel', from: [1631.6, 718.6], y: [6.7, 4.6]
+  },
+  // Urdintzu, the barracks' bridge (1926): three stone arches of 16, 18 & 16 m, 56 m x 10 m
+  { name: /^Urdintzuko zubia$/, style: 'stone', spans: [16, 18, 16], clear: true, pier: 3, width: 10 },
+  // Gladys del Estal footbridge (2009) from Cristina Enea park over the railway to the riverside walk, where a lift
+  // (1:500 map) takes it down: the deck clears the catenary (rails ~4.6 m + 6.5 m + structure) and the LiDAR keeps a
+  // patch of it at 13 m two thirds of the way across; it lands on the park's hillside a few steps below the path
+  { name: /^Gladys del Estal$/, style: 'footbridge', from: [973.1, 1004.2], y: [13.6, 12.0] }
+];
+const knownOf = (members) => KNOWN.find((k) => members.some((m) => k.name.test(m.t.name || '')));
+
+function styleOf(members, overWater, known) {
+  if (known?.style) return known.style;
+  if (members.some((m) => m.t.railway)) return overWater ? 'railgirder' : 'viaduct';
   if (members.some((m) => /^(motorway|trunk)/.test(m.t.highway))) return 'viaduct'; // the GI-20 bypass, over the river too
   if (members.every((m) => ['footway', 'cycleway', 'path', 'pedestrian'].includes(m.t.highway))) return 'footbridge';
   return overWater ? 'modern' : 'viaduct';
 }
 
-// Spans over the water: masonry arches ~18 m, the 1905 María Kristina three arches, modern girders ~32 m
-const SPAN = { stone: 18, mariakristina: 27, zurriola: 30, modern: 32, truss: 36, footbridge: 30, viaduct: 32 };
+// Spans of the bridges the table doesn't know: modern girders ~32 m
+const SPAN = { modern: 32, railgirder: 32, footbridge: 30, viaduct: 32, girder: 32 };
+
+// Exterior lifts of the 1:500 map: a footbridge ending at one doesn't come down to the ground there
+const LIFTS = loadLayer('c500_KANPO-IGOGAILUA.json').features.map((f) => {
+  const r = f.g[0];
+  let x = 0, z = 0;
+  for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
+  return [(2 * x) / r.length, (2 * z) / r.length];
+});
+const liftNear = (x, z) => LIFTS.find(([lx, lz]) => Math.hypot(lx - x, lz - z) < 5);
 
 const bridges = [];
 let skippedLand = 0;
+// the reference way of a structure: a carriageway or track over the paths beside it (a footway may hook off down a
+// ramp at one end), then the longest end to end
+const chord = (w) => Math.hypot(w.pts[w.pts.length - 1][0] - w.pts[0][0], w.pts[w.pts.length - 1][1] - w.pts[0][1]);
+const carries = (w) => (w.kind === 'rail' || !['footway', 'cycleway', 'path', 'pedestrian', 'steps'].includes(w.t.highway) ? 1 : 0);
 for (const members of groups.values()) {
-  members.sort((a, b) => b.L - a.L);
+  members.sort((a, b) => carries(b) - carries(a) || chord(b) - chord(a));
   const ref = members[0];
   // lateral layout across the reference way, longitudinal extent along it
   const lanes = members.map((m) => {
@@ -297,6 +354,7 @@ for (const members of groups.values()) {
   }
   const lo = Math.min(...lanes.map((l) => l.off - l.w / 2)), hi = Math.max(...lanes.map((l) => l.off + l.w / 2));
   const centre = (lo + hi) / 2, width = hi - lo;
+  const known = knownOf(members);
   // the centre line: the reference way resampled between sMin & sMax and shifted to the middle of the deck
   const length = sMax - sMin;
   const steps = Math.max(1, Math.ceil(length / 6));
@@ -314,7 +372,9 @@ for (const members of groups.values()) {
   }
   simple.push(axis[axis.length - 1]);
 
-  // surface bands across the deck (left edge -width / 2 .. right edge +width / 2), overlaps split, gaps shared
+
+  // surface bands across the deck as fractions of its width (-0.5 left edge .. 0.5 right edge), overlaps split, gaps
+  // shared
   const bands = lanes.map((l) => ({ a: l.off - l.w / 2 - centre, b: l.off + l.w / 2 - centre, surface: l.surface }))
     .sort((p, q) => p.a + p.b - q.a - q.b);
   for (let k = 1; k < bands.length; k++) {
@@ -330,6 +390,7 @@ for (const members of groups.values()) {
     if (last && last.surface === band.surface) last.b = band.b;
     else if (band.b - band.a > 0.05) merged.push({ ...band });
   }
+  if (known?.tiles) for (const band of merged) if (band.surface === SURFACE.paving) band.surface = SURFACE.tiles;
 
   // water under the deck (sampled across its width)
   let w0 = Infinity, w1 = -Infinity;
@@ -341,18 +402,47 @@ for (const members of groups.values()) {
   }
   const overWater = w1 > w0;
 
+  // the banks a few metres outside both edges (build.mjs squares the water off under the deck): a bridge askew to the
+  // current stands its piers parallel to the banks, not square to its deck. skew = metres along the deck per metre to
+  // its right; measured on straight decks only (along a curve the offset lines meet the banks wherever they please)
+  const bankAt = (o) => {
+    let a = null, b = null;
+    for (let s = -12; s <= length + 12; s += 0.5) {
+      const [x, z, tx, tz] = pointAt(simple, s);
+      if (isWet(x - tz * o, z + tx * o)) { if (a === null) a = s; b = s; }
+    }
+    return [a, b];
+  };
+  let skew = 0;
+  if (overWater && simple.length === 2) {
+    const o = width / 2 + 5, [la, lb] = bankAt(-o), [ra, rb] = bankAt(o);
+    if (la !== null && ra !== null) skew = (la - ra + lb - rb) / (4 * o);
+    skew = Math.abs(skew) < 0.08 ? 0 : Math.max(-0.45, Math.min(0.45, skew));
+  }
+  if (known && 'skew' in known) skew = known.skew;
+
   // road level at both ends: the terrain just beyond each end, across the deck, upper-middle value (the lower ones are
   // riverside walks & ramps under the abutments)
-  const level = (s, out) => {
+  const level = (s, out, ds = [1.5, 3, 4.5, 6]) => {
     const ys = [];
     const [x, z, tx, tz] = pointAt(simple, s);
     for (const o of [-0.4, -0.2, 0, 0.2, 0.4]) {
-      for (const d of [1.5, 3, 4.5, 6]) ys.push(heightAt(x + tx * d * out - tz * o * width, z + tz * d * out + tx * o * width));
+      for (const d of ds) ys.push(heightAt(x + tx * d * out - tz * o * width, z + tz * d * out + tx * o * width));
     }
     ys.sort((p, q) => p - q);
     return ys[Math.floor(ys.length * 0.7)];
   };
-  const y0 = level(0, -1), y1 = level(length, 1);
+  let y0 = level(0, -1), y1 = level(length, 1);
+  // a footbridge that ends at a lift stays up there, level with the ground where its other end lands (on a hillside
+  // that keeps climbing: the ground at the end itself, not beyond it)
+  const [ax, az] = simple[0], [bx, bz] = simple[simple.length - 1];
+  const lifts = [liftNear(ax, az), liftNear(bx, bz)];
+  if (lifts[0] && !lifts[1]) y0 = y1 = level(length, 1, [0, 0.75, 1.5]);
+  if (lifts[1] && !lifts[0]) y1 = y0 = level(0, -1, [0, 0.75, 1.5]);
+  // per-end facts in the table run from its `from` end
+  const flip = !!known?.from && Math.hypot(bx - known.from[0], bz - known.from[1]) < Math.hypot(ax - known.from[0], az - known.from[1]);
+  const ends = (v) => (flip ? v.slice().reverse() : v);
+  if (known?.y) [y0, y1] = ends(known.y);
   const deckAt = (s) => y0 + ((y1 - y0) * s) / length;
 
   // clearance under the deck along the centre line: the ground model has no decks, so what stands above it is the
@@ -368,13 +458,29 @@ for (const members of groups.values()) {
     if (c < -0.5) buried++;
   }
   const groundAt = (s) => ground[Math.max(0, Math.min(ground.length - 1, Math.round(s / 2)))];
-  if (buried > 0.1 * ground.length || (!overWater && clear < 3)) { skippedLand++; continue; }
+  if (!known && (buried > 0.1 * ground.length || (!overWater && clear < 3))) { skippedLand++; continue; }
   if (overWater && Math.min(y0, y1) < 1) { skippedLand++; continue; } // a slipway or a ford, not a deck
 
-  const style = styleOf(members, overWater);
-  // piers: evenly over the water at the style's span, and every viaduct span over the land where the deck stands well
-  // clear of the ground
-  const piers = [];
+  const style = styleOf(members, overWater, known);
+  // supports over the water: abutments & river piers, from the table's spans or evenly at the style's span
+  let supports = null;
+  if (overWater) {
+    const spans = known?.spans ?? Math.max(1, Math.round((w1 - w0) / SPAN[style]));
+    if (typeof spans === 'number') supports = Array.from({ length: spans + 1 }, (_, k) => w0 + ((w1 - w0) * k) / spans);
+    else {
+      // clear spans between the pier faces: support to support takes half a pier more at each pier
+      const pw = known.clear ? known.pier : 0;
+      const sized = spans.map((v, k) => (v === null ? null : v + (pw * ((k > 0) + (k < spans.length - 1))) / 2));
+      const fixed = sized.reduce((a, v) => a + (v ?? 0), 0), free = sized.filter((v) => v === null).length;
+      const lens = ends(sized.map((v) => v ?? Math.max(4, (w1 - w0 - fixed) / free)));
+      let s = (w0 + w1) / 2 - lens.reduce((a, v) => a + v, 0) / 2;
+      supports = [s];
+      for (const l of lens) supports.push((s += l));
+    }
+  }
+  // piers: the supports between the abutments, and every viaduct span over the land where the deck stands well clear
+  // of the ground
+  const piers = supports ? supports.slice(1, -1) : [];
   const landPiers = (a, b) => {
     const n = Math.round((b - a) / SPAN.viaduct);
     for (let k = 1; k < n; k++) {
@@ -382,25 +488,42 @@ for (const members of groups.values()) {
       if (deckAt(s) - groundAt(s) > 3) piers.push(s);
     }
   };
-  if (overWater) {
-    landPiers(0, w0);
-    const n = Math.max(1, Math.round((w1 - w0) / SPAN[style]));
-    for (let k = 1; k < n; k++) piers.push(w0 + ((w1 - w0) * k) / n);
-    landPiers(w1, length);
+  if (supports) {
+    landPiers(0, supports[0]);
+    landPiers(supports[supports.length - 1], length);
   } else landPiers(0, length);
   piers.sort((p, q) => p - q);
+  // girder depth at the supports & mid-span of the main (longest) span
+  let depth = null;
+  if (known?.depth && supports) {
+    const at = supports.slice();
+    let main = 1;
+    for (let k = 2; k < supports.length; k++) if (supports[k] - supports[k - 1] > supports[main] - supports[main - 1]) main = k;
+    at.splice(main, 0, (supports[main - 1] + supports[main]) / 2);
+    depth = ends(known.depth).map((d, k) => [r2(at[k]), d]);
+  }
   const name = members.map((m) => m.t.name).find((n) => n && /zubia|Puente|pasabidea/i.test(n)) ||
     members.map((m) => m.t.name).find(Boolean) || null;
+  const deckWidthOut = Array.isArray(known?.width) ? ends(known.width) : known?.width ?? r2(width);
   bridges.push({
     name, style, osm: members.flatMap((m) => m.id),
-    axis: simple.flat().map(r2), width: r2(width),
-    bands: merged.map((b) => [r2(b.a), r2(b.b), b.surface]),
+    axis: simple.flat().map(r2), width: deckWidthOut,
+    bands: merged.map((b) => [+(b.a / width).toFixed(4), +(b.b / width).toFixed(4), b.surface]),
     y: [r2(y0), r2(y1)],
     water: overWater ? [r2(w0), r2(w1)] : null,
-    piers: piers.map(r2)
+    supports: supports ? supports.map(r2) : null,
+    piers: piers.map(r2),
+    ...(known?.pier ? { pier: known.pier } : {}),
+    ...(skew ? { skew: +skew.toFixed(3) } : {}),
+    ...(depth ? { depth } : {}),
+    ...(known?.colour ? { tone: known.colour } : {}),
+    ...(lifts.some(Boolean) ? {
+      lift: lifts.map((l, end) => (l ? [r2(l[0]), r2(l[1]), r2(heightAt(l[0], l[1])), end] : null)).filter(Boolean)
+    } : {})
   });
 }
-bridges.sort((a, b) => (b.water ? 1 : 0) - (a.water ? 1 : 0) || b.width * lengthOfFlat(b.axis) - a.width * lengthOfFlat(a.axis));
+const widthOf = (b) => (Array.isArray(b.width) ? (b.width[0] + b.width[1]) / 2 : b.width);
+bridges.sort((a, b) => (b.water ? 1 : 0) - (a.water ? 1 : 0) || widthOf(b) * lengthOfFlat(b.axis) - widthOf(a) * lengthOfFlat(a.axis));
 function lengthOfFlat(f) {
   let L = 0;
   for (let k = 2; k < f.length; k += 2) L += Math.hypot(f[k] - f[k - 2], f[k + 1] - f[k - 1]);
@@ -408,15 +531,20 @@ function lengthOfFlat(f) {
 }
 
 const js = '// js/donostia/data-bridges.js — generated by tools/donostia/bake-bridges.mjs; do not edit.\n' +
-  '// © OpenStreetMap contributors (ODbL); heights from Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi (CC BY 4.0).\n' +
-  '// Each bridge: centre line axis [x, z, ...] (local metres), deck width, surface bands [from, to, surface] across it\n' +
-  '// (0 asphalt, 1 paving, 2 bidegorri, 3 timber, 4 track), road level y at both ends, the stretch over the water\n' +
-  '// [from, to] and the piers (arc lengths along the axis).\n' +
+  '// © OpenStreetMap contributors (ODbL); heights from Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi (CC BY 4.0); lifts\n' +
+  '// from Donostiako Udala\'s 1:500 map (CC BY-SA 3.0).\n' +
+  '// Each bridge: centre line axis [x, z, ...] (local metres), deck width (or [at start, at end]), surface bands\n' +
+  '// [from, to, surface] across it as fractions of the width (0 asphalt, 1 paving, 2 bidegorri, 3 timber, 4 track,\n' +
+  '// 5 coloured tiles), road level y at both ends, the stretch over the water [from, to], its supports (abutments &\n' +
+  '// river piers) and every pier (arc lengths along the axis); optionally the pier thickness, their skew (metres along per metre\n' +
+  '// across), girder depths [[s, depth], ...], a tone for the steelwork and the lifts at its ends [x, z, ground, end].\n' +
   `export const BRIDGES = ${JSON.stringify(bridges)};\n`;
 fs.writeFileSync(OUT, js);
 log(`${path.relative(ROOT, OUT)}: ${bridges.length} bridges (${bridges.filter((b) => b.water).length} over the water), ` +
   `${skippedLand} decks the terrain keeps as ground skipped, ${(js.length / 1e3).toFixed(1)} kB`);
 for (const b of bridges) {
-  log(`  ${(b.name || '-').padEnd(32)} ${b.style.padEnd(13)} ${lengthOfFlat(b.axis).toFixed(0).padStart(4)} m x ${b.width.toFixed(1).padStart(5)} m, ` +
-    `y ${b.y.join('..')}, water ${b.water ? b.water.join('..') : '-'}, piers ${b.piers.length}, bands ${b.bands.map((x) => x[2]).join('')}`);
+  const w = Array.isArray(b.width) ? b.width.join('-') : b.width.toFixed(1);
+  log(`  ${(b.name || '-').padEnd(32)} ${b.style.padEnd(13)} ${lengthOfFlat(b.axis).toFixed(0).padStart(4)} m x ${w.padStart(5)} m, ` +
+    `y ${b.y.join('..')}, water ${b.water ? b.water.join('..') : '-'}, supports ${b.supports ? b.supports.join(',') : '-'}, ` +
+    `piers ${b.piers.length}${b.skew ? `, skew ${b.skew}` : ''}${b.lift ? ', lift' : ''}, bands ${b.bands.map((x) => x[2]).join('')}`);
 }
