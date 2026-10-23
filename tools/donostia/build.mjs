@@ -24,7 +24,7 @@ const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixe
 
 const CORE = FRAME.core;
 // The context grid spans the terrain-tile union on an 8 m lattice that the core rectangle snaps to
-const CONTEXT = { minX: -6056, maxX: 4216, minZ: -3744, maxZ: 3376 };
+const CONTEXT = { minX: -6056, maxX: 4216, minZ: -3744, maxZ: 5696 };
 const CORE_RES = 2, CONTEXT_RES = 8, BATHY_RES = 4;
 const r2 = (v) => Math.round(v * 100) / 100;
 
@@ -772,7 +772,8 @@ const TELEPORTS = [
   ['orrazia', 'Haizearen orrazia', 'Peine del Viento', [-2.00470, 43.32110], 5, [-2.00555, 43.32169], 3],
   ['miramar', 'Miramar jauregia', 'Palacio de Miramar', [-1.9958, 43.3152], 6, [-1.99831, 43.31464], 10],
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
-  ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2]
+  ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
+  ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
 ];
 
 function bakeTeleports(heightAt) {

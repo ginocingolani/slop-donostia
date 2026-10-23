@@ -20,7 +20,7 @@ get() { # <url> <out>
 
 # 1 m bare-earth terrain (Basque Government LiDAR 2017, CC BY 4.0). Tiles are mdt_<sheet>_<column>_<row>, ~3.5 x 2.5 km.
 DTM=https://www.geo.euskadi.eus/lidar/DatosDescarga/MDE/MAX_ACTUALIDAD/MDT_LIDAR_2017_ETRS89/MDT
-for tile in 064_4_1 064_5_1 064_6_1 064_5_2 064_6_2 040_6_8; do
+for tile in 064_4_1 064_5_1 064_6_1 064_4_2 064_5_2 064_6_2 064_4_3 064_5_3 064_6_3 040_6_8; do
   get "$DTM/H0${tile%%_*}/mdt_$tile.zip" "$RAW/dtm/mdt_$tile.zip"
 done
 

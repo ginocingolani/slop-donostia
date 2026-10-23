@@ -30,7 +30,7 @@ E0, N0 = FRAME['origin']
 CORE = FRAME['core']
 MARGIN = FRAME['clipMargin']
 # Bathymetry spans the whole terrain-tile union so the sea floor reaches the horizon tiles
-WIDE = {'minX': -6200, 'maxX': 4400, 'minZ': -3900, 'maxZ': 3500}
+WIDE = {'minX': -6200, 'maxX': 4400, 'minZ': -3900, 'maxZ': 5800}
 
 C500_LAYERS = [
     'ERAIKINA', 'ERAIKINA LURREAN', 'EraikinEgitura', 'ARKUPEA', 'ATARIPEA', 'PASABIDEA', 'BARRUKO PATIOA',

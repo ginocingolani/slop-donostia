@@ -26,7 +26,7 @@ The steps it runs, in order:
 
 `frame.json`: x = UTM 30N easting − 582 000 (metres east), z = 4 797 000 − northing (metres south), y = orthometric
 height. The origin sits on Alderdi Eder by the old casino (Donostiako Udaletxea). The core extent runs from the top of
-Igeldo to Ulía past the end of Sagüés (x −2200..2000, z −1600..1800).
+Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario (x −2200..2000, z −1600..3520).
 
 ## Sources
 

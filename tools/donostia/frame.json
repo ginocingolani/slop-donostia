@@ -2,6 +2,6 @@
   "crs": "EPSG:25830",
   "note": "Local frame: x = easting - origin[0] (metres east), z = origin[1] - northing (metres south), y = orthometric height (m). Origin is a round UTM 30N point by Donostiako Udaletxea (the old casino) on Alderdi Eder.",
   "origin": [582000, 4797000],
-  "core": { "minX": -2200, "maxX": 2000, "minZ": -1600, "maxZ": 1800 },
+  "core": { "minX": -2200, "maxX": 2000, "minZ": -1600, "maxZ": 3520 },
   "clipMargin": 60
 }

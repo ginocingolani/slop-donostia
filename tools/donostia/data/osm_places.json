@@ -2,7 +2,7 @@
   "version": 0.6,
   "generator": "Overpass API 0.7.62.11 87bfad18",
   "osm3s": {
-    "timestamp_osm_base": "2026-10-23T16:54:56Z",
+    "timestamp_osm_base": "2026-10-23T18:41:05Z",
     "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
   },
   "elements": [
@@ -238,6 +238,18 @@
 },
 {
   "type": "node",
+  "id": 426454727,
+  "lat": 43.2924513,
+  "lon": -1.9823474,
+  "tags": {
+    "name": "Miramón",
+    "name:es": "Miramón",
+    "name:eu": "Miramon",
+    "place": "suburb"
+  }
+},
+{
+  "type": "node",
   "id": 461396306,
   "lat": 43.3224090,
   "lon": -1.9856829,
@@ -291,6 +303,40 @@
     "tourism": "information",
     "website": "https://www.sansebastianturismo.com/",
     "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 537141520,
+  "lat": 43.3013705,
+  "lon": -1.9748958,
+  "tags": {
+    "fee": "yes",
+    "name": "Real 100 Museoa",
+    "tourism": "museum",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 537141546,
+  "lat": 43.3017971,
+  "lon": -1.9725630,
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "7",
+    "addr:neighbourhood": "Amara",
+    "addr:postcode": "20014",
+    "addr:street": "Anoeta pasealekua",
+    "air_conditioning": "yes",
+    "amenity": "library",
+    "internet_access": "wlan",
+    "name": "Ernest Lluch kultur etxea",
+    "opening_hours": "Mo-Fr 10:00-14:00,16:00-20:30; Sa 10:00-14:00,16:30-20:00",
+    "website": "https://www.donostiakultura.eus/index.php?option=com_flexicontent&view=items&cid=73&id=986&Itemid=310&lang=eu",
+    "wheelchair": "yes",
+    "wikidata": "Q64362978",
+    "wikipedia": "eu:Ernest Lluch kultur etxea"
   }
 },
 {
@@ -572,6 +618,25 @@
 },
 {
   "type": "node",
+  "id": 738565711,
+  "lat": 43.2908343,
+  "lon": -1.9849675,
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "45",
+    "addr:postcode": "20009",
+    "addr:street": "Mikeletegi pasealekua",
+    "fee": "yes",
+    "name": "Eureka! Zientzia Museoa",
+    "old_name": "Zientziaren Kutxaespazioa",
+    "opening_hours": "Mo-Su 11:00-20:00",
+    "operator": "Kutxa",
+    "tourism": "museum",
+    "wikidata": "Q12257419"
+  }
+},
+{
+  "type": "node",
   "id": 750727775,
   "lat": 43.3212415,
   "lon": -1.9752228,
@@ -605,6 +670,37 @@
     "tourism": "hotel",
     "website": "http://www.hotelanoeta.com/index_eu.html",
     "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 760339287,
+  "lat": 43.2915592,
+  "lon": -1.9959124,
+  "tags": {
+    "name": "Añorgatxiki",
+    "name:eu": "Añorgatxiki",
+    "place": "suburb"
+  }
+},
+{
+  "type": "node",
+  "id": 767161312,
+  "lat": 43.2851171,
+  "lon": -2.0005677,
+  "tags": {
+    "ele": "36",
+    "name": "Añorga",
+    "name:eu": "Añorga",
+    "place": "suburb",
+    "population": "1712",
+    "population:date": "2025",
+    "ref:ine": "20069000101",
+    "source": "Instituto Geográfico Nacional",
+    "source:date": "2011-06",
+    "source:ele": "MDT5",
+    "source:name": "Nomenclátor Geográfico de Municipios y Entidades de Población",
+    "wikidata": "Q1836499"
   }
 },
 {
@@ -1350,6 +1446,57 @@
 },
 {
   "type": "node",
+  "id": 2490425307,
+  "lat": 43.3011260,
+  "lon": -1.9711045,
+  "tags": {
+    "leisure": "sports_centre",
+    "name": "Sala Municipal de Tiro con Arco",
+    "name:eu": "Arku-tiraketako udal-aretoa",
+    "sport": "archery",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
+  "id": 2490425314,
+  "lat": 43.3008956,
+  "lon": -1.9708818,
+  "tags": {
+    "addr:street": "Anoeta pasealekua",
+    "internet_access": "wlan",
+    "leisure": "sports_centre",
+    "name": "Gros Xake Taldea",
+    "sport": "chess",
+    "website": "https://www.grosxake.com",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
+  "id": 2490425322,
+  "lat": 43.3010186,
+  "lon": -1.9710133,
+  "tags": {
+    "leisure": "sports_centre",
+    "name": "Sala Municipal de tiro neumático",
+    "name:eu": "Tiro-pneumatikoko udal-aretoa",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
+  "id": 2490425337,
+  "lat": 43.3007921,
+  "lon": -1.9693986,
+  "tags": {
+    "leisure": "sports_centre",
+    "name": "Sala Municipal de Artes marciales",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
   "id": 2635064232,
   "lat": 43.3048885,
   "lon": -2.0125574,
@@ -1782,6 +1929,16 @@
 },
 {
   "type": "node",
+  "id": 5646931121,
+  "lat": 43.3012343,
+  "lon": -2.0039581,
+  "tags": {
+    "name": "Hacienda Floral",
+    "tourism": "information"
+  }
+},
+{
+  "type": "node",
   "id": 5649182221,
   "lat": 43.3228590,
   "lon": -1.9919773,
@@ -1943,6 +2100,23 @@
     "tourism": "hostel",
     "website": "https://www.aroominthecity.eu/es/",
     "wikidata": "Q111122675"
+  }
+},
+{
+  "type": "node",
+  "id": 5818635619,
+  "lat": 43.3011009,
+  "lon": -1.9753450,
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:neighbourhood": "Amara",
+    "addr:postcode": "20014",
+    "addr:street": "Anoeta pasealekua",
+    "artwork_type": "statue",
+    "name": "Atano III.a eskultura, Mariano_Juaristi",
+    "name:es": "escultura de Atano III, Mariano_Juaristi",
+    "name:eu": "Atano III.a eskultura, Mariano_Juaristi",
+    "tourism": "artwork"
   }
 },
 {
@@ -2221,6 +2395,26 @@
 },
 {
   "type": "node",
+  "id": 6790794864,
+  "lat": 43.2873299,
+  "lon": -1.9710529,
+  "tags": {
+    "man_made": "tower"
+  }
+},
+{
+  "type": "node",
+  "id": 6790794880,
+  "lat": 43.2861681,
+  "lon": -1.9766032,
+  "tags": {
+    "ele": "113",
+    "name": "Menditxo",
+    "natural": "peak"
+  }
+},
+{
+  "type": "node",
   "id": 7430627219,
   "lat": 43.3211222,
   "lon": -1.9811634,
@@ -2302,6 +2496,30 @@
     "check_date": "2024-09-12",
     "information": "board",
     "name": "Teatro Victoria Eugenia",
+    "tourism": "information"
+  }
+},
+{
+  "type": "node",
+  "id": 7730644485,
+  "lat": 43.2956656,
+  "lon": -1.9880094,
+  "tags": {
+    "board_type": "wildlife",
+    "information": "board",
+    "name": "Vida animal asociada al robledal",
+    "tourism": "information"
+  }
+},
+{
+  "type": "node",
+  "id": 7730659185,
+  "lat": 43.2966184,
+  "lon": -1.9871379,
+  "tags": {
+    "board_type": "plants",
+    "information": "board",
+    "name": "Vegetación asociada al robledal",
     "tourism": "information"
   }
 },
@@ -2861,6 +3079,16 @@
 },
 {
   "type": "node",
+  "id": 12071136965,
+  "lat": 43.3009504,
+  "lon": -2.0041528,
+  "tags": {
+    "name": "Errotaburu",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
   "id": 12071136966,
   "lat": 43.3150873,
   "lon": -2.0055658,
@@ -2933,6 +3161,46 @@
 },
 {
   "type": "node",
+  "id": 12071145973,
+  "lat": 43.3011722,
+  "lon": -1.9719409,
+  "tags": {
+    "name": "Anoeta",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12071145974,
+  "lat": 43.3003992,
+  "lon": -1.9798534,
+  "tags": {
+    "name": "Errondo",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12071145975,
+  "lat": 43.3014533,
+  "lon": -1.9938492,
+  "tags": {
+    "name": "Bera Bera",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12071145976,
+  "lat": 43.2928871,
+  "lon": -2.0022152,
+  "tags": {
+    "name": "Atotxa Erreka",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
   "id": 12071145983,
   "lat": 43.3193125,
   "lon": -1.9828220,
@@ -2960,6 +3228,16 @@
   "lon": -2.0059664,
   "tags": {
     "name": "Lorea",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12071145987,
+  "lat": 43.2976465,
+  "lon": -2.0001186,
+  "tags": {
+    "name": "Infierno",
     "place": "neighbourhood"
   }
 },
@@ -3004,6 +3282,16 @@
   "lon": -1.9889652,
   "tags": {
     "name": "Etxadi",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12159527513,
+  "lat": 43.2904847,
+  "lon": -1.9903636,
+  "tags": {
+    "name": "Oriamendi",
     "place": "neighbourhood"
   }
 },
@@ -3076,6 +3364,16 @@
   "lon": -1.9679631,
   "tags": {
     "name": "Manteo",
+    "place": "neighbourhood"
+  }
+},
+{
+  "type": "node",
+  "id": 12159719630,
+  "lat": 43.2991237,
+  "lon": -1.9952528,
+  "tags": {
+    "name": "Pagola",
     "place": "neighbourhood"
   }
 },
@@ -3197,6 +3495,15 @@
     "check_date": "2025-04-12",
     "name": "Leonardo Boutique Hotel",
     "tourism": "hotel"
+  }
+},
+{
+  "type": "node",
+  "id": 12762263429,
+  "lat": 43.2897838,
+  "lon": -1.9841222,
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -3463,6 +3770,16 @@
   "lon": -1.9920377,
   "tags": {
     "name": "Carlos Blasco de Imaz plaza",
+    "place": "square"
+  }
+},
+{
+  "type": "node",
+  "id": 13408982840,
+  "lat": 43.3018033,
+  "lon": -2.0173216,
+  "tags": {
+    "name": "Jorge Oteiza plaza",
     "place": "square"
   }
 },
@@ -4198,6 +4515,78 @@
 },
 {
   "type": "way",
+  "id": 23889245,
+  "bounds": {
+    "minlat": 43.2993168,
+    "minlon": -1.9724883,
+    "maxlat": 43.3009660,
+    "maxlon": -1.9703938
+  },
+  "geometry": [
+    { "lat": 43.3005236, "lon": -1.9724311 },
+    { "lat": 43.3005855, "lon": -1.9723721 },
+    { "lat": 43.3006337, "lon": -1.9723035 },
+    { "lat": 43.3007911, "lon": -1.9720114 },
+    { "lat": 43.3009232, "lon": -1.9717664 },
+    { "lat": 43.3009557, "lon": -1.9716782 },
+    { "lat": 43.3009660, "lon": -1.9715897 },
+    { "lat": 43.3009636, "lon": -1.9715182 },
+    { "lat": 43.3009438, "lon": -1.9714169 },
+    { "lat": 43.3009086, "lon": -1.9713294 },
+    { "lat": 43.3008543, "lon": -1.9712642 },
+    { "lat": 43.3004336, "lon": -1.9708438 },
+    { "lat": 43.3002281, "lon": -1.9706384 },
+    { "lat": 43.3000707, "lon": -1.9704807 },
+    { "lat": 43.2999718, "lon": -1.9704213 },
+    { "lat": 43.2998770, "lon": -1.9703949 },
+    { "lat": 43.2997723, "lon": -1.9703938 },
+    { "lat": 43.2996718, "lon": -1.9704174 },
+    { "lat": 43.2995741, "lon": -1.9704702 },
+    { "lat": 43.2994923, "lon": -1.9705530 },
+    { "lat": 43.2994307, "lon": -1.9706309 },
+    { "lat": 43.2993808, "lon": -1.9707357 },
+    { "lat": 43.2993408, "lon": -1.9708495 },
+    { "lat": 43.2993168, "lon": -1.9709989 },
+    { "lat": 43.2993194, "lon": -1.9711357 },
+    { "lat": 43.2993372, "lon": -1.9712650 },
+    { "lat": 43.2993791, "lon": -1.9714261 },
+    { "lat": 43.2994379, "lon": -1.9716043 },
+    { "lat": 43.2994493, "lon": -1.9716192 },
+    { "lat": 43.2994302, "lon": -1.9716528 },
+    { "lat": 43.2994420, "lon": -1.9716654 },
+    { "lat": 43.2994539, "lon": -1.9716779 },
+    { "lat": 43.2994832, "lon": -1.9717083 },
+    { "lat": 43.2994943, "lon": -1.9717183 },
+    { "lat": 43.2994901, "lon": -1.9717264 },
+    { "lat": 43.2994815, "lon": -1.9717430 },
+    { "lat": 43.2994754, "lon": -1.9717546 },
+    { "lat": 43.2995582, "lon": -1.9718786 },
+    { "lat": 43.2996441, "lon": -1.9719760 },
+    { "lat": 43.2997304, "lon": -1.9720713 },
+    { "lat": 43.2998235, "lon": -1.9721588 },
+    { "lat": 43.2999213, "lon": -1.9722392 },
+    { "lat": 43.3000260, "lon": -1.9723109 },
+    { "lat": 43.3000325, "lon": -1.9722994 },
+    { "lat": 43.3000420, "lon": -1.9722824 },
+    { "lat": 43.3000543, "lon": -1.9722603 },
+    { "lat": 43.3002576, "lon": -1.9724508 },
+    { "lat": 43.3003194, "lon": -1.9724786 },
+    { "lat": 43.3003799, "lon": -1.9724883 },
+    { "lat": 43.3004411, "lon": -1.9724769 },
+    { "lat": 43.3005236, "lon": -1.9724311 }
+  ],
+  "tags": {
+    "alt_name": "Anexo de Anoeta",
+    "leisure": "sports_centre",
+    "name": "Miniestadio de Anoeta",
+    "name:etymology:wikidata": "Q11692882",
+    "name:eu": "Anoetako mini-estadioa",
+    "sport": "multi",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "way",
   "id": 23893893,
   "bounds": {
     "minlat": 43.3204489,
@@ -4455,6 +4844,64 @@
   "tags": {
     "leisure": "park",
     "name": "Basoerdi parkea"
+  }
+},
+{
+  "type": "way",
+  "id": 26973607,
+  "bounds": {
+    "minlat": 43.2971946,
+    "minlon": -1.9693305,
+    "maxlat": 43.2981093,
+    "maxlon": -1.9680755
+  },
+  "geometry": [
+    { "lat": 43.2979957, "lon": -1.9691173 },
+    { "lat": 43.2979283, "lon": -1.9692035 },
+    { "lat": 43.2978496, "lon": -1.9692694 },
+    { "lat": 43.2977629, "lon": -1.9693124 },
+    { "lat": 43.2976717, "lon": -1.9693305 },
+    { "lat": 43.2975797, "lon": -1.9693232 },
+    { "lat": 43.2974907, "lon": -1.9692907 },
+    { "lat": 43.2974651, "lon": -1.9692733 },
+    { "lat": 43.2974081, "lon": -1.9692344 },
+    { "lat": 43.2973355, "lon": -1.9691564 },
+    { "lat": 43.2972757, "lon": -1.9690601 },
+    { "lat": 43.2972312, "lon": -1.9689492 },
+    { "lat": 43.2972038, "lon": -1.9688283 },
+    { "lat": 43.2971946, "lon": -1.9687023 },
+    { "lat": 43.2972039, "lon": -1.9685764 },
+    { "lat": 43.2972314, "lon": -1.9684555 },
+    { "lat": 43.2972881, "lon": -1.9683217 },
+    { "lat": 43.2973669, "lon": -1.9682111 },
+    { "lat": 43.2974631, "lon": -1.9681302 },
+    { "lat": 43.2975706, "lon": -1.9680841 },
+    { "lat": 43.2976832, "lon": -1.9680755 },
+    { "lat": 43.2977938, "lon": -1.9681051 },
+    { "lat": 43.2978958, "lon": -1.9681708 },
+    { "lat": 43.2979831, "lon": -1.9682689 },
+    { "lat": 43.2980502, "lon": -1.9683933 },
+    { "lat": 43.2980932, "lon": -1.9685365 },
+    { "lat": 43.2981093, "lon": -1.9686897 },
+    { "lat": 43.2980977, "lon": -1.9688437 },
+    { "lat": 43.2980591, "lon": -1.9689892 },
+    { "lat": 43.2979957, "lon": -1.9691173 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "2",
+    "addr:postcode": "20014",
+    "addr:street": "Miramon pasealekua",
+    "building": "yes",
+    "capacity:persons": "11000",
+    "leisure": "stadium",
+    "name": "Illunbeko zezen plaza",
+    "name:es": "Plaza de Toros de Illumbe",
+    "name:eu": "Illunbeko zezen plaza",
+    "roof:shape": "dome",
+    "sport": "basketball",
+    "wheelchair": "yes",
+    "wikidata": "Q3324721"
   }
 },
 {
@@ -6012,6 +6459,43 @@
 },
 {
   "type": "way",
+  "id": 38600874,
+  "bounds": {
+    "minlat": 43.3006871,
+    "minlon": -1.9709848,
+    "maxlat": 43.3016070,
+    "maxlon": -1.9696984
+  },
+  "geometry": [
+    { "lat": 43.3010028, "lon": -1.9709848 },
+    { "lat": 43.3010277, "lon": -1.9709415 },
+    { "lat": 43.3010593, "lon": -1.9708836 },
+    { "lat": 43.3011417, "lon": -1.9709685 },
+    { "lat": 43.3013191, "lon": -1.9706434 },
+    { "lat": 43.3016070, "lon": -1.9701118 },
+    { "lat": 43.3012027, "lon": -1.9696984 },
+    { "lat": 43.3010589, "lon": -1.9699639 },
+    { "lat": 43.3008300, "lon": -1.9703865 },
+    { "lat": 43.3006871, "lon": -1.9706502 },
+    { "lat": 43.3007300, "lon": -1.9706941 },
+    { "lat": 43.3007445, "lon": -1.9706674 },
+    { "lat": 43.3009534, "lon": -1.9708811 },
+    { "lat": 43.3009798, "lon": -1.9709081 },
+    { "lat": 43.3009612, "lon": -1.9709424 },
+    { "lat": 43.3010028, "lon": -1.9709848 }
+  ],
+  "tags": {
+    "building": "yes",
+    "leisure": "sports_centre",
+    "name": "Polideportivo Carmelo Balda",
+    "name:etymology:wikidata": "Q12261326",
+    "name:eu": "Karmelo Balda frontoia",
+    "sport": "multi",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "way",
   "id": 38622811,
   "bounds": {
     "minlat": 43.3016258,
@@ -6048,6 +6532,104 @@
     "wheelchair": "limited",
     "wikidata": "Q20493073",
     "wikipedia": "eu:Txuri Urdin izotz jauregia"
+  }
+},
+{
+  "type": "way",
+  "id": 38622827,
+  "bounds": {
+    "minlat": 43.3008089,
+    "minlon": -1.9760711,
+    "maxlat": 43.3011946,
+    "maxlon": -1.9753900
+  },
+  "geometry": [
+    { "lat": 43.3008089, "lon": -1.9755027 },
+    { "lat": 43.3009447, "lon": -1.9760711 },
+    { "lat": 43.3011946, "lon": -1.9759583 },
+    { "lat": 43.3010886, "lon": -1.9755149 },
+    { "lat": 43.3010587, "lon": -1.9753900 },
+    { "lat": 43.3008089, "lon": -1.9755027 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "6",
+    "addr:neighbourhood": "Amara",
+    "addr:postcode": "20014",
+    "addr:street": "Anoeta pasealekua",
+    "building": "yes",
+    "leisure": "sports_centre",
+    "name": "Atano III.a Frontoia",
+    "name:es": "Frontón Atano III",
+    "name:etymology:wikidata": "Q3751698",
+    "name:eu": "Atano III.a Frontoia",
+    "sport": "pelota",
+    "wheelchair": "limited",
+    "wikidata": "Q3752222",
+    "wikipedia": "eu:Atano III.a pilotalekua"
+  }
+},
+{
+  "type": "way",
+  "id": 38622845,
+  "bounds": {
+    "minlat": 43.3009447,
+    "minlon": -1.9769463,
+    "maxlat": 43.3015043,
+    "maxlon": -1.9759234
+  },
+  "geometry": [
+    { "lat": 43.3014626, "lon": -1.9766621 },
+    { "lat": 43.3015043, "lon": -1.9765211 },
+    { "lat": 43.3014374, "lon": -1.9762417 },
+    { "lat": 43.3013703, "lon": -1.9759611 },
+    { "lat": 43.3012685, "lon": -1.9759234 },
+    { "lat": 43.3011946, "lon": -1.9759583 },
+    { "lat": 43.3009447, "lon": -1.9760711 },
+    { "lat": 43.3011620, "lon": -1.9769463 },
+    { "lat": 43.3014272, "lon": -1.9768158 },
+    { "lat": 43.3013959, "lon": -1.9766952 },
+    { "lat": 43.3014626, "lon": -1.9766621 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "8",
+    "addr:postcode": "20014",
+    "addr:street": "Anoeta pasealekua",
+    "building": "yes",
+    "leisure": "sports_centre",
+    "name": "JA Gasca Kiroldegia",
+    "name:es": "Polideportivo JA Gasca",
+    "name:eu": "JA Gasca Kiroldegia",
+    "sport": "basketball",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "way",
+  "id": 38624508,
+  "bounds": {
+    "minlat": 43.3010277,
+    "minlon": -1.9711686,
+    "maxlat": 43.3014376,
+    "maxlon": -1.9706434
+  },
+  "geometry": [
+    { "lat": 43.3014376, "lon": -1.9707655 },
+    { "lat": 43.3012902, "lon": -1.9710357 },
+    { "lat": 43.3012459, "lon": -1.9709901 },
+    { "lat": 43.3011485, "lon": -1.9711686 },
+    { "lat": 43.3010932, "lon": -1.9711117 },
+    { "lat": 43.3011291, "lon": -1.9710459 },
+    { "lat": 43.3010277, "lon": -1.9709415 },
+    { "lat": 43.3010593, "lon": -1.9708836 },
+    { "lat": 43.3011417, "lon": -1.9709685 },
+    { "lat": 43.3013191, "lon": -1.9706434 },
+    { "lat": 43.3014376, "lon": -1.9707655 }
+  ],
+  "tags": {
+    "building": "yes",
+    "leisure": "sports_centre"
   }
 },
 {
@@ -6270,6 +6852,38 @@
     "height": "28",
     "wheelchair": "yes",
     "wikidata": "Q64443051"
+  }
+},
+{
+  "type": "way",
+  "id": 39245360,
+  "bounds": {
+    "minlat": 43.3011461,
+    "minlon": -2.0131695,
+    "maxlat": 43.3017208,
+    "maxlon": -2.0124571
+  },
+  "geometry": [
+    { "lat": 43.3015303, "lon": -2.0131695 },
+    { "lat": 43.3011461, "lon": -2.0128037 },
+    { "lat": 43.3012336, "lon": -2.0126235 },
+    { "lat": 43.3013773, "lon": -2.0124604 },
+    { "lat": 43.3015178, "lon": -2.0124571 },
+    { "lat": 43.3016115, "lon": -2.0125515 },
+    { "lat": 43.3016553, "lon": -2.0126287 },
+    { "lat": 43.3016927, "lon": -2.0126802 },
+    { "lat": 43.3017208, "lon": -2.0128037 },
+    { "lat": 43.3015303, "lon": -2.0131695 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "35",
+    "addr:postcode": "20018",
+    "addr:street": "Portuetxe bidea",
+    "building": "hotel",
+    "name": "Livensa Living",
+    "residential": "university",
+    "website": "https://www.livensaliving.com/alojamientos-donostia-san-sebastian/"
   }
 },
 {
@@ -7335,6 +7949,61 @@
 },
 {
   "type": "way",
+  "id": 51979829,
+  "bounds": {
+    "minlat": 43.3005748,
+    "minlon": -2.0058804,
+    "maxlat": 43.3013034,
+    "maxlon": -2.0051843
+  },
+  "geometry": [
+    { "lat": 43.3013034, "lon": -2.0057659 },
+    { "lat": 43.3006820, "lon": -2.0051843 },
+    { "lat": 43.3006415, "lon": -2.0052221 },
+    { "lat": 43.3005748, "lon": -2.0058180 },
+    { "lat": 43.3007292, "lon": -2.0058642 },
+    { "lat": 43.3009288, "lon": -2.0058804 },
+    { "lat": 43.3011268, "lon": -2.0058433 },
+    { "lat": 43.3013034, "lon": -2.0057659 }
+  ],
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 51979830,
+  "bounds": {
+    "minlat": 43.2997285,
+    "minlon": -2.0057173,
+    "maxlat": 43.3004472,
+    "maxlon": -2.0042852
+  },
+  "geometry": [
+    { "lat": 43.3003955, "lon": -2.0057173 },
+    { "lat": 43.3004472, "lon": -2.0052121 },
+    { "lat": 43.3004105, "lon": -2.0051814 },
+    { "lat": 43.3003720, "lon": -2.0051174 },
+    { "lat": 43.3003507, "lon": -2.0050561 },
+    { "lat": 43.3003415, "lon": -2.0049939 },
+    { "lat": 43.3003399, "lon": -2.0049320 },
+    { "lat": 43.3003510, "lon": -2.0048674 },
+    { "lat": 43.2997292, "lon": -2.0042852 },
+    { "lat": 43.2997285, "lon": -2.0044569 },
+    { "lat": 43.2997559, "lon": -2.0046375 },
+    { "lat": 43.2997951, "lon": -2.0048219 },
+    { "lat": 43.2998752, "lon": -2.0050342 },
+    { "lat": 43.2999751, "lon": -2.0052631 },
+    { "lat": 43.3000812, "lon": -2.0054418 },
+    { "lat": 43.3002375, "lon": -2.0056061 },
+    { "lat": 43.3003955, "lon": -2.0057173 }
+  ],
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
   "id": 52153052,
   "bounds": {
     "minlat": 43.3153942,
@@ -7437,6 +8106,27 @@
 },
 {
   "type": "way",
+  "id": 56128435,
+  "bounds": {
+    "minlat": 43.2982767,
+    "minlon": -1.9897698,
+    "maxlat": 43.2987168,
+    "maxlon": -1.9888378
+  },
+  "geometry": [
+    { "lat": 43.2987168, "lon": -1.9896766 },
+    { "lat": 43.2984130, "lon": -1.9897698 },
+    { "lat": 43.2982767, "lon": -1.9889311 },
+    { "lat": 43.2985804, "lon": -1.9888378 },
+    { "lat": 43.2987168, "lon": -1.9896766 }
+  ],
+  "tags": {
+    "building": "yes",
+    "leisure": "sports_centre"
+  }
+},
+{
+  "type": "way",
   "id": 56132590,
   "bounds": {
     "minlat": 43.3054410,
@@ -7463,6 +8153,153 @@
     "building": "yes",
     "historic": "building",
     "name": "Aieteko Jauregia"
+  }
+},
+{
+  "type": "way",
+  "id": 60738242,
+  "bounds": {
+    "minlat": 43.2853274,
+    "minlon": -2.0005367,
+    "maxlat": 43.2856092,
+    "maxlon": -2.0002184
+  },
+  "geometry": [
+    { "lat": 43.2855064, "lon": -2.0005367 },
+    { "lat": 43.2856092, "lon": -2.0003450 },
+    { "lat": 43.2854814, "lon": -2.0002184 },
+    { "lat": 43.2854446, "lon": -2.0002835 },
+    { "lat": 43.2854222, "lon": -2.0002726 },
+    { "lat": 43.2853287, "lon": -2.0003721 },
+    { "lat": 43.2853405, "lon": -2.0003993 },
+    { "lat": 43.2853274, "lon": -2.0004336 },
+    { "lat": 43.2854472, "lon": -2.0005295 },
+    { "lat": 43.2854590, "lon": -2.0004915 },
+    { "lat": 43.2855064, "lon": -2.0005367 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "46",
+    "addr:postcode": "20018",
+    "addr:street": "Añorga hiribidea",
+    "building": "yes",
+    "name": "Museum Cemento Rezola",
+    "tourism": "museum",
+    "website": "http://museumcementorezola.org/",
+    "wikidata": "Q9047156",
+    "wikipedia": "eu:Museum Cement Rezola"
+  }
+},
+{
+  "type": "way",
+  "id": 60738252,
+  "bounds": {
+    "minlat": 43.2856887,
+    "minlon": -2.0002753,
+    "maxlat": 43.2859679,
+    "maxlon": -1.9998877
+  },
+  "geometry": [
+    { "lat": 43.2858764, "lon": -2.0002753 },
+    { "lat": 43.2859679, "lon": -2.0001062 },
+    { "lat": 43.2857538, "lon": -1.9998877 },
+    { "lat": 43.2856887, "lon": -2.0000082 },
+    { "lat": 43.2857060, "lon": -2.0000229 },
+    { "lat": 43.2857906, "lon": -2.0001092 },
+    { "lat": 43.2857642, "lon": -2.0001567 },
+    { "lat": 43.2858764, "lon": -2.0002753 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "42",
+    "addr:postcode": "20018",
+    "addr:street": "Añorga hiribidea",
+    "amenity": "place_of_worship",
+    "building": "church",
+    "denomination": "catholic",
+    "name": "Eliza",
+    "religion": "christian"
+  }
+},
+{
+  "type": "way",
+  "id": 60740555,
+  "bounds": {
+    "minlat": 43.2961965,
+    "minlon": -2.0142891,
+    "maxlat": 43.2962727,
+    "maxlon": -2.0141734
+  },
+  "geometry": [
+    { "lat": 43.2962727, "lon": -2.0142559 },
+    { "lat": 43.2962368, "lon": -2.0141734 },
+    { "lat": 43.2961965, "lon": -2.0142065 },
+    { "lat": 43.2962325, "lon": -2.0142891 },
+    { "lat": 43.2962727, "lon": -2.0142559 }
+  ],
+  "tags": {
+    "amenity": "place_of_worship",
+    "denomination": "catholic",
+    "name": "Aingeru Zaindariaren ermita",
+    "religion": "christian",
+    "source": "B5M"
+  }
+},
+{
+  "type": "way",
+  "id": 61564666,
+  "bounds": {
+    "minlat": 43.2913754,
+    "minlon": -1.9807267,
+    "maxlat": 43.2917127,
+    "maxlon": -1.9796070
+  },
+  "geometry": [
+    { "lat": 43.2916733, "lon": -1.9807267 },
+    { "lat": 43.2917127, "lon": -1.9796070 },
+    { "lat": 43.2915824, "lon": -1.9796841 },
+    { "lat": 43.2913754, "lon": -1.9798066 },
+    { "lat": 43.2914739, "lon": -1.9801347 },
+    { "lat": 43.2915379, "lon": -1.9800941 },
+    { "lat": 43.2915158, "lon": -1.9806320 },
+    { "lat": 43.2915410, "lon": -1.9806471 },
+    { "lat": 43.2916059, "lon": -1.9806862 },
+    { "lat": 43.2916733, "lon": -1.9807267 }
+  ],
+  "tags": {
+    "building": "public",
+    "name": "Aldundiaren bulegoak",
+    "source": "B5M"
+  }
+},
+{
+  "type": "way",
+  "id": 61564667,
+  "bounds": {
+    "minlat": 43.2911341,
+    "minlon": -1.9802768,
+    "maxlat": 43.2914739,
+    "maxlon": -1.9798066
+  },
+  "geometry": [
+    { "lat": 43.2914739, "lon": -1.9801347 },
+    { "lat": 43.2912351, "lon": -1.9802768 },
+    { "lat": 43.2911341, "lon": -1.9799588 },
+    { "lat": 43.2913754, "lon": -1.9798066 },
+    { "lat": 43.2914739, "lon": -1.9801347 }
+  ],
+  "tags": {
+    "addr:housenumber": "164",
+    "addr:street": "Miramon pasealekua",
+    "building": "public",
+    "check_date": "2025-02-18",
+    "email": "idazkaritza@bngipuzkoa.eus",
+    "name": "Gipuzkoako Batzar Nagusiak",
+    "name:es": "Juntas Generales de Gipuzkoa",
+    "name:eu": "Gipuzkoako Batzar Nagusiak",
+    "phone": "+34 943 24 49 00",
+    "source": "B5M",
+    "website": "https://www.bngipuzkoa.eus"
   }
 },
 {
@@ -8535,6 +9372,32 @@
 },
 {
   "type": "way",
+  "id": 168491972,
+  "bounds": {
+    "minlat": 43.2841845,
+    "minlon": -2.0073002,
+    "maxlat": 43.2844200,
+    "maxlon": -2.0069547
+  },
+  "geometry": [
+    { "lat": 43.2843607, "lon": -2.0073002 },
+    { "lat": 43.2844200, "lon": -2.0070268 },
+    { "lat": 43.2842438, "lon": -2.0069547 },
+    { "lat": 43.2841845, "lon": -2.0072281 },
+    { "lat": 43.2843607, "lon": -2.0073002 }
+  ],
+  "tags": {
+    "addr:housenumber": "142",
+    "addr:street": "Errotazar bidea",
+    "building": "yes",
+    "name": "Unanue",
+    "phone": "+34843931931",
+    "tourism": "hotel",
+    "website": "https://hotelunanue.com/"
+  }
+},
+{
+  "type": "way",
   "id": 169043936,
   "bounds": {
     "minlat": 43.3098790,
@@ -8598,6 +9461,101 @@
   "tags": {
     "leisure": "park",
     "name": "Koldo Mitxelena parkea"
+  }
+},
+{
+  "type": "way",
+  "id": 169272144,
+  "bounds": {
+    "minlat": 43.2996159,
+    "minlon": -2.0149872,
+    "maxlat": 43.3002086,
+    "maxlon": -2.0138321
+  },
+  "geometry": [
+    { "lat": 43.3002086, "lon": -2.0145885 },
+    { "lat": 43.3001773, "lon": -2.0147360 },
+    { "lat": 43.3000368, "lon": -2.0149184 },
+    { "lat": 43.2999526, "lon": -2.0149872 },
+    { "lat": 43.2996567, "lon": -2.0149843 },
+    { "lat": 43.2997044, "lon": -2.0147394 },
+    { "lat": 43.2997257, "lon": -2.0144792 },
+    { "lat": 43.2996971, "lon": -2.0141803 },
+    { "lat": 43.2996159, "lon": -2.0141538 },
+    { "lat": 43.2996668, "lon": -2.0138591 },
+    { "lat": 43.2998475, "lon": -2.0139181 },
+    { "lat": 43.3000836, "lon": -2.0138321 },
+    { "lat": 43.3001842, "lon": -2.0138721 },
+    { "lat": 43.3001901, "lon": -2.0140918 },
+    { "lat": 43.3001969, "lon": -2.0143471 },
+    { "lat": 43.3002086, "lon": -2.0145885 }
+  ],
+  "tags": {
+    "leisure": "sports_centre",
+    "name": "Trinkete Ibaeta",
+    "phone": "+34943213644",
+    "sport": "tennis;pelota",
+    "website": "http://www.trinketeibaeta.com"
+  }
+},
+{
+  "type": "way",
+  "id": 170662564,
+  "bounds": {
+    "minlat": 43.2983190,
+    "minlon": -2.0067779,
+    "maxlat": 43.3003276,
+    "maxlon": -2.0010192
+  },
+  "geometry": [
+    { "lat": 43.3003276, "lon": -2.0062843 },
+    { "lat": 43.3002652, "lon": -2.0064024 },
+    { "lat": 43.3002125, "lon": -2.0064721 },
+    { "lat": 43.3001422, "lon": -2.0065231 },
+    { "lat": 43.2995215, "lon": -2.0066840 },
+    { "lat": 43.2991135, "lon": -2.0067779 },
+    { "lat": 43.2991564, "lon": -2.0061824 },
+    { "lat": 43.2991623, "lon": -2.0056303 },
+    { "lat": 43.2991525, "lon": -2.0052249 },
+    { "lat": 43.2991271, "lon": -2.0050000 },
+    { "lat": 43.2990842, "lon": -2.0045708 },
+    { "lat": 43.2990139, "lon": -2.0040934 },
+    { "lat": 43.2989280, "lon": -2.0037420 },
+    { "lat": 43.2987719, "lon": -2.0032213 },
+    { "lat": 43.2986313, "lon": -2.0028270 },
+    { "lat": 43.2984205, "lon": -2.0023442 },
+    { "lat": 43.2983190, "lon": -2.0021511 },
+    { "lat": 43.2988402, "lon": -2.0010192 },
+    { "lat": 43.2990647, "lon": -2.0011510 },
+    { "lat": 43.2993399, "lon": -2.0013705 },
+    { "lat": 43.2996464, "lon": -2.0016870 },
+    { "lat": 43.2995390, "lon": -2.0019338 },
+    { "lat": 43.2995136, "lon": -2.0019901 },
+    { "lat": 43.2998065, "lon": -2.0022691 },
+    { "lat": 43.2997245, "lon": -2.0024273 },
+    { "lat": 43.2995820, "lon": -2.0025105 },
+    { "lat": 43.2994414, "lon": -2.0025319 },
+    { "lat": 43.2993711, "lon": -2.0026772 },
+    { "lat": 43.2992228, "lon": -2.0027760 },
+    { "lat": 43.2991779, "lon": -2.0028055 },
+    { "lat": 43.2990295, "lon": -2.0031761 },
+    { "lat": 43.2992579, "lon": -2.0033929 },
+    { "lat": 43.2991603, "lon": -2.0035994 },
+    { "lat": 43.2991837, "lon": -2.0037094 },
+    { "lat": 43.2994375, "lon": -2.0039562 },
+    { "lat": 43.2994082, "lon": -2.0042432 },
+    { "lat": 43.2994102, "lon": -2.0045919 },
+    { "lat": 43.2994531, "lon": -2.0048655 },
+    { "lat": 43.2995410, "lon": -2.0051820 },
+    { "lat": 43.2996444, "lon": -2.0054260 },
+    { "lat": 43.2997694, "lon": -2.0056540 },
+    { "lat": 43.2998865, "lon": -2.0058422 },
+    { "lat": 43.3000212, "lon": -2.0059763 },
+    { "lat": 43.3001832, "lon": -2.0061610 },
+    { "lat": 43.3003276, "lon": -2.0062843 }
+  ],
+  "tags": {
+    "leisure": "park"
   }
 },
 {
@@ -10087,6 +11045,34 @@
   ],
   "tags": {
     "man_made": "pier"
+  }
+},
+{
+  "type": "way",
+  "id": 182198796,
+  "bounds": {
+    "minlat": 43.3003482,
+    "minlon": -1.9822473,
+    "maxlat": 43.3006091,
+    "maxlon": -1.9819436
+  },
+  "geometry": [
+    { "lat": 43.3006057, "lon": -1.9820547 },
+    { "lat": 43.3005795, "lon": -1.9821393 },
+    { "lat": 43.3004109, "lon": -1.9822379 },
+    { "lat": 43.3003756, "lon": -1.9822473 },
+    { "lat": 43.3003585, "lon": -1.9822363 },
+    { "lat": 43.3003482, "lon": -1.9821956 },
+    { "lat": 43.3003482, "lon": -1.9821565 },
+    { "lat": 43.3005157, "lon": -1.9819561 },
+    { "lat": 43.3005362, "lon": -1.9819467 },
+    { "lat": 43.3005647, "lon": -1.9819436 },
+    { "lat": 43.3006000, "lon": -1.9819718 },
+    { "lat": 43.3006091, "lon": -1.9820125 },
+    { "lat": 43.3006057, "lon": -1.9820547 }
+  ],
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -13909,6 +14895,30 @@
 },
 {
   "type": "way",
+  "id": 200076855,
+  "bounds": {
+    "minlat": 43.3004679,
+    "minlon": -1.9807042,
+    "maxlat": 43.3009930,
+    "maxlon": -1.9800203
+  },
+  "geometry": [
+    { "lat": 43.3006846, "lon": -1.9807042 },
+    { "lat": 43.3004679, "lon": -1.9802858 },
+    { "lat": 43.3005069, "lon": -1.9802536 },
+    { "lat": 43.3005304, "lon": -1.9802992 },
+    { "lat": 43.3007900, "lon": -1.9800927 },
+    { "lat": 43.3007646, "lon": -1.9800444 },
+    { "lat": 43.3007978, "lon": -1.9800203 },
+    { "lat": 43.3009930, "lon": -1.9804065 },
+    { "lat": 43.3006846, "lon": -1.9807042 }
+  ],
+  "tags": {
+    "leisure": "park"
+  }
+},
+{
+  "type": "way",
   "id": 202156963,
   "bounds": {
     "minlat": 43.3024972,
@@ -14029,6 +15039,39 @@
 },
 {
   "type": "way",
+  "id": 203387407,
+  "bounds": {
+    "minlat": 43.3006360,
+    "minlon": -2.0144234,
+    "maxlat": 43.3012749,
+    "maxlon": -2.0134151
+  },
+  "geometry": [
+    { "lat": 43.3012749, "lon": -2.0137545 },
+    { "lat": 43.3009081, "lon": -2.0135146 },
+    { "lat": 43.3009168, "lon": -2.0134800 },
+    { "lat": 43.3009154, "lon": -2.0134457 },
+    { "lat": 43.3008998, "lon": -2.0134228 },
+    { "lat": 43.3008735, "lon": -2.0134151 },
+    { "lat": 43.3008513, "lon": -2.0134195 },
+    { "lat": 43.3008326, "lon": -2.0134488 },
+    { "lat": 43.3007614, "lon": -2.0136520 },
+    { "lat": 43.3008022, "lon": -2.0136770 },
+    { "lat": 43.3006360, "lon": -2.0141570 },
+    { "lat": 43.3010432, "lon": -2.0144234 },
+    { "lat": 43.3012749, "lon": -2.0137545 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "41",
+    "addr:postcode": "20018",
+    "addr:street": "Portuetxe bidea",
+    "building": "hotel",
+    "name": "StepHouse"
+  }
+},
+{
+  "type": "way",
   "id": 205939794,
   "bounds": {
     "minlat": 43.3247636,
@@ -14067,6 +15110,44 @@
   ],
   "tags": {
     "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 212856238,
+  "bounds": {
+    "minlat": 43.2936087,
+    "minlon": -1.9767841,
+    "maxlat": 43.2940285,
+    "maxlon": -1.9762322
+  },
+  "geometry": [
+    { "lat": 43.2937550, "lon": -1.9767525 },
+    { "lat": 43.2938208, "lon": -1.9767089 },
+    { "lat": 43.2938682, "lon": -1.9766722 },
+    { "lat": 43.2939258, "lon": -1.9766203 },
+    { "lat": 43.2939615, "lon": -1.9765773 },
+    { "lat": 43.2939923, "lon": -1.9765352 },
+    { "lat": 43.2940261, "lon": -1.9764657 },
+    { "lat": 43.2940285, "lon": -1.9764220 },
+    { "lat": 43.2940222, "lon": -1.9763740 },
+    { "lat": 43.2940071, "lon": -1.9763339 },
+    { "lat": 43.2939881, "lon": -1.9762972 },
+    { "lat": 43.2939598, "lon": -1.9762713 },
+    { "lat": 43.2939259, "lon": -1.9762506 },
+    { "lat": 43.2938765, "lon": -1.9762322 },
+    { "lat": 43.2938404, "lon": -1.9762353 },
+    { "lat": 43.2938114, "lon": -1.9762666 },
+    { "lat": 43.2937936, "lon": -1.9763151 },
+    { "lat": 43.2937788, "lon": -1.9763855 },
+    { "lat": 43.2937607, "lon": -1.9764443 },
+    { "lat": 43.2937216, "lon": -1.9765406 },
+    { "lat": 43.2936087, "lon": -1.9767841 },
+    { "lat": 43.2937550, "lon": -1.9767525 }
+  ],
+  "tags": {
+    "leisure": "park",
+    "surface": "concrete"
   }
 },
 {
@@ -14295,6 +15376,34 @@
 },
 {
   "type": "way",
+  "id": 224697547,
+  "bounds": {
+    "minlat": 43.2883000,
+    "minlon": -2.0189844,
+    "maxlat": 43.2894050,
+    "maxlon": -2.0176647
+  },
+  "geometry": [
+    { "lat": 43.2886679, "lon": -2.0182614 },
+    { "lat": 43.2887571, "lon": -2.0181378 },
+    { "lat": 43.2887974, "lon": -2.0180140 },
+    { "lat": 43.2888779, "lon": -2.0179115 },
+    { "lat": 43.2894050, "lon": -2.0176647 },
+    { "lat": 43.2891844, "lon": -2.0181263 },
+    { "lat": 43.2889931, "lon": -2.0184482 },
+    { "lat": 43.2887842, "lon": -2.0187003 },
+    { "lat": 43.2885167, "lon": -2.0188746 },
+    { "lat": 43.2883000, "lon": -2.0189844 },
+    { "lat": 43.2884766, "lon": -2.0184637 },
+    { "lat": 43.2884852, "lon": -2.0183980 },
+    { "lat": 43.2886679, "lon": -2.0182614 }
+  ],
+  "tags": {
+    "natural": "bare_rock"
+  }
+},
+{
+  "type": "way",
   "id": 230521891,
   "bounds": {
     "minlat": 43.3249635,
@@ -14422,6 +15531,113 @@
   ],
   "tags": {
     "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 239775712,
+  "bounds": {
+    "minlat": 43.2987997,
+    "minlon": -1.9946137,
+    "maxlat": 43.2989715,
+    "maxlon": -1.9944822
+  },
+  "geometry": [
+    { "lat": 43.2988505, "lon": -1.9946137 },
+    { "lat": 43.2987997, "lon": -1.9945654 },
+    { "lat": 43.2987997, "lon": -1.9945386 },
+    { "lat": 43.2988505, "lon": -1.9944876 },
+    { "lat": 43.2989559, "lon": -1.9944822 },
+    { "lat": 43.2989715, "lon": -1.9945278 },
+    { "lat": 43.2989598, "lon": -1.9945949 },
+    { "lat": 43.2989110, "lon": -1.9945868 },
+    { "lat": 43.2988505, "lon": -1.9946137 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 239776989,
+  "bounds": {
+    "minlat": 43.2983857,
+    "minlon": -1.9871777,
+    "maxlat": 43.2985496,
+    "maxlon": -1.9870605
+  },
+  "geometry": [
+    { "lat": 43.2985376, "lon": -1.9871777 },
+    { "lat": 43.2983857, "lon": -1.9871144 },
+    { "lat": 43.2983976, "lon": -1.9870605 },
+    { "lat": 43.2985496, "lon": -1.9871238 },
+    { "lat": 43.2985376, "lon": -1.9871777 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 241192255,
+  "bounds": {
+    "minlat": 43.2994754,
+    "minlon": -1.9723109,
+    "maxlat": 43.3000779,
+    "maxlon": -1.9716605
+  },
+  "geometry": [
+    { "lat": 43.3000260, "lon": -1.9723109 },
+    { "lat": 43.3000325, "lon": -1.9722994 },
+    { "lat": 43.3000420, "lon": -1.9722824 },
+    { "lat": 43.3000543, "lon": -1.9722603 },
+    { "lat": 43.3000779, "lon": -1.9722178 },
+    { "lat": 43.2995315, "lon": -1.9716605 },
+    { "lat": 43.2994943, "lon": -1.9717183 },
+    { "lat": 43.2994901, "lon": -1.9717264 },
+    { "lat": 43.2994815, "lon": -1.9717430 },
+    { "lat": 43.2994754, "lon": -1.9717546 },
+    { "lat": 43.2995582, "lon": -1.9718786 },
+    { "lat": 43.2996441, "lon": -1.9719760 },
+    { "lat": 43.2997304, "lon": -1.9720713 },
+    { "lat": 43.2998235, "lon": -1.9721588 },
+    { "lat": 43.2999213, "lon": -1.9722392 },
+    { "lat": 43.3000260, "lon": -1.9723109 }
+  ],
+  "tags": {
+    "building": "yes",
+    "height": "9",
+    "leisure": "sports_centre",
+    "sport": "athletics"
+  }
+},
+{
+  "type": "way",
+  "id": 241391468,
+  "bounds": {
+    "minlat": 43.3002579,
+    "minlon": -1.9703865,
+    "maxlat": 43.3010589,
+    "maxlon": -1.9693497
+  },
+  "geometry": [
+    { "lat": 43.3006149, "lon": -1.9703344 },
+    { "lat": 43.3006709, "lon": -1.9702315 },
+    { "lat": 43.3007406, "lon": -1.9702994 },
+    { "lat": 43.3008300, "lon": -1.9703865 },
+    { "lat": 43.3010589, "lon": -1.9699639 },
+    { "lat": 43.3004574, "lon": -1.9693497 },
+    { "lat": 43.3002579, "lon": -1.9697169 },
+    { "lat": 43.3004406, "lon": -1.9699044 },
+    { "lat": 43.3003530, "lon": -1.9700656 },
+    { "lat": 43.3006149, "lon": -1.9703344 }
+  ],
+  "tags": {
+    "building": "yes",
+    "leisure": "sports_centre",
+    "name": "Piscinas Paco Yoldi",
+    "sport": "swimming",
+    "wheelchair": "limited"
   }
 },
 {
@@ -15166,6 +16382,30 @@
 },
 {
   "type": "way",
+  "id": 293867483,
+  "bounds": {
+    "minlat": 43.3008878,
+    "minlon": -2.0056452,
+    "maxlat": 43.3009834,
+    "maxlon": -2.0054530
+  },
+  "geometry": [
+    { "lat": 43.3008878, "lon": -2.0054614 },
+    { "lat": 43.3009104, "lon": -2.0056452 },
+    { "lat": 43.3009834, "lon": -2.0056282 },
+    { "lat": 43.3009731, "lon": -2.0055448 },
+    { "lat": 43.3009622, "lon": -2.0055311 },
+    { "lat": 43.3009409, "lon": -2.0055530 },
+    { "lat": 43.3009285, "lon": -2.0054530 },
+    { "lat": 43.3008878, "lon": -2.0054614 }
+  ],
+  "tags": {
+    "access": "yes",
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
   "id": 302037687,
   "bounds": {
     "minlat": 43.3204930,
@@ -15216,6 +16456,34 @@
     "area": "yes",
     "man_made": "breakwater",
     "name": "Antiguo Colector de Tximistarri"
+  }
+},
+{
+  "type": "way",
+  "id": 324488085,
+  "bounds": {
+    "minlat": 43.3015372,
+    "minlon": -2.0179831,
+    "maxlat": 43.3019867,
+    "maxlon": -2.0168709
+  },
+  "geometry": [
+    { "lat": 43.3017213, "lon": -2.0179831 },
+    { "lat": 43.3015481, "lon": -2.0178968 },
+    { "lat": 43.3015372, "lon": -2.0178914 },
+    { "lat": 43.3018083, "lon": -2.0168709 },
+    { "lat": 43.3019867, "lon": -2.0170626 },
+    { "lat": 43.3017213, "lon": -2.0179831 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:postcode": "20018",
+    "addr:street": "Plaza de Jorge Oteiza",
+    "addr:street:es": "Plaza de Jorge Oteiza",
+    "leisure": "park",
+    "name": "Jorge Oteiza plaza",
+    "name:es": "Plaza de Jorge Oteiza",
+    "name:eu": "Jorge Oteiza plaza"
   }
 },
 {
@@ -15506,6 +16774,53 @@
     "toilets:wheelchair": "yes",
     "wheelchair": "yes",
     "wikidata": "Q3930165"
+  }
+},
+{
+  "type": "way",
+  "id": 357208473,
+  "bounds": {
+    "minlat": 43.3011357,
+    "minlon": -1.9889671,
+    "maxlat": 43.3013854,
+    "maxlon": -1.9884935
+  },
+  "geometry": [
+    { "lat": 43.3012781, "lon": -1.9889671 },
+    { "lat": 43.3013727, "lon": -1.9889290 },
+    { "lat": 43.3013854, "lon": -1.9888998 },
+    { "lat": 43.3013847, "lon": -1.9888712 },
+    { "lat": 43.3013737, "lon": -1.9888492 },
+    { "lat": 43.3013657, "lon": -1.9888400 },
+    { "lat": 43.3013068, "lon": -1.9887624 },
+    { "lat": 43.3012915, "lon": -1.9887422 },
+    { "lat": 43.3012829, "lon": -1.9887219 },
+    { "lat": 43.3012786, "lon": -1.9886874 },
+    { "lat": 43.3012817, "lon": -1.9886292 },
+    { "lat": 43.3012878, "lon": -1.9885845 },
+    { "lat": 43.3012884, "lon": -1.9885593 },
+    { "lat": 43.3012860, "lon": -1.9885382 },
+    { "lat": 43.3012780, "lon": -1.9885196 },
+    { "lat": 43.3012651, "lon": -1.9885078 },
+    { "lat": 43.3012461, "lon": -1.9884935 },
+    { "lat": 43.3012136, "lon": -1.9884969 },
+    { "lat": 43.3011872, "lon": -1.9885146 },
+    { "lat": 43.3011443, "lon": -1.9885812 },
+    { "lat": 43.3011357, "lon": -1.9886098 },
+    { "lat": 43.3011375, "lon": -1.9886537 },
+    { "lat": 43.3011528, "lon": -1.9886983 },
+    { "lat": 43.3011829, "lon": -1.9887388 },
+    { "lat": 43.3012105, "lon": -1.9887574 },
+    { "lat": 43.3012203, "lon": -1.9887776 },
+    { "lat": 43.3012203, "lon": -1.9888172 },
+    { "lat": 43.3012173, "lon": -1.9888551 },
+    { "lat": 43.3012357, "lon": -1.9888889 },
+    { "lat": 43.3012516, "lon": -1.9889302 },
+    { "lat": 43.3012639, "lon": -1.9889597 },
+    { "lat": 43.3012781, "lon": -1.9889671 }
+  ],
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -15889,6 +17204,50 @@
 },
 {
   "type": "way",
+  "id": 411143057,
+  "bounds": {
+    "minlat": 43.2918552,
+    "minlon": -2.0059035,
+    "maxlat": 43.2923572,
+    "maxlon": -2.0038633
+  },
+  "geometry": [
+    { "lat": 43.2920759, "lon": -2.0059035 },
+    { "lat": 43.2921598, "lon": -2.0057533 },
+    { "lat": 43.2922400, "lon": -2.0055746 },
+    { "lat": 43.2923004, "lon": -2.0053778 },
+    { "lat": 43.2923375, "lon": -2.0051954 },
+    { "lat": 43.2923494, "lon": -2.0050650 },
+    { "lat": 43.2923572, "lon": -2.0049469 },
+    { "lat": 43.2923511, "lon": -2.0047207 },
+    { "lat": 43.2923179, "lon": -2.0045007 },
+    { "lat": 43.2922596, "lon": -2.0042952 },
+    { "lat": 43.2921949, "lon": -2.0041360 },
+    { "lat": 43.2921149, "lon": -2.0039938 },
+    { "lat": 43.2920331, "lon": -2.0038633 },
+    { "lat": 43.2919568, "lon": -2.0041172 },
+    { "lat": 43.2919080, "lon": -2.0043237 },
+    { "lat": 43.2918670, "lon": -2.0045463 },
+    { "lat": 43.2918552, "lon": -2.0046456 },
+    { "lat": 43.2918709, "lon": -2.0047046 },
+    { "lat": 43.2919314, "lon": -2.0047877 },
+    { "lat": 43.2919743, "lon": -2.0048146 },
+    { "lat": 43.2919724, "lon": -2.0049648 },
+    { "lat": 43.2919411, "lon": -2.0049809 },
+    { "lat": 43.2919041, "lon": -2.0050318 },
+    { "lat": 43.2918650, "lon": -2.0050855 },
+    { "lat": 43.2918572, "lon": -2.0051633 },
+    { "lat": 43.2918826, "lon": -2.0053027 },
+    { "lat": 43.2919626, "lon": -2.0056165 },
+    { "lat": 43.2920759, "lon": -2.0059035 }
+  ],
+  "tags": {
+    "leisure": "park",
+    "name": "Markotegi"
+  }
+},
+{
+  "type": "way",
   "id": 417178149,
   "bounds": {
     "minlat": 43.3316650,
@@ -15923,6 +17282,41 @@
     "name": "Uliako Dorrea",
     "name:es": "Torre de Ulia",
     "name:eu": "Uliako Dorrea"
+  }
+},
+{
+  "type": "way",
+  "id": 430800805,
+  "bounds": {
+    "minlat": 43.2906412,
+    "minlon": -1.9815837,
+    "maxlat": 43.2914851,
+    "maxlon": -1.9808733
+  },
+  "geometry": [
+    { "lat": 43.2914851, "lon": -1.9813062 },
+    { "lat": 43.2908807, "lon": -1.9808733 },
+    { "lat": 43.2906412, "lon": -1.9815045 },
+    { "lat": 43.2907518, "lon": -1.9815837 },
+    { "lat": 43.2907804, "lon": -1.9815085 },
+    { "lat": 43.2912591, "lon": -1.9814263 },
+    { "lat": 43.2912969, "lon": -1.9814471 },
+    { "lat": 43.2913236, "lon": -1.9813768 },
+    { "lat": 43.2914295, "lon": -1.9814527 },
+    { "lat": 43.2914851, "lon": -1.9813062 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "162",
+    "addr:postcode": "20014",
+    "addr:street": "Miramon pasealekua",
+    "building": "yes",
+    "check_date": "2022-11-30",
+    "internet_access": "yes",
+    "name": "Hotel Arima",
+    "phone": "+34943569136",
+    "tourism": "hotel",
+    "website": "https://arimahotel.com/"
   }
 },
 {
@@ -17213,6 +18607,39 @@
 },
 {
   "type": "way",
+  "id": 468707595,
+  "bounds": {
+    "minlat": 43.2926244,
+    "minlon": -1.9883231,
+    "maxlat": 43.2930770,
+    "maxlon": -1.9880587
+  },
+  "geometry": [
+    { "lat": 43.2930239, "lon": -1.9882588 },
+    { "lat": 43.2929944, "lon": -1.9882656 },
+    { "lat": 43.2929500, "lon": -1.9882532 },
+    { "lat": 43.2928809, "lon": -1.9881961 },
+    { "lat": 43.2928347, "lon": -1.9882050 },
+    { "lat": 43.2927920, "lon": -1.9882390 },
+    { "lat": 43.2927677, "lon": -1.9882891 },
+    { "lat": 43.2927395, "lon": -1.9883231 },
+    { "lat": 43.2926873, "lon": -1.9883106 },
+    { "lat": 43.2926446, "lon": -1.9882748 },
+    { "lat": 43.2926351, "lon": -1.9881827 },
+    { "lat": 43.2926244, "lon": -1.9881228 },
+    { "lat": 43.2928446, "lon": -1.9880587 },
+    { "lat": 43.2929788, "lon": -1.9880644 },
+    { "lat": 43.2930770, "lon": -1.9880765 },
+    { "lat": 43.2930239, "lon": -1.9882588 }
+  ],
+  "tags": {
+    "name": "Estanque Miramón",
+    "natural": "water",
+    "water": "pond"
+  }
+},
+{
+  "type": "way",
   "id": 479115281,
   "bounds": {
     "minlat": 43.3026563,
@@ -17291,6 +18718,83 @@
 },
 {
   "type": "way",
+  "id": 523489165,
+  "bounds": {
+    "minlat": 43.2832573,
+    "minlon": -1.9689321,
+    "maxlat": 43.2842554,
+    "maxlon": -1.9672991
+  },
+  "geometry": [
+    { "lat": 43.2837529, "lon": -1.9686979 },
+    { "lat": 43.2837193, "lon": -1.9687472 },
+    { "lat": 43.2836834, "lon": -1.9687811 },
+    { "lat": 43.2836722, "lon": -1.9688335 },
+    { "lat": 43.2836116, "lon": -1.9688427 },
+    { "lat": 43.2835466, "lon": -1.9688520 },
+    { "lat": 43.2834883, "lon": -1.9689321 },
+    { "lat": 43.2834300, "lon": -1.9689167 },
+    { "lat": 43.2833246, "lon": -1.9689321 },
+    { "lat": 43.2832752, "lon": -1.9689074 },
+    { "lat": 43.2832573, "lon": -1.9688366 },
+    { "lat": 43.2833066, "lon": -1.9687195 },
+    { "lat": 43.2833874, "lon": -1.9685315 },
+    { "lat": 43.2834905, "lon": -1.9684114 },
+    { "lat": 43.2835892, "lon": -1.9684052 },
+    { "lat": 43.2836430, "lon": -1.9683405 },
+    { "lat": 43.2836587, "lon": -1.9682142 },
+    { "lat": 43.2837978, "lon": -1.9681002 },
+    { "lat": 43.2838942, "lon": -1.9680016 },
+    { "lat": 43.2838987, "lon": -1.9678876 },
+    { "lat": 43.2839032, "lon": -1.9678229 },
+    { "lat": 43.2838947, "lon": -1.9677955 },
+    { "lat": 43.2838830, "lon": -1.9677582 },
+    { "lat": 43.2837933, "lon": -1.9677397 },
+    { "lat": 43.2837081, "lon": -1.9677828 },
+    { "lat": 43.2836565, "lon": -1.9677705 },
+    { "lat": 43.2836430, "lon": -1.9676873 },
+    { "lat": 43.2836767, "lon": -1.9675949 },
+    { "lat": 43.2837215, "lon": -1.9674409 },
+    { "lat": 43.2838090, "lon": -1.9673823 },
+    { "lat": 43.2838718, "lon": -1.9673022 },
+    { "lat": 43.2839256, "lon": -1.9672991 },
+    { "lat": 43.2839862, "lon": -1.9673361 },
+    { "lat": 43.2840131, "lon": -1.9674193 },
+    { "lat": 43.2840154, "lon": -1.9675795 },
+    { "lat": 43.2840154, "lon": -1.9676596 },
+    { "lat": 43.2839772, "lon": -1.9677120 },
+    { "lat": 43.2839886, "lon": -1.9677495 },
+    { "lat": 43.2839997, "lon": -1.9677859 },
+    { "lat": 43.2840311, "lon": -1.9678260 },
+    { "lat": 43.2840423, "lon": -1.9679061 },
+    { "lat": 43.2840894, "lon": -1.9679800 },
+    { "lat": 43.2841185, "lon": -1.9680078 },
+    { "lat": 43.2841365, "lon": -1.9679677 },
+    { "lat": 43.2841813, "lon": -1.9679831 },
+    { "lat": 43.2842015, "lon": -1.9680139 },
+    { "lat": 43.2842464, "lon": -1.9680447 },
+    { "lat": 43.2842554, "lon": -1.9681279 },
+    { "lat": 43.2842284, "lon": -1.9681772 },
+    { "lat": 43.2841791, "lon": -1.9681803 },
+    { "lat": 43.2841298, "lon": -1.9681433 },
+    { "lat": 43.2840535, "lon": -1.9681803 },
+    { "lat": 43.2839840, "lon": -1.9681988 },
+    { "lat": 43.2839279, "lon": -1.9682111 },
+    { "lat": 43.2838718, "lon": -1.9682851 },
+    { "lat": 43.2838113, "lon": -1.9683097 },
+    { "lat": 43.2837440, "lon": -1.9683528 },
+    { "lat": 43.2836744, "lon": -1.9683960 },
+    { "lat": 43.2836543, "lon": -1.9684946 },
+    { "lat": 43.2836879, "lon": -1.9685993 },
+    { "lat": 43.2837395, "lon": -1.9686394 },
+    { "lat": 43.2837529, "lon": -1.9686979 }
+  ],
+  "tags": {
+    "natural": "water"
+  }
+},
+{
+  "type": "way",
   "id": 526419091,
   "bounds": {
     "minlat": 43.3258887,
@@ -17316,6 +18820,30 @@
   ],
   "tags": {
     "place": "square"
+  }
+},
+{
+  "type": "way",
+  "id": 530893778,
+  "bounds": {
+    "minlat": 43.2896523,
+    "minlon": -1.9842125,
+    "maxlat": 43.2898615,
+    "maxlon": -1.9838026
+  },
+  "geometry": [
+    { "lat": 43.2898615, "lon": -1.9841170 },
+    { "lat": 43.2897890, "lon": -1.9840365 },
+    { "lat": 43.2898501, "lon": -1.9839324 },
+    { "lat": 43.2897331, "lon": -1.9838026 },
+    { "lat": 43.2896523, "lon": -1.9839403 },
+    { "lat": 43.2897627, "lon": -1.9840627 },
+    { "lat": 43.2897263, "lon": -1.9841247 },
+    { "lat": 43.2898054, "lon": -1.9842125 },
+    { "lat": 43.2898615, "lon": -1.9841170 }
+  ],
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -17351,6 +18879,159 @@
   ],
   "tags": {
     "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 548398866,
+  "bounds": {
+    "minlat": 43.2996862,
+    "minlon": -1.9997684,
+    "maxlat": 43.2998014,
+    "maxlon": -1.9996198
+  },
+  "geometry": [
+    { "lat": 43.2997639, "lon": -1.9997684 },
+    { "lat": 43.2998014, "lon": -1.9996891 },
+    { "lat": 43.2997237, "lon": -1.9996198 },
+    { "lat": 43.2996862, "lon": -1.9996990 },
+    { "lat": 43.2997639, "lon": -1.9997684 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 551482992,
+  "bounds": {
+    "minlat": 43.2899290,
+    "minlon": -1.9978158,
+    "maxlat": 43.2945811,
+    "maxlon": -1.9952757
+  },
+  "geometry": [
+    { "lat": 43.2945811, "lon": -1.9954713 },
+    { "lat": 43.2942671, "lon": -1.9954063 },
+    { "lat": 43.2941428, "lon": -1.9953982 },
+    { "lat": 43.2939475, "lon": -1.9953982 },
+    { "lat": 43.2937537, "lon": -1.9954348 },
+    { "lat": 43.2935939, "lon": -1.9954897 },
+    { "lat": 43.2934881, "lon": -1.9955667 },
+    { "lat": 43.2934061, "lon": -1.9956525 },
+    { "lat": 43.2932997, "lon": -1.9957209 },
+    { "lat": 43.2932119, "lon": -1.9957571 },
+    { "lat": 43.2931582, "lon": -1.9957665 },
+    { "lat": 43.2930352, "lon": -1.9957679 },
+    { "lat": 43.2929054, "lon": -1.9957585 },
+    { "lat": 43.2928291, "lon": -1.9957566 },
+    { "lat": 43.2927668, "lon": -1.9957250 },
+    { "lat": 43.2926926, "lon": -1.9958658 },
+    { "lat": 43.2926565, "lon": -1.9958414 },
+    { "lat": 43.2925393, "lon": -1.9957169 },
+    { "lat": 43.2925364, "lon": -1.9959637 },
+    { "lat": 43.2921262, "lon": -1.9959244 },
+    { "lat": 43.2921309, "lon": -1.9957424 },
+    { "lat": 43.2918043, "lon": -1.9957464 },
+    { "lat": 43.2914446, "lon": -1.9957117 },
+    { "lat": 43.2913435, "lon": -1.9956606 },
+    { "lat": 43.2908965, "lon": -1.9956056 },
+    { "lat": 43.2909033, "lon": -1.9952757 },
+    { "lat": 43.2908047, "lon": -1.9953132 },
+    { "lat": 43.2906524, "lon": -1.9954339 },
+    { "lat": 43.2905470, "lon": -1.9955412 },
+    { "lat": 43.2904767, "lon": -1.9957089 },
+    { "lat": 43.2904728, "lon": -1.9958242 },
+    { "lat": 43.2905733, "lon": -1.9959610 },
+    { "lat": 43.2906524, "lon": -1.9960763 },
+    { "lat": 43.2911708, "lon": -1.9960777 },
+    { "lat": 43.2911710, "lon": -1.9960462 },
+    { "lat": 43.2914314, "lon": -1.9960602 },
+    { "lat": 43.2914236, "lon": -1.9961072 },
+    { "lat": 43.2914441, "lon": -1.9961072 },
+    { "lat": 43.2914412, "lon": -1.9962118 },
+    { "lat": 43.2915768, "lon": -1.9961166 },
+    { "lat": 43.2917545, "lon": -1.9961313 },
+    { "lat": 43.2919273, "lon": -1.9962064 },
+    { "lat": 43.2922416, "lon": -1.9963633 },
+    { "lat": 43.2922435, "lon": -1.9964679 },
+    { "lat": 43.2921391, "lon": -1.9964894 },
+    { "lat": 43.2920380, "lon": -1.9965769 },
+    { "lat": 43.2919086, "lon": -1.9965584 },
+    { "lat": 43.2911971, "lon": -1.9969722 },
+    { "lat": 43.2911789, "lon": -1.9969533 },
+    { "lat": 43.2911228, "lon": -1.9967781 },
+    { "lat": 43.2910975, "lon": -1.9968770 },
+    { "lat": 43.2910995, "lon": -1.9971827 },
+    { "lat": 43.2910741, "lon": -1.9972941 },
+    { "lat": 43.2910048, "lon": -1.9973799 },
+    { "lat": 43.2909140, "lon": -1.9974268 },
+    { "lat": 43.2907940, "lon": -1.9974407 },
+    { "lat": 43.2907114, "lon": -1.9974050 },
+    { "lat": 43.2906412, "lon": -1.9973184 },
+    { "lat": 43.2906030, "lon": -1.9971836 },
+    { "lat": 43.2906018, "lon": -1.9963009 },
+    { "lat": 43.2905940, "lon": -1.9961911 },
+    { "lat": 43.2905524, "lon": -1.9961041 },
+    { "lat": 43.2904828, "lon": -1.9960492 },
+    { "lat": 43.2904029, "lon": -1.9960351 },
+    { "lat": 43.2903630, "lon": -1.9960634 },
+    { "lat": 43.2904970, "lon": -1.9960775 },
+    { "lat": 43.2905276, "lon": -1.9961232 },
+    { "lat": 43.2905267, "lon": -1.9967694 },
+    { "lat": 43.2903717, "lon": -1.9967663 },
+    { "lat": 43.2903693, "lon": -1.9973788 },
+    { "lat": 43.2901261, "lon": -1.9973784 },
+    { "lat": 43.2899619, "lon": -1.9972314 },
+    { "lat": 43.2899491, "lon": -1.9972699 },
+    { "lat": 43.2899290, "lon": -1.9973529 },
+    { "lat": 43.2899327, "lon": -1.9974735 },
+    { "lat": 43.2899564, "lon": -1.9976165 },
+    { "lat": 43.2899871, "lon": -1.9977008 },
+    { "lat": 43.2900541, "lon": -1.9977709 },
+    { "lat": 43.2901440, "lon": -1.9978158 },
+    { "lat": 43.2902754, "lon": -1.9977982 },
+    { "lat": 43.2908600, "lon": -1.9976491 },
+    { "lat": 43.2912238, "lon": -1.9975147 },
+    { "lat": 43.2915204, "lon": -1.9973714 },
+    { "lat": 43.2918563, "lon": -1.9971508 },
+    { "lat": 43.2922676, "lon": -1.9968845 },
+    { "lat": 43.2924688, "lon": -1.9967107 },
+    { "lat": 43.2927344, "lon": -1.9965156 },
+    { "lat": 43.2929630, "lon": -1.9963235 },
+    { "lat": 43.2933662, "lon": -1.9960216 },
+    { "lat": 43.2935644, "lon": -1.9958803 },
+    { "lat": 43.2938677, "lon": -1.9957076 },
+    { "lat": 43.2940120, "lon": -1.9956313 },
+    { "lat": 43.2942894, "lon": -1.9955388 },
+    { "lat": 43.2945811, "lon": -1.9954713 }
+  ],
+  "tags": {
+    "leisure": "park",
+    "name": "Añorga Txikiko Parkea",
+    "name:es": "Parque de Añorga Txiki",
+    "name:eu": "Añorga Txikiko Parkea"
+  }
+},
+{
+  "type": "way",
+  "id": 551483146,
+  "bounds": {
+    "minlat": 43.2848172,
+    "minlon": -2.0008128,
+    "maxlat": 43.2853297,
+    "maxlon": -2.0003706
+  },
+  "geometry": [
+    { "lat": 43.2848172, "lon": -2.0008128 },
+    { "lat": 43.2851806, "lon": -2.0003706 },
+    { "lat": 43.2853297, "lon": -2.0004893 },
+    { "lat": 43.2853154, "lon": -2.0005038 },
+    { "lat": 43.2853017, "lon": -2.0005401 },
+    { "lat": 43.2848172, "lon": -2.0008128 }
+  ],
+  "tags": {
+    "leisure": "park"
   }
 },
 {
@@ -18341,6 +20022,29 @@
 },
 {
   "type": "way",
+  "id": 638001124,
+  "bounds": {
+    "minlat": 43.2912406,
+    "minlon": -1.9971398,
+    "maxlat": 43.2914625,
+    "maxlon": -1.9968755
+  },
+  "geometry": [
+    { "lat": 43.2914625, "lon": -1.9969711 },
+    { "lat": 43.2914462, "lon": -1.9970686 },
+    { "lat": 43.2913663, "lon": -1.9971398 },
+    { "lat": 43.2912894, "lon": -1.9971194 },
+    { "lat": 43.2912406, "lon": -1.9970544 },
+    { "lat": 43.2912775, "lon": -1.9969528 },
+    { "lat": 43.2914018, "lon": -1.9968755 },
+    { "lat": 43.2914625, "lon": -1.9969711 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
   "id": 639511277,
   "bounds": {
     "minlat": 43.3127003,
@@ -19157,6 +20861,78 @@
 },
 {
   "type": "way",
+  "id": 778855502,
+  "bounds": {
+    "minlat": 43.3017425,
+    "minlon": -1.9934011,
+    "maxlat": 43.3019612,
+    "maxlon": -1.9931310
+  },
+  "geometry": [
+    { "lat": 43.3019014, "lon": -1.9934011 },
+    { "lat": 43.3017425, "lon": -1.9932489 },
+    { "lat": 43.3018023, "lon": -1.9931310 },
+    { "lat": 43.3019612, "lon": -1.9932832 },
+    { "lat": 43.3019014, "lon": -1.9934011 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 778855505,
+  "bounds": {
+    "minlat": 43.3000046,
+    "minlon": -1.9871136,
+    "maxlat": 43.3001666,
+    "maxlon": -1.9865017
+  },
+  "geometry": [
+    { "lat": 43.3000409, "lon": -1.9871136 },
+    { "lat": 43.3000867, "lon": -1.9870841 },
+    { "lat": 43.3001666, "lon": -1.9866013 },
+    { "lat": 43.3001496, "lon": -1.9865017 },
+    { "lat": 43.3000815, "lon": -1.9867060 },
+    { "lat": 43.3000046, "lon": -1.9867639 },
+    { "lat": 43.3000409, "lon": -1.9871136 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 778855508,
+  "bounds": {
+    "minlat": 43.2996562,
+    "minlon": -1.9873739,
+    "maxlat": 43.3003353,
+    "maxlon": -1.9860424
+  },
+  "geometry": [
+    { "lat": 43.3001474, "lon": -1.9872804 },
+    { "lat": 43.3000567, "lon": -1.9873243 },
+    { "lat": 43.3000468, "lon": -1.9873291 },
+    { "lat": 43.2999151, "lon": -1.9873739 },
+    { "lat": 43.2997968, "lon": -1.9873068 },
+    { "lat": 43.2997021, "lon": -1.9871706 },
+    { "lat": 43.2996562, "lon": -1.9870080 },
+    { "lat": 43.2996607, "lon": -1.9868697 },
+    { "lat": 43.2999255, "lon": -1.9864896 },
+    { "lat": 43.3001193, "lon": -1.9862416 },
+    { "lat": 43.3001992, "lon": -1.9861563 },
+    { "lat": 43.3002273, "lon": -1.9860424 },
+    { "lat": 43.3003353, "lon": -1.9861237 },
+    { "lat": 43.3001474, "lon": -1.9872804 }
+  ],
+  "tags": {
+    "name": "Hiru Damatxo plaza",
+    "place": "square"
+  }
+},
+{
+  "type": "way",
   "id": 779612973,
   "bounds": {
     "minlat": 43.3169183,
@@ -19177,6 +20953,238 @@
   ],
   "tags": {
     "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 794174806,
+  "bounds": {
+    "minlat": 43.2999928,
+    "minlon": -2.0044828,
+    "maxlat": 43.3005718,
+    "maxlon": -2.0038172
+  },
+  "geometry": [
+    { "lat": 43.3004602, "lon": -2.0044828 },
+    { "lat": 43.3005210, "lon": -2.0043618 },
+    { "lat": 43.3005718, "lon": -2.0042608 },
+    { "lat": 43.3004500, "lon": -2.0041452 },
+    { "lat": 43.3004382, "lon": -2.0041341 },
+    { "lat": 43.3004024, "lon": -2.0041956 },
+    { "lat": 43.3003698, "lon": -2.0041621 },
+    { "lat": 43.3004021, "lon": -2.0040998 },
+    { "lat": 43.3001043, "lon": -2.0038172 },
+    { "lat": 43.2999928, "lon": -2.0040390 },
+    { "lat": 43.3002943, "lon": -2.0043245 },
+    { "lat": 43.3003425, "lon": -2.0042246 },
+    { "lat": 43.3003780, "lon": -2.0042567 },
+    { "lat": 43.3003305, "lon": -2.0043580 },
+    { "lat": 43.3003413, "lon": -2.0043684 },
+    { "lat": 43.3004602, "lon": -2.0044828 }
+  ],
+  "tags": {
+    "highway": "pedestrian",
+    "name": "Louis-L Bonaparte plaza",
+    "name:etymology:wikidata": "Q523352",
+    "place": "square"
+  }
+},
+{
+  "type": "way",
+  "id": 794336883,
+  "bounds": {
+    "minlat": 43.2993742,
+    "minlon": -2.0036847,
+    "maxlat": 43.2997382,
+    "maxlon": -2.0032396
+  },
+  "geometry": [
+    { "lat": 43.2996418, "lon": -2.0036847 },
+    { "lat": 43.2996960, "lon": -2.0035761 },
+    { "lat": 43.2997382, "lon": -2.0034914 },
+    { "lat": 43.2994705, "lon": -2.0032396 },
+    { "lat": 43.2993742, "lon": -2.0034328 },
+    { "lat": 43.2996418, "lon": -2.0036847 }
+  ],
+  "tags": {
+    "highway": "pedestrian",
+    "name": "De Lasarte plaza",
+    "name:etymology:wikidata": "Q932766",
+    "name:eu": "De Lasarte plaza",
+    "place": "square"
+  }
+},
+{
+  "type": "way",
+  "id": 799139011,
+  "bounds": {
+    "minlat": 43.2996823,
+    "minlon": -1.9638277,
+    "maxlat": 43.3003994,
+    "maxlon": -1.9628751
+  },
+  "geometry": [
+    { "lat": 43.3003994, "lon": -1.9635383 },
+    { "lat": 43.2998769, "lon": -1.9628751 },
+    { "lat": 43.2996823, "lon": -1.9631646 },
+    { "lat": 43.3002049, "lon": -1.9638277 },
+    { "lat": 43.3003994, "lon": -1.9635383 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
+  }
+},
+{
+  "type": "way",
+  "id": 799139012,
+  "bounds": {
+    "minlat": 43.2998161,
+    "minlon": -1.9635624,
+    "maxlat": 43.3013220,
+    "maxlon": -1.9615501
+  },
+  "geometry": [
+    { "lat": 43.3013220, "lon": -1.9629851 },
+    { "lat": 43.3002112, "lon": -1.9615501 },
+    { "lat": 43.2998161, "lon": -1.9621276 },
+    { "lat": 43.3009270, "lon": -1.9635624 },
+    { "lat": 43.3013220, "lon": -1.9629851 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
+  }
+},
+{
+  "type": "way",
+  "id": 799139013,
+  "bounds": {
+    "minlat": 43.3002984,
+    "minlon": -1.9637202,
+    "maxlat": 43.3006506,
+    "maxlon": -1.9631952
+  },
+  "geometry": [
+    { "lat": 43.3006200, "lon": -1.9634624 },
+    { "lat": 43.3004292, "lon": -1.9631952 },
+    { "lat": 43.3002984, "lon": -1.9633714 },
+    { "lat": 43.3005473, "lon": -1.9637202 },
+    { "lat": 43.3006506, "lon": -1.9635811 },
+    { "lat": 43.3005924, "lon": -1.9634995 },
+    { "lat": 43.3006200, "lon": -1.9634624 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
+  }
+},
+{
+  "type": "way",
+  "id": 799139014,
+  "bounds": {
+    "minlat": 43.2995593,
+    "minlon": -1.9631057,
+    "maxlat": 43.2997221,
+    "maxlon": -1.9628808
+  },
+  "geometry": [
+    { "lat": 43.2996560, "lon": -1.9628820 },
+    { "lat": 43.2996805, "lon": -1.9628943 },
+    { "lat": 43.2997010, "lon": -1.9629167 },
+    { "lat": 43.2997154, "lon": -1.9629468 },
+    { "lat": 43.2997221, "lon": -1.9629816 },
+    { "lat": 43.2997205, "lon": -1.9630175 },
+    { "lat": 43.2997098, "lon": -1.9630531 },
+    { "lat": 43.2996911, "lon": -1.9630816 },
+    { "lat": 43.2996664, "lon": -1.9630999 },
+    { "lat": 43.2996387, "lon": -1.9631057 },
+    { "lat": 43.2996112, "lon": -1.9630984 },
+    { "lat": 43.2995871, "lon": -1.9630788 },
+    { "lat": 43.2995692, "lon": -1.9630492 },
+    { "lat": 43.2995595, "lon": -1.9630131 },
+    { "lat": 43.2995593, "lon": -1.9629746 },
+    { "lat": 43.2995675, "lon": -1.9629405 },
+    { "lat": 43.2995832, "lon": -1.9629117 },
+    { "lat": 43.2996047, "lon": -1.9628911 },
+    { "lat": 43.2996298, "lon": -1.9628808 },
+    { "lat": 43.2996560, "lon": -1.9628820 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
+  }
+},
+{
+  "type": "way",
+  "id": 799139015,
+  "bounds": {
+    "minlat": 43.2996861,
+    "minlon": -1.9629061,
+    "maxlat": 43.2998523,
+    "maxlon": -1.9626781
+  },
+  "geometry": [
+    { "lat": 43.2997884, "lon": -1.9626805 },
+    { "lat": 43.2998148, "lon": -1.9626961 },
+    { "lat": 43.2998358, "lon": -1.9627231 },
+    { "lat": 43.2998488, "lon": -1.9627583 },
+    { "lat": 43.2998523, "lon": -1.9627974 },
+    { "lat": 43.2998469, "lon": -1.9628327 },
+    { "lat": 43.2998338, "lon": -1.9628640 },
+    { "lat": 43.2998142, "lon": -1.9628880 },
+    { "lat": 43.2997902, "lon": -1.9629025 },
+    { "lat": 43.2997641, "lon": -1.9629061 },
+    { "lat": 43.2997385, "lon": -1.9628982 },
+    { "lat": 43.2997159, "lon": -1.9628798 },
+    { "lat": 43.2996986, "lon": -1.9628527 },
+    { "lat": 43.2996883, "lon": -1.9628195 },
+    { "lat": 43.2996861, "lon": -1.9627835 },
+    { "lat": 43.2996930, "lon": -1.9627453 },
+    { "lat": 43.2997091, "lon": -1.9627125 },
+    { "lat": 43.2997322, "lon": -1.9626892 },
+    { "lat": 43.2997598, "lon": -1.9626781 },
+    { "lat": 43.2997884, "lon": -1.9626805 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
+  }
+},
+{
+  "type": "way",
+  "id": 799139016,
+  "bounds": {
+    "minlat": 43.2995230,
+    "minlon": -1.9627050,
+    "maxlat": 43.2996888,
+    "maxlon": -1.9624761
+  },
+  "geometry": [
+    { "lat": 43.2996219, "lon": -1.9624775 },
+    { "lat": 43.2996470, "lon": -1.9624903 },
+    { "lat": 43.2996678, "lon": -1.9625134 },
+    { "lat": 43.2996822, "lon": -1.9625444 },
+    { "lat": 43.2996888, "lon": -1.9625800 },
+    { "lat": 43.2996865, "lon": -1.9626187 },
+    { "lat": 43.2996750, "lon": -1.9626541 },
+    { "lat": 43.2996556, "lon": -1.9626822 },
+    { "lat": 43.2996304, "lon": -1.9626998 },
+    { "lat": 43.2996025, "lon": -1.9627050 },
+    { "lat": 43.2995748, "lon": -1.9626970 },
+    { "lat": 43.2995507, "lon": -1.9626769 },
+    { "lat": 43.2995328, "lon": -1.9626469 },
+    { "lat": 43.2995232, "lon": -1.9626104 },
+    { "lat": 43.2995230, "lon": -1.9625716 },
+    { "lat": 43.2995315, "lon": -1.9625368 },
+    { "lat": 43.2995475, "lon": -1.9625074 },
+    { "lat": 43.2995695, "lon": -1.9624864 },
+    { "lat": 43.2995952, "lon": -1.9624761 },
+    { "lat": 43.2996219, "lon": -1.9624775 }
+  ],
+  "tags": {
+    "natural": "water",
+    "water": "wastewater"
   }
 },
 {
@@ -19355,6 +21363,41 @@
 },
 {
   "type": "way",
+  "id": 827900693,
+  "bounds": {
+    "minlat": 43.3017885,
+    "minlon": -2.0107298,
+    "maxlat": 43.3018558,
+    "maxlon": -2.0106373
+  },
+  "geometry": [
+    { "lat": 43.3018038, "lon": -2.0106446 },
+    { "lat": 43.3018143, "lon": -2.0106384 },
+    { "lat": 43.3018257, "lon": -2.0106373 },
+    { "lat": 43.3018367, "lon": -2.0106415 },
+    { "lat": 43.3018461, "lon": -2.0106506 },
+    { "lat": 43.3018527, "lon": -2.0106634 },
+    { "lat": 43.3018558, "lon": -2.0106785 },
+    { "lat": 43.3018551, "lon": -2.0106942 },
+    { "lat": 43.3018506, "lon": -2.0107086 },
+    { "lat": 43.3018429, "lon": -2.0107202 },
+    { "lat": 43.3018333, "lon": -2.0107272 },
+    { "lat": 43.3018227, "lon": -2.0107298 },
+    { "lat": 43.3018120, "lon": -2.0107276 },
+    { "lat": 43.3018023, "lon": -2.0107209 },
+    { "lat": 43.3017947, "lon": -2.0107103 },
+    { "lat": 43.3017900, "lon": -2.0106969 },
+    { "lat": 43.3017885, "lon": -2.0106822 },
+    { "lat": 43.3017905, "lon": -2.0106676 },
+    { "lat": 43.3017958, "lon": -2.0106546 },
+    { "lat": 43.3018038, "lon": -2.0106446 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
   "id": 827900694,
   "bounds": {
     "minlat": 43.3049600,
@@ -19448,6 +21491,26 @@
     "operator": "Meliá Hotels International",
     "tourism": "hotel",
     "website": "https://www.melia.com/es/hoteles/espana/san-sebastian/hotel-san-sebastian-orly-by-melia"
+  }
+},
+{
+  "type": "way",
+  "id": 848794412,
+  "bounds": {
+    "minlat": 43.2913330,
+    "minlon": -1.9913597,
+    "maxlat": 43.2916543,
+    "maxlon": -1.9911750
+  },
+  "geometry": [
+    { "lat": 43.2916396, "lon": -1.9913597 },
+    { "lat": 43.2916543, "lon": -1.9912687 },
+    { "lat": 43.2913477, "lon": -1.9911750 },
+    { "lat": 43.2913330, "lon": -1.9912661 },
+    { "lat": 43.2916396, "lon": -1.9913597 }
+  ],
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -21606,6 +23669,30 @@
 },
 {
   "type": "way",
+  "id": 932911956,
+  "bounds": {
+    "minlat": 43.2918225,
+    "minlon": -1.9698542,
+    "maxlat": 43.2920940,
+    "maxlon": -1.9696143
+  },
+  "geometry": [
+    { "lat": 43.2919206, "lon": -1.9697913 },
+    { "lat": 43.2918225, "lon": -1.9697475 },
+    { "lat": 43.2918496, "lon": -1.9696331 },
+    { "lat": 43.2918540, "lon": -1.9696143 },
+    { "lat": 43.2919396, "lon": -1.9696526 },
+    { "lat": 43.2920940, "lon": -1.9697209 },
+    { "lat": 43.2920627, "lon": -1.9698542 },
+    { "lat": 43.2919206, "lon": -1.9697913 }
+  ],
+  "tags": {
+    "building": "public",
+    "name": "Tanatorio"
+  }
+},
+{
+  "type": "way",
   "id": 952592459,
   "bounds": {
     "minlat": 43.3157864,
@@ -21904,6 +23991,41 @@
     "public_transport": "station",
     "wikidata": "Q12253308",
     "wikipedia": "eu:Amara–Donostia geltokia"
+  }
+},
+{
+  "type": "way",
+  "id": 986320778,
+  "bounds": {
+    "minlat": 43.2958165,
+    "minlon": -2.0018036,
+    "maxlat": 43.2959139,
+    "maxlon": -2.0016697
+  },
+  "geometry": [
+    { "lat": 43.2958787, "lon": -2.0016723 },
+    { "lat": 43.2958929, "lon": -2.0016816 },
+    { "lat": 43.2959042, "lon": -2.0016966 },
+    { "lat": 43.2959115, "lon": -2.0017158 },
+    { "lat": 43.2959139, "lon": -2.0017372 },
+    { "lat": 43.2959113, "lon": -2.0017585 },
+    { "lat": 43.2959035, "lon": -2.0017783 },
+    { "lat": 43.2958914, "lon": -2.0017934 },
+    { "lat": 43.2958762, "lon": -2.0018022 },
+    { "lat": 43.2958599, "lon": -2.0018036 },
+    { "lat": 43.2958441, "lon": -2.0017975 },
+    { "lat": 43.2958306, "lon": -2.0017845 },
+    { "lat": 43.2958211, "lon": -2.0017662 },
+    { "lat": 43.2958165, "lon": -2.0017445 },
+    { "lat": 43.2958174, "lon": -2.0017220 },
+    { "lat": 43.2958237, "lon": -2.0017011 },
+    { "lat": 43.2958341, "lon": -2.0016849 },
+    { "lat": 43.2958477, "lon": -2.0016741 },
+    { "lat": 43.2958631, "lon": -2.0016697 },
+    { "lat": 43.2958787, "lon": -2.0016723 }
+  ],
+  "tags": {
+    "leisure": "garden"
   }
 },
 {
@@ -24047,6 +26169,124 @@
 },
 {
   "type": "way",
+  "id": 1071906501,
+  "bounds": {
+    "minlat": 43.3009950,
+    "minlon": -2.0150455,
+    "maxlat": 43.3010914,
+    "maxlon": -2.0148864
+  },
+  "geometry": [
+    { "lat": 43.3010914, "lon": -2.0150455 },
+    { "lat": 43.3010893, "lon": -2.0148911 },
+    { "lat": 43.3009950, "lon": -2.0148864 },
+    { "lat": 43.3009953, "lon": -2.0150423 },
+    { "lat": 43.3010914, "lon": -2.0150455 }
+  ],
+  "tags": {
+    "building:levels": "5",
+    "building:min_level": "3",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1071906502,
+  "bounds": {
+    "minlat": 43.3008753,
+    "minlon": -2.0146798,
+    "maxlat": 43.3010936,
+    "maxlon": -2.0144197
+  },
+  "geometry": [
+    { "lat": 43.3010936, "lon": -2.0145560 },
+    { "lat": 43.3008892, "lon": -2.0144197 },
+    { "lat": 43.3008753, "lon": -2.0144293 },
+    { "lat": 43.3009060, "lon": -2.0145309 },
+    { "lat": 43.3009575, "lon": -2.0146677 },
+    { "lat": 43.3010910, "lon": -2.0146798 },
+    { "lat": 43.3010936, "lon": -2.0145560 }
+  ],
+  "tags": {
+    "building:levels": "5",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1071906503,
+  "bounds": {
+    "minlat": 43.3009575,
+    "minlon": -2.0147674,
+    "maxlat": 43.3010910,
+    "maxlon": -2.0146677
+  },
+  "geometry": [
+    { "lat": 43.3010910, "lon": -2.0146798 },
+    { "lat": 43.3010902, "lon": -2.0147674 },
+    { "lat": 43.3009941, "lon": -2.0147601 },
+    { "lat": 43.3009575, "lon": -2.0146677 },
+    { "lat": 43.3010910, "lon": -2.0146798 }
+  ],
+  "tags": {
+    "building:levels": "5",
+    "building:min_level": "1",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1071906504,
+  "bounds": {
+    "minlat": 43.3009941,
+    "minlon": -2.0148911,
+    "maxlat": 43.3010903,
+    "maxlon": -2.0147601
+  },
+  "geometry": [
+    { "lat": 43.3010893, "lon": -2.0148911 },
+    { "lat": 43.3010903, "lon": -2.0148307 },
+    { "lat": 43.3010902, "lon": -2.0147674 },
+    { "lat": 43.3009941, "lon": -2.0147601 },
+    { "lat": 43.3009956, "lon": -2.0148288 },
+    { "lat": 43.3009950, "lon": -2.0148864 },
+    { "lat": 43.3010893, "lon": -2.0148911 }
+  ],
+  "tags": {
+    "building:levels": "5",
+    "building:min_level": "2",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1071906505,
+  "bounds": {
+    "minlat": 43.3005035,
+    "minlon": -2.0153157,
+    "maxlat": 43.3011614,
+    "maxlon": -2.0149176
+  },
+  "geometry": [
+    { "lat": 43.3010914, "lon": -2.0150455 },
+    { "lat": 43.3011114, "lon": -2.0150464 },
+    { "lat": 43.3011614, "lon": -2.0153078 },
+    { "lat": 43.3005621, "lon": -2.0153157 },
+    { "lat": 43.3005035, "lon": -2.0151038 },
+    { "lat": 43.3006558, "lon": -2.0150180 },
+    { "lat": 43.3006678, "lon": -2.0150570 },
+    { "lat": 43.3009186, "lon": -2.0149176 },
+    { "lat": 43.3009542, "lon": -2.0150403 },
+    { "lat": 43.3009953, "lon": -2.0150423 },
+    { "lat": 43.3010914, "lon": -2.0150455 }
+  ],
+  "tags": {
+    "building:levels": "5",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
   "id": 1083018697,
   "bounds": {
     "minlat": 43.3091933,
@@ -24449,6 +26689,245 @@
 },
 {
   "type": "way",
+  "id": 1148457346,
+  "bounds": {
+    "minlat": 43.2928447,
+    "minlon": -1.9712199,
+    "maxlat": 43.2929564,
+    "maxlon": -1.9706990
+  },
+  "geometry": [
+    { "lat": 43.2929206, "lon": -1.9712109 },
+    { "lat": 43.2928983, "lon": -1.9712097 },
+    { "lat": 43.2928641, "lon": -1.9712154 },
+    { "lat": 43.2928447, "lon": -1.9712199 },
+    { "lat": 43.2928546, "lon": -1.9711673 },
+    { "lat": 43.2928591, "lon": -1.9711027 },
+    { "lat": 43.2928538, "lon": -1.9709521 },
+    { "lat": 43.2928493, "lon": -1.9708530 },
+    { "lat": 43.2928455, "lon": -1.9707726 },
+    { "lat": 43.2928464, "lon": -1.9707273 },
+    { "lat": 43.2929564, "lon": -1.9706990 },
+    { "lat": 43.2929395, "lon": -1.9707681 },
+    { "lat": 43.2929160, "lon": -1.9708808 },
+    { "lat": 43.2928975, "lon": -1.9709697 },
+    { "lat": 43.2928917, "lon": -1.9710240 },
+    { "lat": 43.2928938, "lon": -1.9710693 },
+    { "lat": 43.2929024, "lon": -1.9711316 },
+    { "lat": 43.2929127, "lon": -1.9711763 },
+    { "lat": 43.2929206, "lon": -1.9712109 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148457369,
+  "bounds": {
+    "minlat": 43.2930168,
+    "minlon": -1.9702594,
+    "maxlat": 43.2930684,
+    "maxlon": -1.9702154
+  },
+  "geometry": [
+    { "lat": 43.2930583, "lon": -1.9702594 },
+    { "lat": 43.2930684, "lon": -1.9702154 },
+    { "lat": 43.2930185, "lon": -1.9702307 },
+    { "lat": 43.2930168, "lon": -1.9702391 },
+    { "lat": 43.2930583, "lon": -1.9702594 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148457370,
+  "bounds": {
+    "minlat": 43.2929638,
+    "minlon": -1.9702316,
+    "maxlat": 43.2930092,
+    "maxlon": -1.9702036
+  },
+  "geometry": [
+    { "lat": 43.2930011, "lon": -1.9702316 },
+    { "lat": 43.2930092, "lon": -1.9702036 },
+    { "lat": 43.2929638, "lon": -1.9702138 },
+    { "lat": 43.2930011, "lon": -1.9702316 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148457381,
+  "bounds": {
+    "minlat": 43.2926006,
+    "minlon": -1.9713556,
+    "maxlat": 43.2927920,
+    "maxlon": -1.9706997
+  },
+  "geometry": [
+    { "lat": 43.2926006, "lon": -1.9713503 },
+    { "lat": 43.2926291, "lon": -1.9713556 },
+    { "lat": 43.2926717, "lon": -1.9713534 },
+    { "lat": 43.2926930, "lon": -1.9713391 },
+    { "lat": 43.2927286, "lon": -1.9713000 },
+    { "lat": 43.2927674, "lon": -1.9712587 },
+    { "lat": 43.2927800, "lon": -1.9712016 },
+    { "lat": 43.2927920, "lon": -1.9710972 },
+    { "lat": 43.2927844, "lon": -1.9708740 },
+    { "lat": 43.2927849, "lon": -1.9706997 },
+    { "lat": 43.2927592, "lon": -1.9708057 },
+    { "lat": 43.2926876, "lon": -1.9711152 },
+    { "lat": 43.2926575, "lon": -1.9712519 },
+    { "lat": 43.2926449, "lon": -1.9712895 },
+    { "lat": 43.2926323, "lon": -1.9713090 },
+    { "lat": 43.2926006, "lon": -1.9713503 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148457383,
+  "bounds": {
+    "minlat": 43.2926999,
+    "minlon": -1.9692884,
+    "maxlat": 43.2930109,
+    "maxlon": -1.9688270
+  },
+  "geometry": [
+    { "lat": 43.2930109, "lon": -1.9688555 },
+    { "lat": 43.2929695, "lon": -1.9690254 },
+    { "lat": 43.2929520, "lon": -1.9690501 },
+    { "lat": 43.2929282, "lon": -1.9690508 },
+    { "lat": 43.2929078, "lon": -1.9690619 },
+    { "lat": 43.2928936, "lon": -1.9691265 },
+    { "lat": 43.2929007, "lon": -1.9691512 },
+    { "lat": 43.2929297, "lon": -1.9691819 },
+    { "lat": 43.2929057, "lon": -1.9692884 },
+    { "lat": 43.2926999, "lon": -1.9692080 },
+    { "lat": 43.2927856, "lon": -1.9688490 },
+    { "lat": 43.2928781, "lon": -1.9688857 },
+    { "lat": 43.2929229, "lon": -1.9688992 },
+    { "lat": 43.2929396, "lon": -1.9688270 },
+    { "lat": 43.2930109, "lon": -1.9688555 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148457406,
+  "bounds": {
+    "minlat": 43.2929156,
+    "minlon": -1.9676155,
+    "maxlat": 43.2933230,
+    "maxlon": -1.9674290
+  },
+  "geometry": [
+    { "lat": 43.2933230, "lon": -1.9675930 },
+    { "lat": 43.2933160, "lon": -1.9676155 },
+    { "lat": 43.2932439, "lon": -1.9675844 },
+    { "lat": 43.2930949, "lon": -1.9675203 },
+    { "lat": 43.2929156, "lon": -1.9674431 },
+    { "lat": 43.2929305, "lon": -1.9674290 },
+    { "lat": 43.2929693, "lon": -1.9674450 },
+    { "lat": 43.2931843, "lon": -1.9675349 },
+    { "lat": 43.2933230, "lon": -1.9675930 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148472290,
+  "bounds": {
+    "minlat": 43.2920390,
+    "minlon": -1.9721448,
+    "maxlat": 43.2923445,
+    "maxlon": -1.9715331
+  },
+  "geometry": [
+    { "lat": 43.2920390, "lon": -1.9721363 },
+    { "lat": 43.2920569, "lon": -1.9721448 },
+    { "lat": 43.2921022, "lon": -1.9720554 },
+    { "lat": 43.2921854, "lon": -1.9718908 },
+    { "lat": 43.2922324, "lon": -1.9718187 },
+    { "lat": 43.2922696, "lon": -1.9717639 },
+    { "lat": 43.2923057, "lon": -1.9717210 },
+    { "lat": 43.2923297, "lon": -1.9716895 },
+    { "lat": 43.2923439, "lon": -1.9716542 },
+    { "lat": 43.2923445, "lon": -1.9716099 },
+    { "lat": 43.2923363, "lon": -1.9715625 },
+    { "lat": 43.2923221, "lon": -1.9715460 },
+    { "lat": 43.2923056, "lon": -1.9715331 },
+    { "lat": 43.2922061, "lon": -1.9717540 },
+    { "lat": 43.2920886, "lon": -1.9720241 },
+    { "lat": 43.2920390, "lon": -1.9721363 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148472291,
+  "bounds": {
+    "minlat": 43.2923327,
+    "minlon": -1.9715488,
+    "maxlat": 43.2924114,
+    "maxlon": -1.9714387
+  },
+  "geometry": [
+    { "lat": 43.2924114, "lon": -1.9715375 },
+    { "lat": 43.2923928, "lon": -1.9715488 },
+    { "lat": 43.2923560, "lon": -1.9715296 },
+    { "lat": 43.2923327, "lon": -1.9715065 },
+    { "lat": 43.2923365, "lon": -1.9714954 },
+    { "lat": 43.2923560, "lon": -1.9714387 },
+    { "lat": 43.2923900, "lon": -1.9714750 },
+    { "lat": 43.2924057, "lon": -1.9714996 },
+    { "lat": 43.2924114, "lon": -1.9715375 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
+  "id": 1148472293,
+  "bounds": {
+    "minlat": 43.2920472,
+    "minlon": -1.9714954,
+    "maxlat": 43.2923560,
+    "maxlon": -1.9712077
+  },
+  "geometry": [
+    { "lat": 43.2923365, "lon": -1.9714954 },
+    { "lat": 43.2923560, "lon": -1.9714387 },
+    { "lat": 43.2922106, "lon": -1.9713158 },
+    { "lat": 43.2921111, "lon": -1.9712412 },
+    { "lat": 43.2920472, "lon": -1.9712077 },
+    { "lat": 43.2921525, "lon": -1.9712914 },
+    { "lat": 43.2922030, "lon": -1.9713365 },
+    { "lat": 43.2922073, "lon": -1.9713192 },
+    { "lat": 43.2923217, "lon": -1.9714208 },
+    { "lat": 43.2922996, "lon": -1.9714689 },
+    { "lat": 43.2923365, "lon": -1.9714954 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
   "id": 1166070719,
   "bounds": {
     "minlat": 43.3217714,
@@ -24827,6 +27306,37 @@
 },
 {
   "type": "way",
+  "id": 1226505421,
+  "bounds": {
+    "minlat": 43.2895576,
+    "minlon": -1.9742448,
+    "maxlat": 43.2902263,
+    "maxlon": -1.9737394
+  },
+  "geometry": [
+    { "lat": 43.2901707, "lon": -1.9742448 },
+    { "lat": 43.2902263, "lon": -1.9740668 },
+    { "lat": 43.2896715, "lon": -1.9737394 },
+    { "lat": 43.2895576, "lon": -1.9741040 },
+    { "lat": 43.2896789, "lon": -1.9741769 },
+    { "lat": 43.2897399, "lon": -1.9739921 },
+    { "lat": 43.2901707, "lon": -1.9742448 }
+  ],
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "7",
+    "addr:postcode": "20014",
+    "addr:street": "Dulce Maria Loynaz kalea",
+    "building": "hotel",
+    "email": "reservas@hotel3reyes.com",
+    "name": "Hotel Tres Reyes San Sebastián",
+    "phone": "+34943932932",
+    "tourism": "hotel",
+    "website": "https://www.hotel3reyes.com/es/hotel-tres-reyes-san-sebastian/"
+  }
+},
+{
+  "type": "way",
   "id": 1227310391,
   "bounds": {
     "minlat": 43.3241049,
@@ -24923,6 +27433,42 @@
 },
 {
   "type": "way",
+  "id": 1289052038,
+  "bounds": {
+    "minlat": 43.2932517,
+    "minlon": -1.9906893,
+    "maxlat": 43.2941436,
+    "maxlon": -1.9897728
+  },
+  "geometry": [
+    { "lat": 43.2941436, "lon": -1.9902961 },
+    { "lat": 43.2940695, "lon": -1.9904523 },
+    { "lat": 43.2939273, "lon": -1.9906259 },
+    { "lat": 43.2938137, "lon": -1.9906735 },
+    { "lat": 43.2937390, "lon": -1.9906843 },
+    { "lat": 43.2936138, "lon": -1.9906893 },
+    { "lat": 43.2934917, "lon": -1.9906384 },
+    { "lat": 43.2933963, "lon": -1.9905775 },
+    { "lat": 43.2933331, "lon": -1.9904907 },
+    { "lat": 43.2932517, "lon": -1.9903271 },
+    { "lat": 43.2935336, "lon": -1.9900666 },
+    { "lat": 43.2935408, "lon": -1.9899514 },
+    { "lat": 43.2935798, "lon": -1.9898362 },
+    { "lat": 43.2936600, "lon": -1.9897728 },
+    { "lat": 43.2937389, "lon": -1.9897854 },
+    { "lat": 43.2938350, "lon": -1.9898696 },
+    { "lat": 43.2938577, "lon": -1.9899675 },
+    { "lat": 43.2938463, "lon": -1.9900630 },
+    { "lat": 43.2941436, "lon": -1.9902961 }
+  ],
+  "tags": {
+    "amenity": "theatre",
+    "name": "Miramongo anfiteatroa",
+    "theatre:type": "amphi"
+  }
+},
+{
+  "type": "way",
   "id": 1300373550,
   "bounds": {
     "minlat": 43.3030076,
@@ -24985,6 +27531,26 @@
   ],
   "tags": {
     "man_made": "tower"
+  }
+},
+{
+  "type": "way",
+  "id": 1301387858,
+  "bounds": {
+    "minlat": 43.3016793,
+    "minlon": -2.0176332,
+    "maxlat": 43.3018166,
+    "maxlon": -2.0173665
+  },
+  "geometry": [
+    { "lat": 43.3017544, "lon": -2.0176332 },
+    { "lat": 43.3018166, "lon": -2.0174052 },
+    { "lat": 43.3017414, "lon": -2.0173665 },
+    { "lat": 43.3016793, "lon": -2.0175945 },
+    { "lat": 43.3017544, "lon": -2.0176332 }
+  ],
+  "tags": {
+    "leisure": "playground"
   }
 },
 {
@@ -25865,6 +28431,301 @@
 },
 {
   "type": "way",
+  "id": 1360625431,
+  "bounds": {
+    "minlat": 43.3008892,
+    "minlon": -2.0135388,
+    "maxlat": 43.3014556,
+    "maxlon": -2.0130321
+  },
+  "geometry": [
+    { "lat": 43.3014032, "lon": -2.0135388 },
+    { "lat": 43.3014556, "lon": -2.0134337 },
+    { "lat": 43.3010036, "lon": -2.0130321 },
+    { "lat": 43.3008892, "lon": -2.0132018 },
+    { "lat": 43.3009989, "lon": -2.0132696 },
+    { "lat": 43.3010412, "lon": -2.0132952 },
+    { "lat": 43.3012639, "lon": -2.0134454 },
+    { "lat": 43.3013081, "lon": -2.0134776 },
+    { "lat": 43.3014032, "lon": -2.0135388 }
+  ],
+  "tags": {
+    "building:colour": "#4d4d4d",
+    "building:levels": "2",
+    "building:part": "yes",
+    "roof:colour": "#9fa1a3"
+  }
+},
+{
+  "type": "way",
+  "id": 1360625432,
+  "bounds": {
+    "minlat": 43.3008633,
+    "minlon": -2.0135612,
+    "maxlat": 43.3014781,
+    "maxlon": -2.0130039
+  },
+  "geometry": [
+    { "lat": 43.3014071, "lon": -2.0135612 },
+    { "lat": 43.3014781, "lon": -2.0134277 },
+    { "lat": 43.3009979, "lon": -2.0130039 },
+    { "lat": 43.3008633, "lon": -2.0132051 },
+    { "lat": 43.3009882, "lon": -2.0132884 },
+    { "lat": 43.3009989, "lon": -2.0132696 },
+    { "lat": 43.3010280, "lon": -2.0132123 },
+    { "lat": 43.3010660, "lon": -2.0131317 },
+    { "lat": 43.3011036, "lon": -2.0131653 },
+    { "lat": 43.3010656, "lon": -2.0132458 },
+    { "lat": 43.3010412, "lon": -2.0132952 },
+    { "lat": 43.3010306, "lon": -2.0133167 },
+    { "lat": 43.3012529, "lon": -2.0134646 },
+    { "lat": 43.3012639, "lon": -2.0134454 },
+    { "lat": 43.3012790, "lon": -2.0134146 },
+    { "lat": 43.3013105, "lon": -2.0133459 },
+    { "lat": 43.3013536, "lon": -2.0133832 },
+    { "lat": 43.3013221, "lon": -2.0134519 },
+    { "lat": 43.3013081, "lon": -2.0134776 },
+    { "lat": 43.3013000, "lon": -2.0134964 },
+    { "lat": 43.3014071, "lon": -2.0135612 }
+  ],
+  "tags": {
+    "building:colour": "gray",
+    "building:levels": "5",
+    "building:min_level": "2",
+    "building:part": "yes",
+    "roof:colour": "#9fa1a3"
+  }
+},
+{
+  "type": "way",
+  "id": 1360625433,
+  "bounds": {
+    "minlat": 43.3012790,
+    "minlon": -2.0134519,
+    "maxlat": 43.3013536,
+    "maxlon": -2.0133459
+  },
+  "geometry": [
+    { "lat": 43.3013536, "lon": -2.0133832 },
+    { "lat": 43.3013105, "lon": -2.0133459 },
+    { "lat": 43.3012790, "lon": -2.0134146 },
+    { "lat": 43.3013221, "lon": -2.0134519 },
+    { "lat": 43.3013536, "lon": -2.0133832 }
+  ],
+  "tags": {
+    "building:colour": "green",
+    "building:levels": "6",
+    "building:part": "yes",
+    "roof:colour": "#728290"
+  }
+},
+{
+  "type": "way",
+  "id": 1360625434,
+  "bounds": {
+    "minlat": 43.3010280,
+    "minlon": -2.0132458,
+    "maxlat": 43.3011036,
+    "maxlon": -2.0131317
+  },
+  "geometry": [
+    { "lat": 43.3011036, "lon": -2.0131653 },
+    { "lat": 43.3010656, "lon": -2.0132458 },
+    { "lat": 43.3010280, "lon": -2.0132123 },
+    { "lat": 43.3010660, "lon": -2.0131317 },
+    { "lat": 43.3011036, "lon": -2.0131653 }
+  ],
+  "tags": {
+    "building:colour": "green",
+    "building:levels": "6",
+    "building:part": "yes",
+    "roof:colour": "#728290"
+  }
+},
+{
+  "type": "way",
+  "id": 1360662429,
+  "bounds": {
+    "minlat": 43.3012529,
+    "minlon": -2.0134964,
+    "maxlat": 43.3013221,
+    "maxlon": -2.0134146
+  },
+  "geometry": [
+    { "lat": 43.3013000, "lon": -2.0134964 },
+    { "lat": 43.3012529, "lon": -2.0134646 },
+    { "lat": 43.3012639, "lon": -2.0134454 },
+    { "lat": 43.3012790, "lon": -2.0134146 },
+    { "lat": 43.3013221, "lon": -2.0134519 },
+    { "lat": 43.3013081, "lon": -2.0134776 },
+    { "lat": 43.3013000, "lon": -2.0134964 }
+  ],
+  "tags": {
+    "building:colour": "gray",
+    "building:levels": "3",
+    "building:min_level": "2",
+    "building:part": "yes",
+    "roof:colour": "#9fa1a3"
+  }
+},
+{
+  "type": "way",
+  "id": 1360662430,
+  "bounds": {
+    "minlat": 43.3009882,
+    "minlon": -2.0133167,
+    "maxlat": 43.3010656,
+    "maxlon": -2.0132123
+  },
+  "geometry": [
+    { "lat": 43.3010306, "lon": -2.0133167 },
+    { "lat": 43.3010412, "lon": -2.0132952 },
+    { "lat": 43.3010656, "lon": -2.0132458 },
+    { "lat": 43.3010280, "lon": -2.0132123 },
+    { "lat": 43.3009989, "lon": -2.0132696 },
+    { "lat": 43.3009882, "lon": -2.0132884 },
+    { "lat": 43.3010306, "lon": -2.0133167 }
+  ],
+  "tags": {
+    "building:colour": "gray",
+    "building:levels": "3",
+    "building:min_level": "2",
+    "building:part": "yes",
+    "roof:colour": "#9fa1a3"
+  }
+},
+{
+  "type": "way",
+  "id": 1360948936,
+  "bounds": {
+    "minlat": 43.3016636,
+    "minlon": -2.0116605,
+    "maxlat": 43.3019794,
+    "maxlon": -2.0113422
+  },
+  "geometry": [
+    { "lat": 43.3019794, "lon": -2.0115234 },
+    { "lat": 43.3018273, "lon": -2.0116605 },
+    { "lat": 43.3016636, "lon": -2.0115176 },
+    { "lat": 43.3016699, "lon": -2.0115132 },
+    { "lat": 43.3019087, "lon": -2.0113446 },
+    { "lat": 43.3019122, "lon": -2.0113422 },
+    { "lat": 43.3019625, "lon": -2.0114778 },
+    { "lat": 43.3019794, "lon": -2.0115234 }
+  ],
+  "tags": {
+    "building:levels": "2",
+    "building:part": "yes",
+    "roof:colour": "#b3b4b2",
+    "roof:shape": "flat"
+  }
+},
+{
+  "type": "way",
+  "id": 1360948937,
+  "bounds": {
+    "minlat": 43.3015443,
+    "minlon": -2.0115176,
+    "maxlat": 43.3019122,
+    "maxlon": -2.0109642
+  },
+  "geometry": [
+    { "lat": 43.3019122, "lon": -2.0113422 },
+    { "lat": 43.3017800, "lon": -2.0109861 },
+    { "lat": 43.3017485, "lon": -2.0109642 },
+    { "lat": 43.3015636, "lon": -2.0113687 },
+    { "lat": 43.3015443, "lon": -2.0114110 },
+    { "lat": 43.3015738, "lon": -2.0114392 },
+    { "lat": 43.3016636, "lon": -2.0115176 },
+    { "lat": 43.3016699, "lon": -2.0115132 },
+    { "lat": 43.3019087, "lon": -2.0113446 },
+    { "lat": 43.3019122, "lon": -2.0113422 }
+  ],
+  "tags": {
+    "building:levels": "3",
+    "building:part": "yes",
+    "roof:colour": "#a2a5aa",
+    "roof:shape": "flat"
+  }
+},
+{
+  "type": "way",
+  "id": 1360948938,
+  "bounds": {
+    "minlat": 43.3017565,
+    "minlon": -2.0110512,
+    "maxlat": 43.3017854,
+    "maxlon": -2.0110118
+  },
+  "geometry": [
+    { "lat": 43.3017854, "lon": -2.0110277 },
+    { "lat": 43.3017742, "lon": -2.0110512 },
+    { "lat": 43.3017565, "lon": -2.0110353 },
+    { "lat": 43.3017678, "lon": -2.0110118 },
+    { "lat": 43.3017854, "lon": -2.0110277 }
+  ],
+  "tags": {
+    "advertising": "totem",
+    "building:levels": "4",
+    "building:min_level": "3",
+    "building:part": "tower",
+    "operator": "Citroën"
+  }
+},
+{
+  "type": "way",
+  "id": 1360948939,
+  "bounds": {
+    "minlat": 43.3017848,
+    "minlon": -2.0116043,
+    "maxlat": 43.3019083,
+    "maxlon": -2.0114706
+  },
+  "geometry": [
+    { "lat": 43.3019083, "lon": -2.0115341 },
+    { "lat": 43.3018085, "lon": -2.0116043 },
+    { "lat": 43.3017848, "lon": -2.0115408 },
+    { "lat": 43.3018847, "lon": -2.0114706 },
+    { "lat": 43.3019083, "lon": -2.0115341 }
+  ],
+  "tags": {
+    "building:levels": "3",
+    "building:material": "wood",
+    "building:min_level": "2",
+    "building:part": "yes",
+    "roof:material": "tar_paper",
+    "roof:shape": "gabled"
+  }
+},
+{
+  "type": "way",
+  "id": 1361407640,
+  "bounds": {
+    "minlat": 43.3016636,
+    "minlon": -2.0116605,
+    "maxlat": 43.3019794,
+    "maxlon": -2.0113422
+  },
+  "geometry": [
+    { "lat": 43.3019122, "lon": -2.0113422 },
+    { "lat": 43.3019625, "lon": -2.0114778 },
+    { "lat": 43.3019794, "lon": -2.0115234 },
+    { "lat": 43.3018273, "lon": -2.0116605 },
+    { "lat": 43.3016636, "lon": -2.0115176 },
+    { "lat": 43.3016699, "lon": -2.0115132 },
+    { "lat": 43.3018270, "lon": -2.0116526 },
+    { "lat": 43.3019745, "lon": -2.0115212 },
+    { "lat": 43.3019087, "lon": -2.0113446 },
+    { "lat": 43.3019122, "lon": -2.0113422 }
+  ],
+  "tags": {
+    "building:levels": "3",
+    "building:min_level": "2",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
   "id": 1365981104,
   "bounds": {
     "minlat": 43.3166956,
@@ -25883,6 +28744,312 @@
   ],
   "tags": {
     "leisure": "park"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404132,
+  "bounds": {
+    "minlat": 43.3006868,
+    "minlon": -2.0039321,
+    "maxlat": 43.3010777,
+    "maxlon": -2.0033673
+  },
+  "geometry": [
+    { "lat": 43.3009015, "lon": -2.0039321 },
+    { "lat": 43.3010752, "lon": -2.0035861 },
+    { "lat": 43.3010777, "lon": -2.0035564 },
+    { "lat": 43.3010713, "lon": -2.0035298 },
+    { "lat": 43.3010616, "lon": -2.0035172 },
+    { "lat": 43.3010339, "lon": -2.0034915 },
+    { "lat": 43.3010044, "lon": -2.0034642 },
+    { "lat": 43.3009816, "lon": -2.0034426 },
+    { "lat": 43.3009537, "lon": -2.0034161 },
+    { "lat": 43.3009126, "lon": -2.0033832 },
+    { "lat": 43.3009025, "lon": -2.0033741 },
+    { "lat": 43.3008825, "lon": -2.0033673 },
+    { "lat": 43.3008649, "lon": -2.0033763 },
+    { "lat": 43.3006868, "lon": -2.0037390 },
+    { "lat": 43.3009015, "lon": -2.0039321 }
+  ],
+  "tags": {
+    "building:levels": "4",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404133,
+  "bounds": {
+    "minlat": 43.3007554,
+    "minlon": -2.0038326,
+    "maxlat": 43.3010672,
+    "maxlon": -2.0033722
+  },
+  "geometry": [
+    { "lat": 43.3010672, "lon": -2.0035075 },
+    { "lat": 43.3010616, "lon": -2.0035172 },
+    { "lat": 43.3008974, "lon": -2.0038326 },
+    { "lat": 43.3007554, "lon": -2.0037037 },
+    { "lat": 43.3009126, "lon": -2.0033832 },
+    { "lat": 43.3009186, "lon": -2.0033722 },
+    { "lat": 43.3009586, "lon": -2.0034058 },
+    { "lat": 43.3009863, "lon": -2.0034329 },
+    { "lat": 43.3010100, "lon": -2.0034533 },
+    { "lat": 43.3010394, "lon": -2.0034808 },
+    { "lat": 43.3010672, "lon": -2.0035075 }
+  ],
+  "tags": {
+    "building:levels": "11",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404134,
+  "bounds": {
+    "minlat": 43.3009853,
+    "minlon": -2.0035293,
+    "maxlat": 43.3010574,
+    "maxlon": -2.0034177
+  },
+  "geometry": [
+    { "lat": 43.3010574, "lon": -2.0034461 },
+    { "lat": 43.3010394, "lon": -2.0034808 },
+    { "lat": 43.3010339, "lon": -2.0034915 },
+    { "lat": 43.3010142, "lon": -2.0035293 },
+    { "lat": 43.3009853, "lon": -2.0035010 },
+    { "lat": 43.3010044, "lon": -2.0034642 },
+    { "lat": 43.3010100, "lon": -2.0034533 },
+    { "lat": 43.3010285, "lon": -2.0034177 },
+    { "lat": 43.3010574, "lon": -2.0034461 }
+  ],
+  "tags": {
+    "building:levels": "13",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404135,
+  "bounds": {
+    "minlat": 43.3009354,
+    "minlon": -2.0034811,
+    "maxlat": 43.3010041,
+    "maxlon": -2.0033703
+  },
+  "geometry": [
+    { "lat": 43.3009758, "lon": -2.0033703 },
+    { "lat": 43.3009586, "lon": -2.0034058 },
+    { "lat": 43.3009537, "lon": -2.0034161 },
+    { "lat": 43.3009354, "lon": -2.0034527 },
+    { "lat": 43.3009637, "lon": -2.0034811 },
+    { "lat": 43.3009816, "lon": -2.0034426 },
+    { "lat": 43.3009863, "lon": -2.0034329 },
+    { "lat": 43.3010041, "lon": -2.0033961 },
+    { "lat": 43.3009758, "lon": -2.0033703 }
+  ],
+  "tags": {
+    "building:levels": "13",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404136,
+  "bounds": {
+    "minlat": 43.3009125,
+    "minlon": -2.0035736,
+    "maxlat": 43.3010290,
+    "maxlon": -2.0033917
+  },
+  "geometry": [
+    { "lat": 43.3010142, "lon": -2.0035293 },
+    { "lat": 43.3009916, "lon": -2.0035736 },
+    { "lat": 43.3009125, "lon": -2.0034984 },
+    { "lat": 43.3009354, "lon": -2.0034527 },
+    { "lat": 43.3009637, "lon": -2.0034811 },
+    { "lat": 43.3009816, "lon": -2.0034426 },
+    { "lat": 43.3009863, "lon": -2.0034329 },
+    { "lat": 43.3010041, "lon": -2.0033961 },
+    { "lat": 43.3010116, "lon": -2.0033919 },
+    { "lat": 43.3010182, "lon": -2.0033917 },
+    { "lat": 43.3010251, "lon": -2.0033972 },
+    { "lat": 43.3010290, "lon": -2.0034064 },
+    { "lat": 43.3010285, "lon": -2.0034177 },
+    { "lat": 43.3010100, "lon": -2.0034533 },
+    { "lat": 43.3010044, "lon": -2.0034642 },
+    { "lat": 43.3009853, "lon": -2.0035010 },
+    { "lat": 43.3010142, "lon": -2.0035293 }
+  ],
+  "tags": {
+    "building:levels": "12",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404138,
+  "bounds": {
+    "minlat": 43.3011292,
+    "minlon": -2.0043422,
+    "maxlat": 43.3015201,
+    "maxlon": -2.0037743
+  },
+  "geometry": [
+    { "lat": 43.3013439, "lon": -2.0043422 },
+    { "lat": 43.3015176, "lon": -2.0039962 },
+    { "lat": 43.3015201, "lon": -2.0039665 },
+    { "lat": 43.3015137, "lon": -2.0039399 },
+    { "lat": 43.3015039, "lon": -2.0039274 },
+    { "lat": 43.3014763, "lon": -2.0039016 },
+    { "lat": 43.3014468, "lon": -2.0038743 },
+    { "lat": 43.3014214, "lon": -2.0038505 },
+    { "lat": 43.3013933, "lon": -2.0038222 },
+    { "lat": 43.3013575, "lon": -2.0037902 },
+    { "lat": 43.3013465, "lon": -2.0037815 },
+    { "lat": 43.3013294, "lon": -2.0037743 },
+    { "lat": 43.3013072, "lon": -2.0037864 },
+    { "lat": 43.3011292, "lon": -2.0041491 },
+    { "lat": 43.3013439, "lon": -2.0043422 }
+  ],
+  "tags": {
+    "building:levels": "4",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404139,
+  "bounds": {
+    "minlat": 43.3011978,
+    "minlon": -2.0042427,
+    "maxlat": 43.3015096,
+    "maxlon": -2.0037796
+  },
+  "geometry": [
+    { "lat": 43.3015096, "lon": -2.0039177 },
+    { "lat": 43.3015039, "lon": -2.0039274 },
+    { "lat": 43.3013398, "lon": -2.0042427 },
+    { "lat": 43.3011978, "lon": -2.0041138 },
+    { "lat": 43.3013575, "lon": -2.0037902 },
+    { "lat": 43.3013642, "lon": -2.0037796 },
+    { "lat": 43.3013986, "lon": -2.0038121 },
+    { "lat": 43.3014271, "lon": -2.0038395 },
+    { "lat": 43.3014524, "lon": -2.0038634 },
+    { "lat": 43.3014818, "lon": -2.0038909 },
+    { "lat": 43.3015096, "lon": -2.0039177 }
+  ],
+  "tags": {
+    "building:levels": "11",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404140,
+  "bounds": {
+    "minlat": 43.3014276,
+    "minlon": -2.0039394,
+    "maxlat": 43.3014998,
+    "maxlon": -2.0038279
+  },
+  "geometry": [
+    { "lat": 43.3014998, "lon": -2.0038562 },
+    { "lat": 43.3014818, "lon": -2.0038909 },
+    { "lat": 43.3014763, "lon": -2.0039016 },
+    { "lat": 43.3014566, "lon": -2.0039394 },
+    { "lat": 43.3014276, "lon": -2.0039111 },
+    { "lat": 43.3014468, "lon": -2.0038743 },
+    { "lat": 43.3014524, "lon": -2.0038634 },
+    { "lat": 43.3014708, "lon": -2.0038279 },
+    { "lat": 43.3014998, "lon": -2.0038562 }
+  ],
+  "tags": {
+    "building:levels": "13",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404141,
+  "bounds": {
+    "minlat": 43.3013752,
+    "minlon": -2.0038848,
+    "maxlat": 43.3014449,
+    "maxlon": -2.0037774
+  },
+  "geometry": [
+    { "lat": 43.3014165, "lon": -2.0037774 },
+    { "lat": 43.3013986, "lon": -2.0038121 },
+    { "lat": 43.3013933, "lon": -2.0038222 },
+    { "lat": 43.3013752, "lon": -2.0038571 },
+    { "lat": 43.3014036, "lon": -2.0038848 },
+    { "lat": 43.3014214, "lon": -2.0038505 },
+    { "lat": 43.3014271, "lon": -2.0038395 },
+    { "lat": 43.3014449, "lon": -2.0038052 },
+    { "lat": 43.3014165, "lon": -2.0037774 }
+  ],
+  "tags": {
+    "building:levels": "13",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1372404142,
+  "bounds": {
+    "minlat": 43.3013517,
+    "minlon": -2.0039837,
+    "maxlat": 43.3014714,
+    "maxlon": -2.0038018
+  },
+  "geometry": [
+    { "lat": 43.3014566, "lon": -2.0039394 },
+    { "lat": 43.3014340, "lon": -2.0039837 },
+    { "lat": 43.3013517, "lon": -2.0039071 },
+    { "lat": 43.3013752, "lon": -2.0038571 },
+    { "lat": 43.3014036, "lon": -2.0038848 },
+    { "lat": 43.3014214, "lon": -2.0038505 },
+    { "lat": 43.3014271, "lon": -2.0038395 },
+    { "lat": 43.3014449, "lon": -2.0038052 },
+    { "lat": 43.3014540, "lon": -2.0038020 },
+    { "lat": 43.3014606, "lon": -2.0038018 },
+    { "lat": 43.3014675, "lon": -2.0038073 },
+    { "lat": 43.3014714, "lon": -2.0038166 },
+    { "lat": 43.3014708, "lon": -2.0038279 },
+    { "lat": 43.3014524, "lon": -2.0038634 },
+    { "lat": 43.3014468, "lon": -2.0038743 },
+    { "lat": 43.3014276, "lon": -2.0039111 },
+    { "lat": 43.3014566, "lon": -2.0039394 }
+  ],
+  "tags": {
+    "building:levels": "12",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1376694370,
+  "bounds": {
+    "minlat": 43.2852007,
+    "minlon": -2.0014325,
+    "maxlat": 43.2852400,
+    "maxlon": -2.0013776
+  },
+  "geometry": [
+    { "lat": 43.2852400, "lon": -2.0014181 },
+    { "lat": 43.2852116, "lon": -2.0014325 },
+    { "lat": 43.2852007, "lon": -2.0013920 },
+    { "lat": 43.2852292, "lon": -2.0013776 },
+    { "lat": 43.2852400, "lon": -2.0014181 }
+  ],
+  "tags": {
+    "building": "yes",
+    "height": "11",
+    "man_made": "tower",
+    "tower:construction": "concrete",
+    "tower:type": "lighting"
   }
 },
 {
@@ -26590,6 +29757,144 @@
   "tags": {
     "building:levels": "5",
     "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1417010122,
+  "bounds": {
+    "minlat": 43.2994754,
+    "minlon": -1.9723109,
+    "maxlat": 43.3000420,
+    "maxlon": -1.9717264
+  },
+  "geometry": [
+    { "lat": 43.3000260, "lon": -1.9723109 },
+    { "lat": 43.3000325, "lon": -1.9722994 },
+    { "lat": 43.3000420, "lon": -1.9722824 },
+    { "lat": 43.2999304, "lon": -1.9722058 },
+    { "lat": 43.2998335, "lon": -1.9721284 },
+    { "lat": 43.2997474, "lon": -1.9720454 },
+    { "lat": 43.2996573, "lon": -1.9719502 },
+    { "lat": 43.2995741, "lon": -1.9718467 },
+    { "lat": 43.2994901, "lon": -1.9717264 },
+    { "lat": 43.2994815, "lon": -1.9717430 },
+    { "lat": 43.2994754, "lon": -1.9717546 },
+    { "lat": 43.2995582, "lon": -1.9718786 },
+    { "lat": 43.2996441, "lon": -1.9719760 },
+    { "lat": 43.2997304, "lon": -1.9720713 },
+    { "lat": 43.2998235, "lon": -1.9721588 },
+    { "lat": 43.2999213, "lon": -1.9722392 },
+    { "lat": 43.3000260, "lon": -1.9723109 }
+  ],
+  "tags": {
+    "building:material": "plastic",
+    "building:part": "yes",
+    "height": "9",
+    "min_height": "7",
+    "roof:colour": "#e9eae7",
+    "roof:direction": "233",
+    "roof:height": "2",
+    "roof:shape": "skillion"
+  }
+},
+{
+  "type": "way",
+  "id": 1417010123,
+  "bounds": {
+    "minlat": 43.2994901,
+    "minlon": -1.9722824,
+    "maxlat": 43.3000779,
+    "maxlon": -1.9716605
+  },
+  "geometry": [
+    { "lat": 43.3000420, "lon": -1.9722824 },
+    { "lat": 43.3000543, "lon": -1.9722603 },
+    { "lat": 43.3000779, "lon": -1.9722178 },
+    { "lat": 43.2995315, "lon": -1.9716605 },
+    { "lat": 43.2994943, "lon": -1.9717183 },
+    { "lat": 43.2994901, "lon": -1.9717264 },
+    { "lat": 43.2995741, "lon": -1.9718467 },
+    { "lat": 43.2996573, "lon": -1.9719502 },
+    { "lat": 43.2997474, "lon": -1.9720454 },
+    { "lat": 43.2998335, "lon": -1.9721284 },
+    { "lat": 43.2999304, "lon": -1.9722058 },
+    { "lat": 43.3000420, "lon": -1.9722824 }
+  ],
+  "tags": {
+    "building:part": "yes",
+    "height": "9",
+    "min_height": "8.5",
+    "roof:colour": "#dcdcd8",
+    "roof:height": "0.5"
+  }
+},
+{
+  "type": "way",
+  "id": 1417010124,
+  "bounds": {
+    "minlat": 43.2994754,
+    "minlon": -1.9723109,
+    "maxlat": 43.3000325,
+    "maxlon": -1.9717430
+  },
+  "geometry": [
+    { "lat": 43.3000260, "lon": -1.9723109 },
+    { "lat": 43.2999213, "lon": -1.9722392 },
+    { "lat": 43.2998235, "lon": -1.9721588 },
+    { "lat": 43.2997304, "lon": -1.9720713 },
+    { "lat": 43.2996441, "lon": -1.9719760 },
+    { "lat": 43.2995582, "lon": -1.9718786 },
+    { "lat": 43.2994754, "lon": -1.9717546 },
+    { "lat": 43.2994815, "lon": -1.9717430 },
+    { "lat": 43.2995656, "lon": -1.9718681 },
+    { "lat": 43.2996501, "lon": -1.9719657 },
+    { "lat": 43.2997361, "lon": -1.9720608 },
+    { "lat": 43.2998292, "lon": -1.9721470 },
+    { "lat": 43.2999266, "lon": -1.9722277 },
+    { "lat": 43.3000325, "lon": -1.9722994 },
+    { "lat": 43.3000260, "lon": -1.9723109 }
+  ],
+  "tags": {
+    "building:material": "brick",
+    "building:part": "yes",
+    "height": "7",
+    "roof:colour": "silver"
+  }
+},
+{
+  "type": "way",
+  "id": 1417010125,
+  "bounds": {
+    "minlat": 43.2994815,
+    "minlon": -1.9722994,
+    "maxlat": 43.3000779,
+    "maxlon": -1.9716605
+  },
+  "geometry": [
+    { "lat": 43.2995315, "lon": -1.9716605 },
+    { "lat": 43.2994943, "lon": -1.9717183 },
+    { "lat": 43.2994901, "lon": -1.9717264 },
+    { "lat": 43.2994815, "lon": -1.9717430 },
+    { "lat": 43.2995656, "lon": -1.9718681 },
+    { "lat": 43.2996501, "lon": -1.9719657 },
+    { "lat": 43.2997361, "lon": -1.9720608 },
+    { "lat": 43.2998292, "lon": -1.9721470 },
+    { "lat": 43.2999266, "lon": -1.9722277 },
+    { "lat": 43.3000325, "lon": -1.9722994 },
+    { "lat": 43.3000420, "lon": -1.9722824 },
+    { "lat": 43.3000543, "lon": -1.9722603 },
+    { "lat": 43.3000779, "lon": -1.9722178 },
+    { "lat": 43.2995315, "lon": -1.9716605 }
+  ],
+  "tags": {
+    "building:colour": "silver",
+    "building:part": "steps",
+    "height": "5",
+    "roof:colour": "silver",
+    "roof:direction": "53",
+    "roof:height": "3",
+    "roof:shape": "skillion"
   }
 },
 {
@@ -27743,6 +31048,62 @@
 },
 {
   "type": "way",
+  "id": 1426813320,
+  "bounds": {
+    "minlat": 43.3004869,
+    "minlon": -1.9738624,
+    "maxlat": 43.3013297,
+    "maxlon": -1.9722916
+  },
+  "geometry": [
+    { "lat": 43.3004869, "lon": -1.9738624 },
+    { "lat": 43.3005633, "lon": -1.9738093 },
+    { "lat": 43.3013211, "lon": -1.9723987 },
+    { "lat": 43.3013297, "lon": -1.9722916 },
+    { "lat": 43.3012576, "lon": -1.9723388 },
+    { "lat": 43.3004979, "lon": -1.9737512 },
+    { "lat": 43.3004869, "lon": -1.9738624 }
+  ],
+  "tags": {
+    "building:colour": "white",
+    "building:part": "yes",
+    "height": "43",
+    "min_height": "35",
+    "roof:colour": "white",
+    "roof:height": "8",
+    "roof:shape": "hipped"
+  }
+},
+{
+  "type": "way",
+  "id": 1426813321,
+  "bounds": {
+    "minlat": 43.3004083,
+    "minlon": -1.9747746,
+    "maxlat": 43.3018222,
+    "maxlon": -1.9733511
+  },
+  "geometry": [
+    { "lat": 43.3004083, "lon": -1.9733511 },
+    { "lat": 43.3004548, "lon": -1.9734607 },
+    { "lat": 43.3017356, "lon": -1.9747517 },
+    { "lat": 43.3018222, "lon": -1.9747746 },
+    { "lat": 43.3017791, "lon": -1.9746659 },
+    { "lat": 43.3005009, "lon": -1.9733750 },
+    { "lat": 43.3004083, "lon": -1.9733511 }
+  ],
+  "tags": {
+    "building:colour": "white",
+    "building:part": "yes",
+    "height": "43",
+    "min_height": "35",
+    "roof:colour": "white",
+    "roof:height": "8",
+    "roof:shape": "hipped"
+  }
+},
+{
+  "type": "way",
   "id": 1426813322,
   "bounds": {
     "minlat": 43.3009550,
@@ -27795,6 +31156,39 @@
     "roof:colour": "white",
     "roof:height": "8",
     "roof:shape": "hipped"
+  }
+},
+{
+  "type": "way",
+  "id": 1427720165,
+  "bounds": {
+    "minlat": 43.3013744,
+    "minlon": -1.9747760,
+    "maxlat": 43.3018785,
+    "maxlon": -1.9743421
+  },
+  "geometry": [
+    { "lat": 43.3016175, "lon": -1.9743421 },
+    { "lat": 43.3018785, "lon": -1.9746068 },
+    { "lat": 43.3018049, "lon": -1.9746673 },
+    { "lat": 43.3017096, "lon": -1.9747361 },
+    { "lat": 43.3016388, "lon": -1.9747672 },
+    { "lat": 43.3015666, "lon": -1.9747760 },
+    { "lat": 43.3015305, "lon": -1.9747740 },
+    { "lat": 43.3014508, "lon": -1.9747518 },
+    { "lat": 43.3013744, "lon": -1.9747434 },
+    { "lat": 43.3015379, "lon": -1.9743566 },
+    { "lat": 43.3015657, "lon": -1.9743693 },
+    { "lat": 43.3015943, "lon": -1.9743658 },
+    { "lat": 43.3016175, "lon": -1.9743421 }
+  ],
+  "tags": {
+    "building:part": "steps",
+    "height": "12",
+    "note": "Grada 3D",
+    "roof:direction": "98",
+    "roof:height": "11",
+    "roof:shape": "skillion"
   }
 },
 {
@@ -27877,6 +31271,124 @@
     "height": "12",
     "note": "Grada 3D",
     "roof:direction": "233",
+    "roof:height": "11",
+    "roof:shape": "skillion"
+  }
+},
+{
+  "type": "way",
+  "id": 1427720169,
+  "bounds": {
+    "minlat": 43.3008992,
+    "minlon": -1.9727720,
+    "maxlat": 43.3014045,
+    "maxlon": -1.9723434
+  },
+  "geometry": [
+    { "lat": 43.3011645, "lon": -1.9727720 },
+    { "lat": 43.3011862, "lon": -1.9727470 },
+    { "lat": 43.3012089, "lon": -1.9727414 },
+    { "lat": 43.3012316, "lon": -1.9727455 },
+    { "lat": 43.3014045, "lon": -1.9723736 },
+    { "lat": 43.3013591, "lon": -1.9723724 },
+    { "lat": 43.3012831, "lon": -1.9723536 },
+    { "lat": 43.3012108, "lon": -1.9723434 },
+    { "lat": 43.3011373, "lon": -1.9723522 },
+    { "lat": 43.3010687, "lon": -1.9723826 },
+    { "lat": 43.3010378, "lon": -1.9724033 },
+    { "lat": 43.3009695, "lon": -1.9724565 },
+    { "lat": 43.3008992, "lon": -1.9725144 },
+    { "lat": 43.3011645, "lon": -1.9727720 }
+  ],
+  "tags": {
+    "building:part": "steps",
+    "height": "12",
+    "note": "Grada 3D",
+    "roof:direction": "278",
+    "roof:height": "11",
+    "roof:shape": "skillion"
+  }
+},
+{
+  "type": "way",
+  "id": 1427720170,
+  "bounds": {
+    "minlat": 43.3005126,
+    "minlon": -1.9734977,
+    "maxlat": 43.3011645,
+    "maxlon": -1.9725144
+  },
+  "geometry": [
+    { "lat": 43.3011645, "lon": -1.9727720 },
+    { "lat": 43.3007748, "lon": -1.9734977 },
+    { "lat": 43.3005126, "lon": -1.9732301 },
+    { "lat": 43.3008992, "lon": -1.9725144 },
+    { "lat": 43.3011645, "lon": -1.9727720 }
+  ],
+  "tags": {
+    "building:part": "steps",
+    "height": "11",
+    "note": "Grada 3D",
+    "roof:direction": "323",
+    "roof:height": "10",
+    "roof:shape": "skillion"
+  }
+},
+{
+  "type": "way",
+  "id": 1427720171,
+  "bounds": {
+    "minlat": 43.3004707,
+    "minlon": -1.9739322,
+    "maxlat": 43.3007900,
+    "maxlon": -1.9732301
+  },
+  "geometry": [
+    { "lat": 43.3007748, "lon": -1.9734977 },
+    { "lat": 43.3007662, "lon": -1.9735401 },
+    { "lat": 43.3007758, "lon": -1.9735841 },
+    { "lat": 43.3007900, "lon": -1.9736029 },
+    { "lat": 43.3005665, "lon": -1.9739322 },
+    { "lat": 43.3005379, "lon": -1.9738349 },
+    { "lat": 43.3004985, "lon": -1.9737373 },
+    { "lat": 43.3004857, "lon": -1.9736876 },
+    { "lat": 43.3004710, "lon": -1.9735912 },
+    { "lat": 43.3004707, "lon": -1.9734894 },
+    { "lat": 43.3004765, "lon": -1.9734355 },
+    { "lat": 43.3004935, "lon": -1.9733378 },
+    { "lat": 43.3005126, "lon": -1.9732301 },
+    { "lat": 43.3007748, "lon": -1.9734977 }
+  ],
+  "tags": {
+    "building:part": "steps",
+    "height": "12",
+    "note": "Grada 3D",
+    "roof:direction": "8",
+    "roof:height": "11",
+    "roof:shape": "skillion"
+  }
+},
+{
+  "type": "way",
+  "id": 1427720172,
+  "bounds": {
+    "minlat": 43.3005665,
+    "minlon": -1.9747434,
+    "maxlat": 43.3015379,
+    "maxlon": -1.9736029
+  },
+  "geometry": [
+    { "lat": 43.3005665, "lon": -1.9739322 },
+    { "lat": 43.3007900, "lon": -1.9736029 },
+    { "lat": 43.3015379, "lon": -1.9743566 },
+    { "lat": 43.3013744, "lon": -1.9747434 },
+    { "lat": 43.3005665, "lon": -1.9739322 }
+  ],
+  "tags": {
+    "building:part": "steps",
+    "height": "12",
+    "note": "Grada 3D",
+    "roof:direction": "53",
     "roof:height": "11",
     "roof:shape": "skillion"
   }
@@ -29949,6 +33461,80 @@
 },
 {
   "type": "way",
+  "id": 1503117178,
+  "bounds": {
+    "minlat": 43.2918834,
+    "minlon": -2.0047210,
+    "maxlat": 43.2920629,
+    "maxlon": -2.0044879
+  },
+  "geometry": [
+    { "lat": 43.2920629, "lon": -2.0046959 },
+    { "lat": 43.2919549, "lon": -2.0047210 },
+    { "lat": 43.2919253, "lon": -2.0046363 },
+    { "lat": 43.2918834, "lon": -2.0045611 },
+    { "lat": 43.2919070, "lon": -2.0044879 },
+    { "lat": 43.2919672, "lon": -2.0045286 },
+    { "lat": 43.2920299, "lon": -2.0046146 },
+    { "lat": 43.2920629, "lon": -2.0046959 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 1503308579,
+  "bounds": {
+    "minlat": 43.2995955,
+    "minlon": -1.9953307,
+    "maxlat": 43.2997419,
+    "maxlon": -1.9951573
+  },
+  "geometry": [
+    { "lat": 43.2997380, "lon": -1.9951733 },
+    { "lat": 43.2997419, "lon": -1.9952574 },
+    { "lat": 43.2996769, "lon": -1.9953307 },
+    { "lat": 43.2996190, "lon": -1.9953137 },
+    { "lat": 43.2995955, "lon": -1.9952172 },
+    { "lat": 43.2996665, "lon": -1.9951573 },
+    { "lat": 43.2997055, "lon": -1.9951742 },
+    { "lat": 43.2997380, "lon": -1.9951733 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 1503339337,
+  "bounds": {
+    "minlat": 43.2951105,
+    "minlon": -1.9772837,
+    "maxlat": 43.2953746,
+    "maxlon": -1.9770449
+  },
+  "geometry": [
+    { "lat": 43.2953709, "lon": -1.9772837 },
+    { "lat": 43.2951297, "lon": -1.9770693 },
+    { "lat": 43.2951149, "lon": -1.9770926 },
+    { "lat": 43.2951105, "lon": -1.9770621 },
+    { "lat": 43.2951194, "lon": -1.9770449 },
+    { "lat": 43.2951653, "lon": -1.9770632 },
+    { "lat": 43.2951978, "lon": -1.9770682 },
+    { "lat": 43.2952503, "lon": -1.9770957 },
+    { "lat": 43.2952866, "lon": -1.9771231 },
+    { "lat": 43.2953236, "lon": -1.9771750 },
+    { "lat": 43.2953583, "lon": -1.9772359 },
+    { "lat": 43.2953746, "lon": -1.9772674 },
+    { "lat": 43.2953709, "lon": -1.9772837 }
+  ],
+  "tags": {
+    "leisure": "garden"
+  }
+},
+{
+  "type": "way",
   "id": 1510701154,
   "bounds": {
     "minlat": 43.3230396,
@@ -30438,6 +34024,189 @@
 },
 {
   "type": "way",
+  "id": 1531965589,
+  "bounds": {
+    "minlat": 43.3000457,
+    "minlon": -2.0059400,
+    "maxlat": 43.3001222,
+    "maxlon": -2.0058373
+  },
+  "geometry": [
+    { "lat": 43.3001222, "lon": -2.0058838 },
+    { "lat": 43.3000736, "lon": -2.0058373 },
+    { "lat": 43.3000457, "lon": -2.0058949 },
+    { "lat": 43.3000950, "lon": -2.0059400 },
+    { "lat": 43.3001222, "lon": -2.0058838 }
+  ],
+  "tags": {
+    "building:levels": "3",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1531965590,
+  "bounds": {
+    "minlat": 43.2995770,
+    "minlon": -2.0055490,
+    "maxlat": 43.2999337,
+    "maxlon": -2.0048700
+  },
+  "geometry": [
+    { "lat": 43.2999337, "lon": -2.0054396 },
+    { "lat": 43.2998988, "lon": -2.0053847 },
+    { "lat": 43.2998384, "lon": -2.0052729 },
+    { "lat": 43.2997848, "lon": -2.0051548 },
+    { "lat": 43.2997380, "lon": -2.0050299 },
+    { "lat": 43.2996987, "lon": -2.0049003 },
+    { "lat": 43.2996916, "lon": -2.0048700 },
+    { "lat": 43.2995770, "lon": -2.0049248 },
+    { "lat": 43.2995848, "lon": -2.0049581 },
+    { "lat": 43.2996279, "lon": -2.0051003 },
+    { "lat": 43.2996793, "lon": -2.0052372 },
+    { "lat": 43.2997381, "lon": -2.0053668 },
+    { "lat": 43.2998043, "lon": -2.0054894 },
+    { "lat": 43.2998423, "lon": -2.0055490 },
+    { "lat": 43.2999337, "lon": -2.0054396 }
+  ],
+  "tags": {
+    "building:levels": "4",
+    "building:part": "yes",
+    "roof:levels": "1",
+    "roof:shape": "flat"
+  }
+},
+{
+  "type": "way",
+  "id": 1531965591,
+  "bounds": {
+    "minlat": 43.2995013,
+    "minlon": -2.0048462,
+    "maxlat": 43.2996754,
+    "maxlon": -2.0040483
+  },
+  "geometry": [
+    { "lat": 43.2996754, "lon": -2.0048014 },
+    { "lat": 43.2996672, "lon": -2.0047667 },
+    { "lat": 43.2996438, "lon": -2.0046300 },
+    { "lat": 43.2996285, "lon": -2.0044911 },
+    { "lat": 43.2996215, "lon": -2.0043510 },
+    { "lat": 43.2996229, "lon": -2.0042106 },
+    { "lat": 43.2996266, "lon": -2.0041558 },
+    { "lat": 43.2995123, "lon": -2.0040483 },
+    { "lat": 43.2995098, "lon": -2.0040838 },
+    { "lat": 43.2995028, "lon": -2.0042012 },
+    { "lat": 43.2995013, "lon": -2.0043552 },
+    { "lat": 43.2995090, "lon": -2.0045089 },
+    { "lat": 43.2995257, "lon": -2.0046612 },
+    { "lat": 43.2995514, "lon": -2.0048111 },
+    { "lat": 43.2995597, "lon": -2.0048462 },
+    { "lat": 43.2996754, "lon": -2.0048014 }
+  ],
+  "tags": {
+    "building:levels": "4",
+    "building:part": "yes",
+    "roof:levels": "1",
+    "roof:shape": "flat"
+  }
+},
+{
+  "type": "way",
+  "id": 1531965592,
+  "bounds": {
+    "minlat": 43.2994597,
+    "minlon": -2.0048617,
+    "maxlat": 43.2995597,
+    "maxlon": -2.0040466
+  },
+  "geometry": [
+    { "lat": 43.2995098, "lon": -2.0040838 },
+    { "lat": 43.2994718, "lon": -2.0040466 },
+    { "lat": 43.2994613, "lon": -2.0041986 },
+    { "lat": 43.2994597, "lon": -2.0043572 },
+    { "lat": 43.2994676, "lon": -2.0045154 },
+    { "lat": 43.2994849, "lon": -2.0046722 },
+    { "lat": 43.2995113, "lon": -2.0048265 },
+    { "lat": 43.2995196, "lon": -2.0048617 },
+    { "lat": 43.2995597, "lon": -2.0048462 },
+    { "lat": 43.2995514, "lon": -2.0048111 },
+    { "lat": 43.2995257, "lon": -2.0046612 },
+    { "lat": 43.2995090, "lon": -2.0045089 },
+    { "lat": 43.2995013, "lon": -2.0043552 },
+    { "lat": 43.2995028, "lon": -2.0042012 },
+    { "lat": 43.2995098, "lon": -2.0040838 }
+  ],
+  "tags": {
+    "building:levels": "1",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1531965593,
+  "bounds": {
+    "minlat": 43.2995388,
+    "minlon": -2.0055856,
+    "maxlat": 43.2998423,
+    "maxlon": -2.0049248
+  },
+  "geometry": [
+    { "lat": 43.2995770, "lon": -2.0049248 },
+    { "lat": 43.2995388, "lon": -2.0049430 },
+    { "lat": 43.2995469, "lon": -2.0049773 },
+    { "lat": 43.2995912, "lon": -2.0051237 },
+    { "lat": 43.2996441, "lon": -2.0052646 },
+    { "lat": 43.2997047, "lon": -2.0053980 },
+    { "lat": 43.2997728, "lon": -2.0055243 },
+    { "lat": 43.2998119, "lon": -2.0055856 },
+    { "lat": 43.2998423, "lon": -2.0055490 },
+    { "lat": 43.2998043, "lon": -2.0054894 },
+    { "lat": 43.2997381, "lon": -2.0053668 },
+    { "lat": 43.2996793, "lon": -2.0052372 },
+    { "lat": 43.2996279, "lon": -2.0051003 },
+    { "lat": 43.2995848, "lon": -2.0049581 },
+    { "lat": 43.2995770, "lon": -2.0049248 }
+  ],
+  "tags": {
+    "building:levels": "1",
+    "building:part": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 1531965594,
+  "bounds": {
+    "minlat": 43.2998991,
+    "minlon": -2.0060383,
+    "maxlat": 43.3003810,
+    "maxlon": -2.0055155
+  },
+  "geometry": [
+    { "lat": 43.3001222, "lon": -2.0058838 },
+    { "lat": 43.3001341, "lon": -2.0058953 },
+    { "lat": 43.3002301, "lon": -2.0059722 },
+    { "lat": 43.3003302, "lon": -2.0060383 },
+    { "lat": 43.3003810, "lon": -2.0058869 },
+    { "lat": 43.3002870, "lon": -2.0058249 },
+    { "lat": 43.3001994, "lon": -2.0057547 },
+    { "lat": 43.3001163, "lon": -2.0056751 },
+    { "lat": 43.3000382, "lon": -2.0055865 },
+    { "lat": 43.2999851, "lon": -2.0055155 },
+    { "lat": 43.2998991, "lon": -2.0056332 },
+    { "lat": 43.2999572, "lon": -2.0057107 },
+    { "lat": 43.3000429, "lon": -2.0058079 },
+    { "lat": 43.3000736, "lon": -2.0058373 },
+    { "lat": 43.3001222, "lon": -2.0058838 }
+  ],
+  "tags": {
+    "building:levels": "4",
+    "building:part": "yes",
+    "roof:levels": "1",
+    "roof:shape": "flat"
+  }
+},
+{
+  "type": "way",
   "id": 1532742199,
   "bounds": {
     "minlat": 43.3076353,
@@ -30572,6 +34341,51 @@
   }
 },
 {
+  "type": "way",
+  "id": 1561999344,
+  "bounds": {
+    "minlat": 43.2986466,
+    "minlon": -1.9922912,
+    "maxlat": 43.2987980,
+    "maxlon": -1.9920961
+  },
+  "geometry": [
+    { "lat": 43.2987980, "lon": -1.9921137 },
+    { "lat": 43.2987777, "lon": -1.9922438 },
+    { "lat": 43.2987057, "lon": -1.9922912 },
+    { "lat": 43.2986554, "lon": -1.9922831 },
+    { "lat": 43.2986466, "lon": -1.9921977 },
+    { "lat": 43.2987408, "lon": -1.9920961 },
+    { "lat": 43.2987980, "lon": -1.9921137 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
+  "type": "way",
+  "id": 1564039399,
+  "bounds": {
+    "minlat": 43.3016491,
+    "minlon": -1.9656800,
+    "maxlat": 43.3017735,
+    "maxlon": -1.9655038
+  },
+  "geometry": [
+    { "lat": 43.3016491, "lon": -1.9656317 },
+    { "lat": 43.3017462, "lon": -1.9655038 },
+    { "lat": 43.3017735, "lon": -1.9655430 },
+    { "lat": 43.3017252, "lon": -1.9656068 },
+    { "lat": 43.3017431, "lon": -1.9656324 },
+    { "lat": 43.3017111, "lon": -1.9656746 },
+    { "lat": 43.3016828, "lon": -1.9656800 },
+    { "lat": 43.3016491, "lon": -1.9656317 }
+  ],
+  "tags": {
+    "leisure": "playground"
+  }
+},
+{
   "type": "relation",
   "id": 394054,
   "bounds": {
@@ -30697,6 +34511,27 @@
 },
 {
   "type": "relation",
+  "id": 6743298,
+  "bounds": {
+    "minlat": 43.2925624,
+    "minlon": -1.9672888,
+    "maxlat": 43.2931655,
+    "maxlon": -1.9662525
+  },
+  "tags": {
+    "addr:city": "Donostia / San Sebastián",
+    "addr:housenumber": "107",
+    "addr:postcode": "20014",
+    "addr:street": "Begiristain doktorearen pasealekua",
+    "building": "public",
+    "name": "Amara eraikina",
+    "name:es": "Edificio Amara",
+    "name:eu": "Amara eraikina",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
   "id": 8052178,
   "bounds": {
     "minlat": 43.3168442,
@@ -30745,6 +34580,25 @@
     "type": "boundary",
     "wikidata": "Q2586154",
     "wikipedia": "eu:Miramon-Zorroaga"
+  }
+},
+{
+  "type": "relation",
+  "id": 13973259,
+  "bounds": {
+    "minlat": 43.2748833,
+    "minlon": -1.9695296,
+    "maxlat": 43.3051502,
+    "maxlon": -1.9401579
+  },
+  "tags": {
+    "admin_level": "10",
+    "boundary": "administrative",
+    "name": "Martutene",
+    "place": "neighbourhood",
+    "source": "Donostiako Udala - Ayuntamiento de Donostia / San Sebastián",
+    "type": "boundary",
+    "wikidata": "Q3033790"
   }
 },
 {
@@ -30878,6 +34732,25 @@
     "source": "Donostiako Udala - Ayuntamiento de Donostia / San Sebastián",
     "type": "boundary",
     "wikidata": "Q2265037"
+  }
+},
+{
+  "type": "relation",
+  "id": 13973267,
+  "bounds": {
+    "minlat": 43.2772885,
+    "minlon": -2.0257906,
+    "maxlat": 43.2990332,
+    "maxlon": -1.9855631
+  },
+  "tags": {
+    "admin_level": "10",
+    "boundary": "administrative",
+    "name": "Añorga",
+    "place": "neighbourhood",
+    "source": "Donostiako Udala - Ayuntamiento de Donostia / San Sebastián",
+    "type": "boundary",
+    "wikidata": "Q1836499"
   }
 },
 {
