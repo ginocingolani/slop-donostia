@@ -1085,15 +1085,29 @@ function buildCoaster(ctx, bin) {
   const gIn = xs.map((_, i) => Math.max(at(i, 0), at(i, -0.6), at(i, 0.6)));
   const gLow = xs.map((_, i) => Math.min(at(i, 0), at(i, -1.3), at(i, 1.3)));
 
-  // the profile: knots at the nearest loop points, the curve through them, lifted clear of the ground where open
-  const knots = COASTER_PROFILE.map(([x, z, y]) => [S[nearest(x, z)], y]).sort((p, q) => p[0] - q[0]);
-  const ks = [knots[knots.length - 1][0] - L, ...knots.map((k) => k[0]), knots[0][0] + L];
-  const kys = [knots[knots.length - 1][1], ...knots.map((k) => k[1]), knots[0][1]];
-  const curve = monotoneCubic(ks, kys);
-  const liftFrom = S[nearest(...LIFT[0])], liftTo = S[nearest(...LIFT[1])];
-  const onLift = (s) => s >= liftFrom && s <= liftTo;
+  // the profile: knots at the nearest loop points, the curve through them, lifted clear of the ground where open.
+  // The knots and the lift are world points laid on OSM's loop as fetched; should a re-fetch move the loop, those no
+  // longer on it (or landing on a neighbour's loop point, which would divide by zero in the curve) are dropped, and
+  // with too few left the track follows the ground rather than turning NaN.
+  const onLoop = ([x, z]) => {
+    const i = nearest(x, z);
+    return Math.hypot(xs[i] - x, zs[i] - z) <= 3 ? i : -1;
+  };
+  const knots = COASTER_PROFILE.map((k) => [onLoop(k), k[2]]).filter((k) => k[0] >= 0).map(([i, y]) => [S[i], y])
+    .sort((p, q) => p[0] - q[0]).filter((k, j, all) => j === 0 || k[0] > all[j - 1][0]);
+  let curve = null;
+  if (knots.length >= 10) {
+    const ks = [knots[knots.length - 1][0] - L, ...knots.map((k) => k[0]), knots[0][0] + L];
+    const kys = [knots[knots.length - 1][1], ...knots.map((k) => k[1]), knots[0][1]];
+    curve = monotoneCubic(ks, kys);
+  }
+  const [liftA, liftB] = LIFT.map(onLoop);
+  const liftFrom = S[Math.max(0, liftA)], liftTo = S[Math.max(0, liftB)];
+  // (measured on from the lift's foot, so it still works should the loop's start come to lie on the lift)
+  const onLift = (s) => liftA >= 0 && liftB >= 0 && (s - liftFrom + L) % L <= (liftTo - liftFrom + L) % L;
   const open = (i) => kind[i] === 0 || kind[i] === 3;
-  let y = S.slice(0, n).map((s) => curve(s));
+  let y = S.slice(0, n).map((s, i) => (curve ? curve(s) : gIn[i] + 0.25));
+  if (!y.every(Number.isFinite)) y = gIn.map((g) => g + 0.25);
   for (let pass = 0; pass < 4; pass++) {
     y = y.map((h, i) => (open(i) ? Math.max(h, gIn[i] + 0.25) : h));
     if (pass < 3) y = y.map((h, i) => (onLift(S[i]) || !open(i) ? h : (y[(i - 1 + n) % n] + 2 * h + y[(i + 1) % n]) / 4));

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { float, vec3, abs, fract, mix, smoothstep, positionWorld, normalWorld, mx_noise_float } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
-import { Parts, wound, cleanRing, insetRing, hipRoof } from './geom.js';
+import { Parts, wound, cleanRing, insetRing, hipRoof, distToRing } from './geom.js';
 
 // js/donostia/landmarks/santa-maria.js
 // Basílica de Santa María del Coro (1743-74, baroque): sandstone church at the end of Kale Nagusia at the foot of Urgull, a huge niche portal with a sculpted St Sebastian, one bell tower, the nave aligned towards the Buen Pastor cathedral.
@@ -55,6 +55,9 @@ export function build(sites, ctx) {
   const site = sites[0];
   if (!site.footprint) return null;
   const footprint = cleanRing(site.footprint);
+  // FRONT is fixed in world coordinates (OSM's vertices as fetched): if the outline no longer runs through both its
+  // ends, the portal would stand detached from the church, so keep the plain extrusion instead
+  if (FRONT.some(([x, z]) => distToRing(x, z, footprint) > 1.5)) return null;
   const outline = site.buildings?.length ? cleanRing(GEO.buildings[site.buildings[0]].g[0]) : footprint;
 
   // the front's frame: s along the front (west to east), t out into the street, y up from the portal's step
