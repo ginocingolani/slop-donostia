@@ -579,7 +579,8 @@ function pescaderia(m, ctx, site, zinc) {
   m.prism(F, body, 5.0, 12.0, main, { top: false });
   m.prism(F, body, 12.0, 12.75, plain, { top: false });
   m.cap(zinc, body, 12.75);
-  m.cornice(F, body, 12.0, 0.55, 0.75);
+  // a cornice whose top only covers the overhang: a full lid would lie in the zinc roof's plane and flicker with it
+  m.corniceBand(F, body, 12.0, 0.55, 0.75);
   m.prism(F, offsetOut(body, 0.1), 4.75, 5.15, plain, { bottom: true, top: false });
   for (const [a, b] of [[[-W2, -L2], [W2, -L2]], [[W2, -L2], [W2, L2]], [[W2, L2], [-W2, L2]], [[-W2, L2], [-W2, -L2]]]) {
     const inset = (q) => [q[0] - Math.sign(q[0]) * 0.3, q[1] - Math.sign(q[1]) * 0.3];
