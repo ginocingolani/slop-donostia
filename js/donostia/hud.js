@@ -4,7 +4,8 @@ import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
 // js/donostia/hud.js
 // HUD wiring for index.html: time of day, the fly-to list, clean view, telemetry, the street-name signs (where am I),
 // the radar & the full map [M], and the god camera's touch controls.
-// initHud({ GEO, god, terrain, lighting, grade, renderer }) -> { update(fps) }, called by main.js four times a second.
+// initHud({ GEO, god, terrain, lighting, grade, renderer }) -> { update(fps), setReady(), mapOpen }: main.js calls
+// update() four times a second and setReady() once the city first shows; mapOpen says the full map covers the view.
 
 const TIMES = ['golden', 'midday', 'twilight', 'midnight'];
 const STREET_RADIUS = 50; // m: beyond this the camera is not "on" a street
@@ -13,14 +14,26 @@ const CORNER = 14; // m: a second street this close makes a corner (two signs)
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
 export function initHud({ GEO, god, terrain, lighting, grade }) {
+  // Until the city first shows, main.js compiles the shaders with the scene pass's render target bound (across
+  // awaits): a preset applied meanwhile would bake its environment map into that target. A time picked then waits
+  // for setReady(), and the shortcuts and the HUD (under the loading screen) don't answer yet.
+  let ready = false, pendingTime = null;
   const timeButtons = document.querySelectorAll('[data-time]');
-  const selectTime = (id) => {
+  const showTime = (id) => timeButtons.forEach((b) => {
+    b.classList.toggle('active', b.dataset.time === id);
+    b.setAttribute('aria-pressed', String(b.dataset.time === id));
+  });
+  const applyTime = (id) => {
     lighting.applyPreset(id);
     grade.applyPreset(lighting.activePresetId);
-    timeButtons.forEach((b) => b.classList.toggle('active', b.dataset.time === id));
+    showTime(id);
+  };
+  const selectTime = (id) => {
+    if (ready) applyTime(id);
+    else { pendingTime = id; showTime(id); }
   };
   timeButtons.forEach((b) => b.addEventListener('click', () => selectTime(b.dataset.time)));
-  selectTime('golden');
+  applyTime('golden'); // (before the compile: the shaders are built for the lights it sets)
 
   const teleportList = document.getElementById('teleport-list');
   for (const t of GEO.teleports) {
@@ -179,6 +192,13 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
   const radarCanvas = document.getElementById('minimap-canvas');
   const radar = radarCanvas ? new Radar({ canvas: radarCanvas, layers, god, terrain, onFly: flyToGround }) : null;
   const touch = initTouchControls(god);
+  // The HUD, the view and the touch controls are inert while the loading screen or the full map (a modal dialog)
+  // covers them: Tab stays in front, and screen readers skip what is hidden
+  const covered = [...document.querySelectorAll('.hud, #touch-controls, #canvas-container')];
+  const updateInert = () => {
+    const off = !ready || fullMap.isOpen;
+    for (const el of covered) el.inert = off;
+  };
   const fullMap = new FullMap({
     layers, index, god, describe, onFly: flyToGround,
     onToggle(open) {
@@ -186,8 +206,10 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
       touch.setEnabled(!open);
       if (radar) { radar.hidden = open; radar.invalidate(); }
       document.getElementById('btn-open-map')?.setAttribute('aria-pressed', String(open));
+      updateInert();
     }
   });
+  updateInert();
   document.getElementById('btn-open-map')?.addEventListener('click', () => fullMap.toggle());
   document.getElementById('radar-expand')?.addEventListener('click', () => fullMap.toggle(true));
 
@@ -201,10 +223,13 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
   requestAnimationFrame(frame);
 
   window.addEventListener('keydown', (e) => {
-    if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.code === 'KeyH') hudToggle?.click();
-    else if (e.code === 'KeyM') fullMap.toggle();
-    else if (e.code === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
+    // (a held key repeats: a toggle would flip back and forth)
+    if (!ready || e.repeat || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    // H & M by the letter they type, wherever the layout puts it; the time digits by their place on the number row
+    const key = (e.key || '').toLowerCase(); // (autofill sends keydowns without a key)
+    if (key === 'h') hudToggle?.click();
+    else if (key === 'm') fullMap.toggle();
+    else if (e.key === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
     const digit = /^Digit([1-4])$/.exec(e.code);
     if (digit) selectTime(TIMES[digit[1] - 1]);
   });
@@ -214,6 +239,18 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
   const elLocAlt = document.getElementById('hud-location-alt');
   const elSpeed = document.getElementById('hud-speed');
   return {
+    // called by main.js as the loading screen lifts: the time picked meanwhile, the shortcuts and the HUD come alive
+    setReady() {
+      if (ready) return;
+      ready = true;
+      if (pendingTime) applyTime(pendingTime);
+      pendingTime = null;
+      updateInert();
+    },
+    // the full map covers the whole view (main.js stops rendering it meanwhile)
+    get mapOpen() {
+      return fullMap.isOpen;
+    },
     // called by main.js four times a second
     update(fps) {
       if (elFps) {

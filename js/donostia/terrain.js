@@ -4,15 +4,25 @@ import { decodePNGOffThread } from './png.js';
 // js/donostia/terrain.js
 // LiDAR terrain of Donostia (geoEuskadi 2017 MDT + 1 m isobaths, baked by tools/donostia/build.mjs): a 2 m core grid
 // from Igeldo to Ulía inside an 8 m context grid that reaches the horizon hills. Both are cut into square chunks that
-// keep every sample. Each chunk has one mesh per level of detail: they share the chunk's vertex buffers and one index
-// buffer per level for the whole grid, and switching detail with distance only toggles which one is visible (swapping
-// a geometry's index instead makes WebGPURenderer rebuild the draw every time). Skirts hanging under every chunk edge
-// hide the cracks between neighbouring levels and the seam with the context grid.
+// keep every sample (the chunks along the grids' far edges are as small as what is left of the grid). Each chunk has
+// one mesh per level of detail: they share the chunk's vertex buffers and one index buffer per level for every chunk
+// of the same size, and switching detail with distance only toggles which one is visible (swapping a geometry's index
+// instead makes WebGPURenderer rebuild the draw every time). Skirts hanging under every chunk edge hide the cracks
+// between neighbouring levels and the seam with the context grid. Chunks wholly under the sea are never built.
 
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];
 const SKIRT = 6; // m
-const SUBMERGED = -3; // m: chunks whose highest sample lies below this are always under the (opaque) sea
+// m: chunks whose highest sample lies below this are always under the (opaque) sea: the god camera stays above it and
+// the tide's low water is 1.6 m down
+const SUBMERGED = -3;
+
+// Texture.onUpdate for data that only the GPU reads: drops the CPU copy once three has uploaded it (the texture's
+// size stays on its image). The textures it is set on never change after their first upload.
+export function releaseImageData(texture) {
+  texture.image.data = null;
+  texture.onUpdate = null;
+}
 
 class HeightField {
   // field: png.js's 'heightField' transform of the baked PNG: { heights (m), classes, half (the heights as half floats) }
@@ -51,6 +61,10 @@ class HeightField {
       t.magFilter = t.minFilter = THREE.LinearFilter;
       t.generateMipmaps = false;
       t.needsUpdate = true;
+      // the half floats exist for the GPU alone: the texture holds them until its upload, then lets them go (the CPU
+      // keeps the float heights for heightAt)
+      t.onUpdate = releaseImageData;
+      this._half = null;
       this._heightTex = t;
     }
     return this._heightTex;
@@ -81,74 +95,107 @@ class HeightField {
   }
 }
 
-// Shared index buffers of one chunk layout: (QUADS + 1)^2 grid vertices followed by 4 * (QUADS + 1) skirt vertices
-// (north, south, west, east edges). keep(qi, qj) can drop quads (the context grid's hole under the core).
-function chunkIndex(stride, keep = null) {
-  const n = QUADS + 1;
-  const skirt = (edge, t) => n * n + edge * n + t;
-  const idx = [];
-  for (let qj = 0; qj < QUADS; qj += stride) {
-    for (let qi = 0; qi < QUADS; qi += stride) {
-      if (keep && !keep(qi + stride / 2, qj + stride / 2)) continue;
-      const a = qj * n + qi, b = a + stride, c = a + stride * n, d = c + stride;
-      idx.push(a, c, b, b, c, d);
-    }
-  }
-  for (let t = 0; t < QUADS; t += stride) {
-    const u = t + stride;
-    if (!keep || keep(t + stride / 2, 0)) idx.push(t, u, skirt(0, t), u, skirt(0, u), skirt(0, t)); // north (j = 0)
-    if (!keep || keep(t + stride / 2, QUADS - 1)) {
-      const r = QUADS * n;
-      idx.push(r + t, skirt(1, t), r + u, r + u, skirt(1, t), skirt(1, u)); // south
-    }
-    if (!keep || keep(0, t + stride / 2)) idx.push(t * n, skirt(2, t), u * n, u * n, skirt(2, t), skirt(2, u)); // west
-    if (!keep || keep(QUADS - 1, t + stride / 2)) {
-      idx.push(t * n + QUADS, u * n + QUADS, skirt(3, t), u * n + QUADS, skirt(3, u), skirt(3, t)); // east
-    }
-  }
-  return idx.length ? new THREE.BufferAttribute(new Uint32Array(idx), 1) : null;
+// The quad columns (or rows) a chunk side `q` quads long starts at a level's stride: every stride-th, then the side's
+// end, as an edge chunk's side need not be a multiple of the stride (its last quad is narrower)
+function steps(q, stride) {
+  const s = [];
+  for (let t = 0; t < q; t += stride) s.push(t);
+  s.push(q);
+  return s;
 }
 
-function chunkGeometry(field, ci, cj, sink = null) {
-  const n = QUADS + 1;
-  const count = n * n + 4 * n;
-  const pos = new Float32Array(count * 3);
-  // (8-bit normals would need 4 components: WebGPU has no 3-component 8-bit vertex formats)
-  const nrm = new Float32Array(count * 3);
-  const i0 = ci * QUADS, j0 = cj * QUADS;
-  const r = field.res;
-  let minY = Infinity, maxY = -Infinity;
-  const put = (v, i, j, drop) => {
-    const ii = Math.min(i0 + i, field.w - 1), jj = Math.min(j0 + j, field.h - 1);
-    const x = field.sampleX(ii), z = field.sampleZ(jj);
-    let y = field.at(ii, jj);
-    if (sink && sink(x, z)) y -= 0.8;
-    pos[3 * v] = x;
-    pos[3 * v + 1] = y - drop;
-    pos[3 * v + 2] = z;
-    const gx = (field.at(ii + 1, jj) - field.at(ii - 1, jj)) / (2 * r);
-    const gz = (field.at(ii, jj + 1) - field.at(ii, jj - 1)) / (2 * r);
-    const len = Math.hypot(gx, 1, gz);
-    nrm[3 * v] = -gx / len;
-    nrm[3 * v + 1] = 1 / len;
-    nrm[3 * v + 2] = -gz / len;
-    if (!drop) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+// Index buffer of one chunk layout at one level: a (cols + 1) x (rows + 1) vertex grid followed by the skirt vertices of
+// the north & south (cols + 1 each) and west & east (rows + 1 each) edges. keep(qi, qj) can drop quads (the context
+// grid's hole under the core); null when it drops them all.
+function chunkIndex(cols, rows, stride, keep = null) {
+  const nx = cols + 1, nz = rows + 1;
+  const north = nx * nz, south = north + nx, west = south + nx, east = west + nz;
+  const us = steps(cols, stride), vs = steps(rows, stride);
+  const qx = us.length - 1, qz = vs.length - 1;
+  const idx = new Uint32Array(6 * (qx * qz + 2 * qx + 2 * qz));
+  let n = 0;
+  const tri = (a, b, c, d, e, f) => {
+    idx[n] = a; idx[n + 1] = b; idx[n + 2] = c; idx[n + 3] = d; idx[n + 4] = e; idx[n + 5] = f;
+    n += 6;
   };
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) put(j * n + i, i, j, 0);
-  for (let t = 0; t < n; t++) {
-    put(n * n + t, t, 0, SKIRT);
-    put(n * n + n + t, t, QUADS, SKIRT);
-    put(n * n + 2 * n + t, 0, t, SKIRT);
-    put(n * n + 3 * n + t, QUADS, t, SKIRT);
+  for (let b = 0; b < qz; b++) {
+    const qj = vs[b], qj1 = vs[b + 1];
+    for (let a = 0; a < qx; a++) {
+      const qi = us[a], qi1 = us[a + 1];
+      if (keep && !keep((qi + qi1) / 2, (qj + qj1) / 2)) continue;
+      const p = qj * nx + qi, q = qj * nx + qi1, r = qj1 * nx + qi, s = qj1 * nx + qi1;
+      tri(p, r, q, q, r, s);
+    }
+  }
+  const last = rows * nx;
+  for (let a = 0; a < qx; a++) {
+    const t = us[a], u = us[a + 1], mid = (t + u) / 2;
+    if (!keep || keep(mid, 0)) tri(t, u, north + t, u, north + u, north + t);
+    if (!keep || keep(mid, rows - 1)) tri(last + t, south + t, last + u, last + u, south + t, south + u);
+  }
+  for (let b = 0; b < qz; b++) {
+    const t = vs[b], u = vs[b + 1], mid = (t + u) / 2;
+    if (!keep || keep(0, mid)) tri(t * nx, west + t, u * nx, u * nx, west + t, west + u);
+    if (!keep || keep(cols - 1, mid)) tri(t * nx + cols, u * nx + cols, east + t, u * nx + cols, east + u, east + t);
+  }
+  return n ? new THREE.BufferAttribute(n < idx.length ? idx.slice(0, n) : idx, 1) : null;
+}
+
+// The vertex buffers of the chunk whose grid starts at sample (i0, j0) and spans cols x rows quads (exactly: edge
+// chunks are smaller, not padded), or null for a chunk wholly under the sea (Terrain.update would never show it).
+// sink(x, z): samples sunk 0.8 m (the context grid under the core's edge).
+function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
+  const { heights, w, h } = field;
+  const nx = cols + 1, nz = rows + 1;
+  const ys = new Float64Array(nx * nz); // (the skirts' drop is taken off before rounding to 32 bits, as for every vertex)
+  let minY = Infinity, maxY = -Infinity;
+  for (let j = 0, v = 0; j < nz; j++) {
+    const row = (j0 + j) * w + i0, z = field.sampleZ(j0 + j);
+    for (let i = 0; i < nx; i++, v++) {
+      let y = heights[row + i];
+      if (sink !== null && sink(field.sampleX(i0 + i), z)) y -= 0.8;
+      ys[v] = y;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxY < SUBMERGED) return null;
+
+  const count = nx * nz + 2 * nx + 2 * nz;
+  const pos = new Float32Array(count * 3);
+  // normals as normalized 16-bit (a third less than floats, the same shading); WebGPU has no 3-component 16-bit
+  // vertex format, hence the 4th component
+  const nrm = new Int16Array(count * 4);
+  const r2 = 2 * field.res;
+  const put = (v, i, j, drop) => {
+    const ii = i0 + i, jj = j0 + j, k = jj * w + ii;
+    pos[3 * v] = field.sampleX(ii);
+    pos[3 * v + 1] = ys[j * nx + i] - drop;
+    pos[3 * v + 2] = field.sampleZ(jj);
+    // central differences, one-sided at the field's edges
+    const gx = (heights[ii < w - 1 ? k + 1 : k] - heights[ii > 0 ? k - 1 : k]) / r2;
+    const gz = (heights[jj < h - 1 ? k + w : k] - heights[jj > 0 ? k - w : k]) / r2;
+    const s = 32767 / Math.sqrt(gx * gx + 1 + gz * gz);
+    nrm[4 * v] = Math.round(-gx * s);
+    nrm[4 * v + 1] = Math.round(s);
+    nrm[4 * v + 2] = Math.round(-gz * s);
+  };
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) put(j * nx + i, i, j, 0);
+  const north = nx * nz, south = north + nx, west = south + nx, east = west + nz;
+  for (let t = 0; t < nx; t++) {
+    put(north + t, t, 0, SKIRT);
+    put(south + t, t, rows, SKIRT);
+  }
+  for (let t = 0; t < nz; t++) {
+    put(west + t, 0, t, SKIRT);
+    put(east + t, cols, t, SKIRT);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  const x0 = field.sampleX(i0), z0 = field.sampleZ(j0);
-  const x1 = field.sampleX(Math.min(i0 + QUADS, field.w - 1)), z1 = field.sampleZ(Math.min(j0 + QUADS, field.h - 1));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 4, true));
+  const x0 = field.sampleX(i0), z0 = field.sampleZ(j0), x1 = field.sampleX(i0 + cols), z1 = field.sampleZ(j0 + rows);
   geo.boundingBox = new THREE.Box3(new THREE.Vector3(x0, minY - SKIRT, z0), new THREE.Vector3(x1, maxY, z1));
   geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
-  geo.userData.maxY = maxY;
   return geo;
 }
 
@@ -189,30 +236,39 @@ export class Terrain {
 
   build(material = null) {
     material ||= new THREE.MeshBasicNodeMaterial();
-    const lods = LOD_STRIDES.map((s) => chunkIndex(s));
+    // one set of index buffers per chunk layout (the full one and the edge chunks' smaller ones), core & context alike
+    const layouts = new Map();
+    const layoutIndices = (cols, rows) => {
+      const key = `${cols}x${rows}`;
+      if (!layouts.has(key)) layouts.set(key, LOD_STRIDES.map((s) => chunkIndex(cols, rows, s)));
+      return layouts.get(key);
+    };
     const addGrid = (field, kind) => {
       const ncx = Math.ceil((field.w - 1) / QUADS), ncz = Math.ceil((field.h - 1) / QUADS);
       const core = this.core;
       const insideCore = (x, z) => x > core.sampleX(0) && x < core.sampleX(core.w - 1) && z > core.sampleZ(0) && z < core.sampleZ(core.h - 1);
       for (let cj = 0; cj < ncz; cj++) {
         for (let ci = 0; ci < ncx; ci++) {
-          let indices = lods;
-          if (kind === 'context' && field.sampleX(ci * QUADS + QUADS) > core.x0 && field.sampleX(ci * QUADS) < core.x0 + core.width &&
-            field.sampleZ(cj * QUADS + QUADS) > core.z0 && field.sampleZ(cj * QUADS) < core.z0 + core.depth) {
+          const i0 = ci * QUADS, j0 = cj * QUADS;
+          const cols = Math.min(QUADS, field.w - 1 - i0), rows = Math.min(QUADS, field.h - 1 - j0);
+          let keep = null;
+          if (kind === 'context' && field.sampleX(i0 + cols) > core.x0 && field.sampleX(i0) < core.x0 + core.width &&
+            field.sampleZ(j0 + rows) > core.z0 && field.sampleZ(j0) < core.z0 + core.depth) {
             // drop the quads that lie inside the core; keep their neighbours (sunk a little) so nothing gaps
-            const qx = (qi) => field.sampleX(ci * QUADS + qi), qz = (qj) => field.sampleZ(cj * QUADS + qj);
-            const keep = (qi, qj) => !insideCore(qx(qi), qz(qj));
+            const outside = (qi, qj) => !insideCore(field.sampleX(i0 + qi), field.sampleZ(j0 + qj));
             let any = false, all = true;
-            for (let qj = 0; qj < QUADS; qj += 8) for (let qi = 0; qi < QUADS; qi += 8) {
-              const k = keep(qi + 4, qj + 4);
+            for (let qj = 0; qj < rows; qj += 8) for (let qi = 0; qi < cols; qi += 8) {
+              const k = outside(qi + 4, qj + 4);
               any ||= k;
               all &&= k;
             }
             if (!any) continue;
-            if (!all) indices = LOD_STRIDES.map((s) => chunkIndex(s, keep));
+            if (!all) keep = outside;
           }
-          const base = chunkGeometry(field, ci, cj, kind === 'context' ? insideCore : null);
-          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [], maxY: base.userData.maxY };
+          const base = chunkGeometry(field, i0, j0, cols, rows, kind === 'context' ? insideCore : null);
+          if (!base) continue; // under the sea for good
+          const indices = keep ? LOD_STRIDES.map((s) => chunkIndex(cols, rows, s, keep)) : layoutIndices(cols, rows);
+          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [] };
           indices.forEach((index) => {
             if (!index) { chunk.meshes.push(null); return; }
             const geo = new THREE.BufferGeometry();
@@ -246,22 +302,18 @@ export class Terrain {
   }
 
   // Pick each chunk's level of detail from its distance to the camera (triangles of 4-8 px for a 1080p, 55° view),
-  // with a little hysteresis so chunks don't flicker between two levels at a boundary. Chunks wholly under the sea are
-  // never seen through the opaque water (the god camera stays above it; the tide's low water is 1.6 m down): hidden.
+  // with a little hysteresis so chunks don't flicker between two levels at a boundary
   update(cameraPosition) {
     for (const chunk of this.chunks) {
       const d = chunk.box.distanceToPoint(cameraPosition);
-      let lod = -1;
-      if (chunk.maxY >= SUBMERGED) {
-        const reach = (l) => 200 * LOD_STRIDES[l] * chunk.res / 2 * this.lodScale;
-        lod = 0;
-        while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
-        if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
-          const edge = reach(Math.max(lod, chunk.lod));
-          if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
-        }
-        while (lod > 0 && !chunk.meshes[lod]) lod--;
+      const reach = (l) => 200 * LOD_STRIDES[l] * chunk.res / 2 * this.lodScale;
+      let lod = 0;
+      while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
+      if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
+        const edge = reach(Math.max(lod, chunk.lod));
+        if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
       }
+      while (lod > 0 && !chunk.meshes[lod]) lod--;
       if (lod === chunk.lod) continue;
       if (chunk.lod >= 0 && chunk.meshes[chunk.lod]) chunk.meshes[chunk.lod].visible = false;
       if (chunk.meshes[lod]) chunk.meshes[lod].visible = true;

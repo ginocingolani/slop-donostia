@@ -249,6 +249,8 @@ export function createView(renderer, world, camera) {
 
 // --- the page --------------------------------------------------------------------------------------------------------------
 
+let deviceLost = false; // (its message outranks the "Could not start" of a load it breaks)
+
 async function initApp() {
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
@@ -270,6 +272,33 @@ async function initApp() {
   renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
   await renderer.init();
+  // A lost GPU device (a driver reset, the GPU process crashing...) leaves three drawing nothing: the view would freeze
+  // on its last frame under a HUD that still moves. Stop, and say so over the loading screen.
+  const threeDeviceLost = renderer.onDeviceLost;
+  renderer.onDeviceLost = (info) => {
+    threeDeviceLost.call(renderer, info); // (logs it, stops rendering)
+    deviceLost = true;
+    renderer.setAnimationLoop(null);
+    loadingOverlay?.removeAttribute('aria-busy');
+    loadingOverlay?.classList.remove('hidden');
+    status(`The GPU was reset (${info.message || info.reason || 'device lost'}). Reload the page to continue.`);
+    if (loadingOverlay && !document.getElementById('loading-reload')) {
+      const reload = document.createElement('button');
+      reload.id = 'loading-reload';
+      reload.type = 'button';
+      reload.className = 'panel tool-btn';
+      reload.style.marginTop = '14px';
+      reload.textContent = 'Reload';
+      reload.addEventListener('click', () => location.reload());
+      (loadingStatus || loadingOverlay).after(reload);
+      // the overlay fades back in: it takes the focus once its visibility is back on, a frame or so later
+      const focusReload = (tries) => {
+        reload.focus();
+        if (document.activeElement !== reload && tries > 0) requestAnimationFrame(() => focusReload(tries - 1));
+      };
+      focusReload(30);
+    }
+  };
 
   const timings = [];
   let mark = performance.now();
@@ -280,11 +309,12 @@ async function initApp() {
 
   const god = new GodCamera(renderer.domElement, terrain);
   const camera = god.camera;
+  let saved = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved) god.state = saved;
-    else god.flyTo(GEO.teleports.find((t) => t.id === 'urgull'), 0.001);
-  } catch { god.flyTo(GEO.teleports[0], 0.001); }
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch { /* storage unavailable, or not JSON */ }
+  // the last view, if it is one (a corrupt save or one off the edge of the map starts at Urgull, as a first visit)
+  if (!god.restore(saved)) god.flyTo(GEO.teleports.find((t) => t.id === 'urgull') || GEO.teleports[0], 0.001);
   god.update(0.001);
   const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(god.state)); } catch { /* storage unavailable */ } };
   window.addEventListener('pagehide', save);
@@ -345,28 +375,43 @@ async function initApp() {
     };
   }
 
-  // Compile the pipelines behind the loading screen
+  // Compile the pipelines behind the loading screen. The percentage ticks a few hundred times: the loading screen
+  // (a live region) is marked busy meanwhile, so screen readers hear "Compiling shaders" once, not every step.
   status('Compiling shaders…', 0.6);
-  await view.compile((p) => status(`Compiling shaders… ${Math.round(p * 100)}%`, 0.6 + 0.35 * p));
+  await view.compile((p) => {
+    loadingOverlay?.setAttribute('aria-busy', 'true');
+    status(`Compiling shaders… ${Math.round(p * 100)}%`, 0.6 + 0.35 * p);
+  });
   markInit('compile');
+  if (deviceLost) return;
 
   renderer.setAnimationLoop((now) => {
     const raw = (now - last) / 1000;
     last = now;
-    simulate(Math.min(Math.max(raw, 0.001), 0.05));
-    if (first) {
-      view.warmUp();
-      markInit('warm-up');
+    const dt = Math.min(Math.max(raw, 0.001), 0.05);
+    if (hud.mapOpen && !first) {
+      // The full map covers the whole view: no world to simulate or draw (the canvas keeps its last frame). The
+      // camera still finishes a flight.
+      god.update(dt);
+    } else {
+      simulate(dt);
+      if (first) {
+        view.warmUp();
+        markInit('warm-up');
+      }
+      pipeline.render();
     }
-    pipeline.render();
     if (first) {
       first = false;
       const device = renderer.backend.device;
       Promise.resolve(device && device.queue.onSubmittedWorkDone()).catch(() => {}).then(() => {
+        if (deviceLost) return;
         markInit('gpu');
         console.log(`[init] ${timings.join(', ')}`);
         status('', 1);
+        loadingOverlay?.removeAttribute('aria-busy');
         loadingOverlay?.classList.add('hidden');
+        hud.setReady();
       });
     }
     frames++;
@@ -384,6 +429,8 @@ async function initApp() {
 if (typeof window !== 'undefined') {
   initApp().catch((e) => {
     console.error(e);
+    if (deviceLost) return; // (already explained)
+    document.getElementById('loading-overlay')?.removeAttribute('aria-busy');
     const s = document.getElementById('loading-status');
     if (s) s.textContent = `Could not start: ${e.message}`;
   });
