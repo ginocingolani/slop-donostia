@@ -154,7 +154,8 @@ export function simplify(r, tol = 0.35) {
   return pts.flat();
 }
 
-// The part of a ring where a·x + b·z + c >= 0 (a half-plane cut, Sutherland–Hodgman), or null when too little is left
+// The part of a ring where a·x + b·z + c >= 0 (a half-plane cut, Sutherland–Hodgman), or null when nothing is left.
+// Cutting a convex window out of a ring takes one call per side.
 export function clipRing(r, a, b, c) {
   const out = [];
   for (let i = 0, n = r.length / 2; i < n; i++) {
@@ -168,7 +169,7 @@ export function clipRing(r, a, b, c) {
     }
   }
   const ring = cleanRing(out);
-  return ring.length >= 6 && Math.abs(ringArea(ring)) > 1 ? ring : null;
+  return ring.length >= 6 && Math.abs(ringArea(ring)) > 1e-3 ? ring : null;
 }
 
 // Point in ring (even-odd)

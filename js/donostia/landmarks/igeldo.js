@@ -906,7 +906,9 @@ function buildStations(ctx, bin, R, rail, carGeo, poses) {
     for (const { s, edge, house } of sides) {
       if (!house) continue;
       const ring = clipRing(outline.g[0], s * lx, s * lz, -s * (lx * ex + lz * ez) - edge);
-      if (ring) buildStationHouse(ctx, bin, wound(ring), outline, (x, z) => s * ((x - ex) * lx + (z - ez) * lz) - edge < 0.05);
+      if (ring && Math.abs(ringArea(ring)) > 4) {
+        buildStationHouse(ctx, bin, wound(ring), outline, (x, z) => s * ((x - ex) * lx + (z - ez) * lz) - edge < 0.05);
+      }
     }
   }
   return hide;
