@@ -767,6 +767,9 @@ export class FullMap {
     if (!this.modal || !this.canvas) return;
     this.hoverDefault = this.elHover?.textContent || '';
     this.canvas.style.touchAction = 'none';
+    // the dialog itself takes the focus when it opens (see toggle)
+    if (!this.modal.hasAttribute('tabindex')) this.modal.tabIndex = -1;
+    this.returnFocus = null;
 
     document.getElementById('close-fullmap-btn')?.addEventListener('click', () => this.toggle(false));
     document.getElementById('map-zoom-in')?.addEventListener('click', () => this.zoomBy(1.5));
@@ -865,6 +868,12 @@ export class FullMap {
 
   toggle(open = !this.isOpen) {
     if (!this.modal || open === this.isOpen) return;
+    if (open) {
+      // A keyboard user's place (say the Mapa button) to come back to; a mouse click leaves no focus to return to
+      // (hud.js blurs clicked buttons), and none matches :focus-visible
+      const active = document.activeElement;
+      this.returnFocus = active instanceof HTMLElement && active !== document.body && active.matches(':focus-visible') ? active : null;
+    }
     this.isOpen = open;
     this.modal.classList.toggle('hidden', !open);
     this.onToggle?.(open);
@@ -878,9 +887,22 @@ export class FullMap {
       this.request();
       const here = this.describe(this.cx, this.cz);
       if (this.elHere) this.elHere.textContent = here ? `Hemen zaude · You are at ${here}` : 'Donostia / San Sebastián';
+      // Focus moves into the dialog (screen readers announce it; Tab reaches the search next). The dialog rather
+      // than the search box, so M still closes it, and rather than the close button, so Space doesn't. It fades in:
+      // until its visibility turns on (the transition's first frame) it can't take the focus, so retry a few frames.
+      const focusDialog = (tries) => {
+        if (!this.isOpen || this.modal.contains(document.activeElement)) return;
+        this.modal.focus({ preventScroll: true });
+        if (document.activeElement !== this.modal && tries > 0) requestAnimationFrame(() => focusDialog(tries - 1));
+      };
+      focusDialog(10);
     } else {
       this.elSearch?.blur();
       this.setHover('');
+      const back = this.returnFocus;
+      this.returnFocus = null;
+      if (back?.isConnected) back.focus({ preventScroll: true });
+      else if (this.modal.contains(document.activeElement)) document.activeElement.blur();
     }
   }
 
