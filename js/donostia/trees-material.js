@@ -243,9 +243,15 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
   return { material: mat, uniforms };
 }
 
-// How squarely the billboards' crown normals face the camera (1: a solid ball), matched on the mean colour of the
-// aerial views' distant woods against the far shell's cards
-const BILLBOARD_FACING = 0.65;
+// The billboards' lighting, matched on the mean colour of the benchmark's aerial views' distant woods against the far
+// shell's cards at golden hour, midday and night (within ~0.15 of a level over the whole image): how squarely the
+// crown normals face the camera (1: a solid ball), how far they lean skyward, the roughness (one quad's coherent
+// normals caught a sheen of sky the shell's scattered cards don't: bright blue-grey woods at night) and a tone for
+// the shell's self-shading.
+const BILLBOARD_FACING = 0.5;
+const BILLBOARD_LEAN = 0.5;
+const BILLBOARD_ROUGHNESS = 0.95;
+const BILLBOARD_TONE = 0.95;
 
 // The species' far tile (6, 7 or 8) as the u offset from the broadleaf tile's uvs
 const farTileShift = (species, farTiles) => {
@@ -294,10 +300,10 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
 
   // a round crown: sphere normals over the quad, leaning skyward like the far shell's (a cylinder's on the trunk). The
   // shell is seen through its gaps too, cards facing away included: the normals turn from the camera more than a
-  // solid ball's would (matched on the mean colour of the woods where the hand-over happens)
+  // solid ball's would (BILLBOARD_FACING; the lean is added in view space, unnormalised)
   const q = varying(vec2(g.x, select(isCrown, g.y, 0.0)), 'vBillboard');
   const sphere = vec3(q.mul(0.8), float(1.0).sub(dot(q, q).mul(0.64)).max(0.0).sqrt().mul(BILLBOARD_FACING));
-  mat.normalNode = normalize(sphere.add(cameraViewMatrix.transformDirection(vec3(0.0, 0.22, 0.0))));
+  mat.normalNode = normalize(sphere.add(cameraViewMatrix.mul(vec4(0.0, BILLBOARD_LEAN, 0.0, 0.0)).xyz));
 
   const leaf = texture(leafAtlas, uv().add(farTileShift(species, farTiles))).toVar('billboardLeaf');
   const shade = select(isCrown, smoothstep(-0.9, 0.9, q.y).mul(0.5).add(0.5), float(0.85));
@@ -307,8 +313,8 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
     select(species.lessThan(2.5), color(0x4a3e32), select(species.lessThan(3.5), color(0x5c5952),
       select(species.lessThan(4.5), color(0x6e4632), color(0x7a6b55)))))).mul(0.8);
   mat.alphaTestNode = float(0.5);
-  mat.colorNode = vec4(select(isCrown, foliageColour(aData.xyz, leaf).mul(shade), bark), alpha);
-  mat.roughnessNode = select(isCrown, float(0.72).sub(leaf.r.mul(0.1)), float(0.93));
+  mat.colorNode = vec4(select(isCrown, foliageColour(aData.xyz, leaf).mul(shade).mul(BILLBOARD_TONE), bark), alpha);
+  mat.roughnessNode = select(isCrown, float(BILLBOARD_ROUGHNESS), float(0.93));
   mat.aoNode = shade.mul(0.7).add(0.3);
   mat.translucencyNode = select(isCrown, aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.2)).mul(shade), vec3(0.0));
   return mat;
