@@ -6,6 +6,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { IGELDO } from '../data-funicular.js';
+import { ringArea, wound, insetRing, simplify, clipRing, hipRoof, pointInRing } from './geom.js';
 
 // js/donostia/landmarks/igeldo.js
 // Monte Igeldo: the 1855 lighthouse on the cliff, El Torreón above the amusement park, the Montaña Suiza scenic railway
@@ -15,7 +16,8 @@ import { IGELDO } from '../data-funicular.js';
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['igeldo-itsasargia', 'igeldo-torreoia'] and
 // ctx = { GEO, terrain, kit }; the funicular, turrets and the coaster's loop come from js/donostia/data-funicular.js
-// (tools/donostia/bake-funicular.mjs).
+// (tools/donostia/bake-funicular.mjs). The funicular's two stations replace the 1:500 buildings over the ends of the
+// line, which the model lists in userData.hide.
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Shared kit
@@ -748,6 +750,8 @@ function buildFunicular(ctx, bin) {
   // Car A climbs while car B comes down; both dwell at the stations. Travel with short speed ramps.
   const RAMP = 0.08, VMAX = 1 / (1 - RAMP);
   const ease = (u) => (u < RAMP ? (u * u * VMAX) / (2 * RAMP) : u < 1 - RAMP ? (RAMP / 2 + u - RAMP) * VMAX : 1 - ((1 - u) * (1 - u) * VMAX) / (2 * RAMP));
+  // where a car stands on its path at f (0: car A at the bottom, 1: at the top)
+  const dockAt = (path, k, f) => half + 0.5 + (k === 0 ? f : 1 - f) * (path.length - CAR.length - 1);
   const update = (elapsed, camera) => {
     const far = camera.position.distanceTo(centre) > 2200;
     const p = elapsed % (2 * (TRIP + DWELL));
@@ -757,12 +761,188 @@ function buildFunicular(ctx, bin) {
       car.visible = !far;
       if (far) continue;
       const path = car.userData.path;
-      const run = path.length - CAR.length - 1;
-      const s = half + 0.5 + (k === 0 ? f : 1 - f) * run;
-      placeOnTrack(car, path, s, CAR.axle, CAR.design);
+      placeOnTrack(car, path, dockAt(path, k, f), CAR.axle, CAR.design);
     }
   };
-  return { object: group, update };
+
+  // the stations over both ends, their roofs clear of the cars as they stand there between trips
+  const dock = new THREE.Object3D();
+  dock.rotation.order = 'YZX';
+  const poses = [];
+  for (const [k, path] of [pathA, pathB].entries()) {
+    for (const f of [0, 1]) {
+      placeOnTrack(dock, path, dockAt(path, k, f), CAR.axle, CAR.design);
+      dock.updateMatrix();
+      poses.push(dock.matrix.clone());
+    }
+  }
+  const hide = buildStations(ctx, bin, A, pa.y, carGeo, poses);
+  return { object: group, update, hide };
+}
+
+// --- The stations -----------------------------------------------------------------------------------------------------
+
+// The 1:500 map draws a building over each end of the line: the station house at Ondarreta (b5m "Funikularra") and
+// the canopy over the summit platform. Extruded solid, they swallow the docked cars, whose roofs stood 2.5-4 m out of
+// them. They are hidden (build() lists them in userData.hide) and each end gets an open station hall in their place: a
+// roof following the rails at least HALL.clear over them and clear of a docked car, on a wall or on posts, with a
+// stepped platform beside the cars; where the outline runs on far to one side of the track (the station house), the
+// rest of it stands as a plain house against the hall's wall.
+const HALL = { clear: 4.2, overCar: 0.35, wall: 4.2, minSide: 2.6, maxSide: 6.5, house: 7, track: 1.4 };
+const HALL_ROOF = rgb(0x56625b); // painted sheet
+
+// R: route A resampled every metre (resample()), rail: its rail level at each point, carGeo: a car built at the
+// origin, poses: the cars' matrices where they stand at the stations. Returns the GEO.buildings indices replaced.
+function buildStations(ctx, bin, R, rail, carGeo, poses) {
+  const { GEO, kit, terrain } = ctx;
+  const n = R.x.length, L = R.s[n - 1];
+  const hide = [];
+  const carPts = [];
+  const pos = carGeo.attributes.position, p = new THREE.Vector3();
+  for (const m of poses) for (let k = 0; k < pos.count; k++) carPts.push(p.fromBufferAttribute(pos, k).applyMatrix4(m).toArray());
+  for (const top of [false, true]) {
+    // the station's frame: u along the line from its end (into the track), v to its right
+    const i0 = top ? n - 1 : 0, i1 = top ? n - 2 : 1;
+    const ex = R.x[i0], ez = R.z[i0];
+    const fr = new Frame(ex, ez, Math.atan2(R.z[i1] - ez, R.x[i1] - ex));
+    const railAt = (u) => {
+      const s = Math.min(L, Math.max(0, top ? L - u : u));
+      let i = 0;
+      while (i + 2 < n && R.s[i + 1] < s) i++;
+      const t = Math.min(1, Math.max(0, (s - R.s[i]) / (R.s[i + 1] - R.s[i] || 1)));
+      return rail[i] + (rail[i + 1] - rail[i]) * t;
+    };
+    const groundAt = (u, v) => terrain.heightAt(...fr.world(u, v));
+
+    // the 1:500 buildings over the end of the line (the summit's canopy comes twice in the map), the largest outline
+    // giving the station's extent
+    const under = [];
+    GEO.buildings.forEach((b, i) => { if (b.g?.[0] && pointInRing(ex, ez, b.g[0])) under.push(i); });
+    hide.push(...under);
+    const area = (i) => Math.abs(ringArea(GEO.buildings[i].g[0]));
+    const outline = under.length ? GEO.buildings[under.reduce((a, b) => (area(b) > area(a) ? b : a))] : null;
+    let uMin = -1, uMax = CAR.length + 1.5, vMin = -HALL.minSide, vMax = HALL.minSide;
+    if (outline) {
+      for (let k = 0; k < outline.g[0].length; k += 2) {
+        const [u, v] = fr.local(outline.g[0][k], outline.g[0][k + 1]);
+        uMin = Math.min(uMin, u); uMax = Math.max(uMax, u); vMin = Math.min(vMin, v); vMax = Math.max(vMax, v);
+      }
+    }
+    const u0 = Math.max(-6, uMin), u1 = Math.min(uMax, CAR.length + 6);
+    // each side: the outline's reach, a house beyond the hall's wall when it reaches far, else open on posts
+    const sides = [-1, 1].map((s) => {
+      const reach = s < 0 ? -vMin : vMax;
+      const house = reach > HALL.house && !!outline;
+      return { s, house, edge: house ? HALL.wall : Math.min(HALL.maxSide, Math.max(HALL.minSide, reach)) };
+    });
+    const [left, right] = sides;
+
+    // the roof's underside: HALL.clear over the rails and HALL.overCar over a docked car, then the upper hull of that,
+    // so it runs in straight pitches
+    const us = [];
+    for (let u = u0; u < u1; u += 1) us.push(u);
+    us.push(u1);
+    const need = us.map((u) => [u, railAt(Math.max(0, u)) + HALL.clear]);
+    for (const [x, y, z] of carPts) {
+      const [u, v] = fr.local(x, z);
+      if (v < -left.edge || v > right.edge) continue;
+      for (const q of need) if (Math.abs(q[0] - u) <= 0.75) q[1] = Math.max(q[1], y + HALL.overCar);
+    }
+    const hull = [];
+    for (const q of need) {
+      while (hull.length >= 2) {
+        const a = hull[hull.length - 2], b = hull[hull.length - 1];
+        if ((b[1] - a[1]) * (q[0] - a[0]) <= (q[1] - a[1]) * (b[0] - a[0])) hull.pop();
+        else break;
+      }
+      hull.push(q);
+    }
+    const roofAt = (u) => {
+      let k = 0;
+      while (k + 2 < hull.length && hull[k + 1][0] < u) k++;
+      const [a, b] = [hull[k], hull[k + 1] || hull[k]];
+      return a[1] + ((b[1] - a[1]) * Math.min(1, Math.max(0, u - a[0]))) / Math.max(1e-6, b[0] - a[0]);
+    };
+
+    // a horizontal path down the hall's middle: its sections give the roof and walls their heights, upright
+    const path = us.flatMap((u) => {
+      const [x, z] = fr.world(u, 0);
+      return [x, 0, z];
+    });
+    const vL = -left.edge, vR = right.edge;
+    bin.add(M.paint, sweep(path, (k) => {
+      const r = roofAt(us[k]);
+      return [vL - 0.3, r, vR + 0.3, r, vR + 0.3, r + 0.25, vL - 0.3, r + 0.25];
+    }, { caps: true }), HALL_ROOF);
+    for (const side of sides) {
+      const { s, edge } = side;
+      if (side.house) {
+        // the wall between the hall and the house, from below the ground to the roof
+        bin.add(kit.materials.whiteRender, sweep(path, (k) => {
+          const b = Math.min(groundAt(us[k], s * edge), groundAt(us[k], s * (edge - 0.3))) - 0.6;
+          return [s * (edge - 0.3), b, s * edge, b, s * edge, roofAt(us[k]) + 0.05, s * (edge - 0.3), roofAt(us[k]) + 0.05];
+        }, { caps: true }));
+      } else {
+        const count = Math.max(1, Math.round((u1 - u0) / 3));
+        for (let j = 0; j <= count; j++) {
+          const u = u0 + 0.15 + ((u1 - u0 - 0.3) * j) / count, v = s * (edge - 0.15);
+          bin.add(M.paint, fr.box(u, v, 0.2, 0.2, groundAt(u, v) - 0.4, roofAt(u) + 0.05), DARK_GREEN);
+        }
+      }
+    }
+    // the platform: a flight of 1 m steps along the docked car, on the house's side or the wider open one
+    const pf = right.house || (!left.house && right.edge >= left.edge) ? right : left;
+    const pIn = HALL.track, pOut = pf.edge - (pf.house ? 0.3 : 0.4);
+    for (let u = Math.max(0, u0); u < Math.min(u1, CAR.length + 1.5); u += 1) {
+      const v0 = pf.s * pIn, v1 = pf.s * pOut;
+      const g = Math.min(groundAt(u, v0), groundAt(u, v1), groundAt(u + 1, v0), groundAt(u + 1, v1)) - 0.5;
+      bin.add(M.stone, fr.box(u + 0.5, (v0 + v1) / 2, 1.0, pOut - pIn, g, railAt(u + 0.5) + 0.45), GREY_STONE);
+    }
+    // buffers at the end of the line
+    bin.add(M.paint, fr.box(-0.35, 0, 0.3, 2.0, railAt(0) - 0.4, railAt(0) + 0.75), IRON);
+
+    // the rest of the station house beyond the hall's wall
+    const lx = -fr.s, lz = fr.c; // +v in the world
+    for (const { s, edge, house } of sides) {
+      if (!house) continue;
+      const ring = clipRing(outline.g[0], s * lx, s * lz, -s * (lx * ex + lz * ez) - edge);
+      if (ring) buildStationHouse(ctx, bin, wound(ring), outline, (x, z) => s * ((x - ex) * lx + (z - ez) * lz) - edge < 0.05);
+    }
+  }
+  return hide;
+}
+
+// A plain house on a ring (wound positive): white render on a stone plinth, a row of windows a storey, a tiled hip
+// roof at the 1:500 building's eave and rise. onCut(x, z) marks the edge it shares with the hall's wall (no windows).
+function buildStationHouse(ctx, bin, ring, b, onCut) {
+  const { kit } = ctx;
+  const g = b.ground, eave = Math.max(b.eave, g + 2.8), rise = Math.min(4.5, Math.max(1.5, b.top - b.eave));
+  const base = kit.lowestGround(ctx, ring) - 0.6;
+  bin.add(kit.materials.whiteRender, kit.prism(ring, base, eave));
+  const sock = insetRing(ring, -0.06);
+  if (sock) bin.add(M.stone, kit.prism(sock, base, g + 0.7), GREY_STONE);
+  // (the roof over the outline without its sub-metre jogs, which would fold any large inset over)
+  const roof = wound(simplify(ring, 1.0));
+  bin.add(kit.materials.terracotta, hipRoof(insetRing(roof, -0.35) || roof, eave, rise, kit.orientedBox(roof).width * 0.5));
+  const storeys = Math.max(1, Math.floor((eave - g) / 3));
+  for (let i = 0, m = ring.length / 2; i < m; i++) {
+    const q = (i + 1) % m;
+    const ax = ring[2 * i], az = ring[2 * i + 1], bx = ring[2 * q], bz = ring[2 * q + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 2.5 || (onCut(ax, az) && onCut(bx, bz))) continue;
+    // the wall's frame: u along it, -v out of the house
+    const wf = new Frame((ax + bx) / 2, (az + bz) / 2, Math.atan2(bz - az, bx - ax));
+    const count = Math.max(1, Math.floor(len / 3.2));
+    for (let j = 0; j < count; j++) {
+      const u = -len / 2 + (len * (j + 0.5)) / count;
+      for (let st = 0; st < storeys; st++) {
+        const y = g + 0.9 + st * 3;
+        if (y + 1.5 > eave - 0.3) break;
+        bin.add(M.stone, wf.box(u, -0.03, 1.45, 0.14, y - 0.15, y + 1.65), GREY_STONE);
+        bin.add(kit.materials.glass, wf.box(u, -0.08, 1.05, 0.2, y, y + 1.5));
+      }
+    }
+  }
 }
 
 // --- Montaña Suiza ------------------------------------------------------------------------------------------------------
@@ -1136,5 +1316,7 @@ export function build(sites, ctx) {
   relayUpdate(group, (dt, elapsed, camera) => {
     for (let k = 0; k < updaters.length; k++) updaters[k](dt, elapsed, camera);
   });
+  // the 1:500 station buildings the funicular's halls replace (no site claims them)
+  group.userData.hide = funicular.hide;
   return group;
 }

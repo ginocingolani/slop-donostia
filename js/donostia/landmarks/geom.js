@@ -154,6 +154,23 @@ export function simplify(r, tol = 0.35) {
   return pts.flat();
 }
 
+// The part of a ring where a·x + b·z + c >= 0 (a half-plane cut, Sutherland–Hodgman), or null when too little is left
+export function clipRing(r, a, b, c) {
+  const out = [];
+  for (let i = 0, n = r.length / 2; i < n; i++) {
+    const j = (i + 1) % n;
+    const x0 = r[2 * i], z0 = r[2 * i + 1], x1 = r[2 * j], z1 = r[2 * j + 1];
+    const d0 = a * x0 + b * z0 + c, d1 = a * x1 + b * z1 + c;
+    if (d0 >= 0) out.push(x0, z0);
+    if ((d0 >= 0) !== (d1 >= 0)) {
+      const t = d0 / (d0 - d1);
+      out.push(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
+    }
+  }
+  const ring = cleanRing(out);
+  return ring.length >= 6 && Math.abs(ringArea(ring)) > 1 ? ring : null;
+}
+
 // Point in ring (even-odd)
 export function pointInRing(x, z, r) {
   let inside = false;
