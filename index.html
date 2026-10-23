@@ -27,6 +27,17 @@
   <link rel="modulepreload" href="./js/donostia/data-streets.js" />
   <link rel="modulepreload" href="./js/donostia/minimap.js" />
   <link rel="modulepreload" href="./js/donostia/main.js" />
+  <!-- main.js reports its own startup errors; this covers the module graph failing to load or run at all (three.js from
+       the CDN, a data module, a browser without import maps), which would otherwise leave the loader at 'Starting…' -->
+  <script>
+    addEventListener('error', (e) => {
+      const status = document.getElementById('loading-status');
+      if (!status || document.getElementById('loading-overlay')?.classList.contains('hidden')) return;
+      // (a stylesheet or font failing to load is not fatal: only scripts count)
+      if (e.target instanceof HTMLScriptElement) status.textContent = 'Could not load the app (network or browser support).';
+      else if (e instanceof ErrorEvent) status.textContent = `Could not start: ${e.message}`;
+    }, true);
+  </script>
   <script type="module" src="./js/donostia/main.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
