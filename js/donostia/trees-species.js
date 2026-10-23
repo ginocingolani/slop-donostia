@@ -564,3 +564,21 @@ export function buildFarGeometry() {
   g.setIndex(idx);
   return g;
 }
+
+// The most distant trees' impostor: a camera-facing quad over the broadleaf far tile for the crown (x, y in -1..1) and
+// an upright one for the trunk (x in -1..1, y in 0..1), turned to the camera and sized by trees-material.js
+// createBillboardTreeMaterial; aFarPart as in buildFarGeometry (1 crown, 0 trunk)
+export function buildBillboardGeometry() {
+  const { u0, u1, vTop, vBot } = tileUV(TILE_FAR.broadleaf);
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([
+    -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0,
+    -1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0
+  ], 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(8).fill([0, 0, 1]).flat(), 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute([u0, vBot, u1, vBot, u1, vTop, u0, vTop, 0, 0, 1, 0, 1, 1, 0, 1], 2));
+  g.setAttribute('aFarPart', new THREE.Float32BufferAttribute([1, 1, 1, 1, 0, 0, 0, 0], 1));
+  // the trunk first: the crown, drawn after, hides its top
+  g.setIndex([4, 5, 6, 4, 6, 7, 0, 1, 2, 0, 2, 3]);
+  return g;
+}

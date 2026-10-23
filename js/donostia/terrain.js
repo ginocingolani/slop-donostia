@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { decodePNG } from './png.js';
+import { decodePNGOffThread } from './png.js';
 
 // js/donostia/terrain.js
 // LiDAR terrain of Donostia (geoEuskadi 2017 MDT + 1 m isobaths, baked by tools/donostia/build.mjs): a 2 m core grid
@@ -12,17 +12,16 @@ import { decodePNG } from './png.js';
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];
 const SKIRT = 6; // m
+const SUBMERGED = -3; // m: chunks whose highest sample lies below this are always under the (opaque) sea
 
 class HeightField {
-  constructor(meta, image, offset) {
+  // field: png.js's 'heightField' transform of the baked PNG: { heights (m), classes, half (the heights as half floats) }
+  constructor(meta, field) {
     Object.assign(this, { x0: meta.x0, z0: meta.z0, w: meta.w, h: meta.h, res: meta.res });
-    this.heights = new Float32Array(this.w * this.h);
-    this.classes = new Uint8Array(this.w * this.h); // GEO.terrain.classes ids (B channel)
-    const px = image.data;
-    for (let k = 0; k < this.heights.length; k++) {
-      this.heights[k] = ((px[3 * k] << 8) | px[3 * k + 1]) / 100 - offset;
-      this.classes[k] = px[3 * k + 2];
-    }
+    if (field.heights.length !== this.w * this.h) throw new Error(`${meta.url}: ${field.width}x${field.height}, expected ${this.w}x${this.h}`);
+    this.heights = field.heights;
+    this.classes = field.classes; // GEO.terrain.classes ids (B channel)
+    this._half = field.half;
   }
 
   get width() { return this.w * this.res; }
@@ -48,9 +47,7 @@ class HeightField {
 
   get heightTexture() {
     if (!this._heightTex) {
-      const half = new Uint16Array(this.heights.length);
-      for (let k = 0; k < half.length; k++) half[k] = THREE.DataUtils.toHalfFloat(this.heights[k]);
-      const t = new THREE.DataTexture(half, this.w, this.h, THREE.RedFormat, THREE.HalfFloatType);
+      const t = new THREE.DataTexture(this._half, this.w, this.h, THREE.RedFormat, THREE.HalfFloatType);
       t.magFilter = t.minFilter = THREE.LinearFilter;
       t.generateMipmaps = false;
       t.needsUpdate = true;
@@ -151,6 +148,7 @@ function chunkGeometry(field, ci, cj, sink = null) {
   const x1 = field.sampleX(Math.min(i0 + QUADS, field.w - 1)), z1 = field.sampleZ(Math.min(j0 + QUADS, field.h - 1));
   geo.boundingBox = new THREE.Box3(new THREE.Vector3(x0, minY - SKIRT, z0), new THREE.Vector3(x1, maxY, z1));
   geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
+  geo.userData.maxY = maxY;
   return geo;
 }
 
@@ -159,7 +157,7 @@ export class Terrain {
     const fetchField = async (m) => {
       const res = await fetch(m.url);
       if (!res.ok) throw new Error(`${m.url}: HTTP ${res.status}`);
-      return new HeightField(m, await decodePNG(await res.arrayBuffer()), meta.heightOffset);
+      return new HeightField(m, await decodePNGOffThread(await res.arrayBuffer(), 'heightField', meta.heightOffset));
     };
     const [core, context] = await Promise.all([fetchField(meta.core), fetchField(meta.context)]);
     return new Terrain(core, context);
@@ -171,6 +169,7 @@ export class Terrain {
     this.group = new THREE.Group();
     this.group.name = 'DonostiaTerrain';
     this.chunks = [];
+    this.lodScale = 1; // distance multiplier of every level's reach (smaller: coarser levels sooner)
   }
 
   // Ground height (m) at a local (x, z): the 2 m core where it exists, the 8 m context elsewhere
@@ -182,7 +181,14 @@ export class Terrain {
     return this.core.contains(x, z) ? this.core.classAt(x, z) : this.context.classAt(x, z);
   }
 
-  build(material) {
+  // Every chunk's meshes share `material`; build() may run before it exists (main.js builds the chunks while the
+  // ground maps still decode) and setMaterial() hand it over
+  setMaterial(material) {
+    for (const chunk of this.chunks) for (const mesh of chunk.meshes) if (mesh) mesh.material = material;
+  }
+
+  build(material = null) {
+    material ||= new THREE.MeshBasicNodeMaterial();
     const lods = LOD_STRIDES.map((s) => chunkIndex(s));
     const addGrid = (field, kind) => {
       const ncx = Math.ceil((field.w - 1) / QUADS), ncz = Math.ceil((field.h - 1) / QUADS);
@@ -206,7 +212,7 @@ export class Terrain {
             if (!all) indices = LOD_STRIDES.map((s) => chunkIndex(s, keep));
           }
           const base = chunkGeometry(field, ci, cj, kind === 'context' ? insideCore : null);
-          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [] };
+          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [], maxY: base.userData.maxY };
           indices.forEach((index) => {
             if (!index) { chunk.meshes.push(null); return; }
             const geo = new THREE.BufferGeometry();
@@ -239,19 +245,23 @@ export class Terrain {
     }
   }
 
-  // Pick each chunk's level of detail from its distance to the camera (about one pixel per sample for a 1080p, 55°
-  // view), with a little hysteresis so chunks don't flicker between two levels at a boundary
+  // Pick each chunk's level of detail from its distance to the camera (triangles of 4-8 px for a 1080p, 55° view),
+  // with a little hysteresis so chunks don't flicker between two levels at a boundary. Chunks wholly under the sea are
+  // never seen through the opaque water (the god camera stays above it; the tide's low water is 1.6 m down): hidden.
   update(cameraPosition) {
     for (const chunk of this.chunks) {
       const d = chunk.box.distanceToPoint(cameraPosition);
-      const reach = (lod) => 200 * LOD_STRIDES[lod] * chunk.res / 2;
-      let lod = 0;
-      while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
-      if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
-        const edge = reach(Math.max(lod, chunk.lod));
-        if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
+      let lod = -1;
+      if (chunk.maxY >= SUBMERGED) {
+        const reach = (l) => 200 * LOD_STRIDES[l] * chunk.res / 2 * this.lodScale;
+        lod = 0;
+        while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
+        if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
+          const edge = reach(Math.max(lod, chunk.lod));
+          if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
+        }
+        while (lod > 0 && !chunk.meshes[lod]) lod--;
       }
-      while (lod > 0 && !chunk.meshes[lod]) lod--;
       if (lod === chunk.lod) continue;
       if (chunk.lod >= 0 && chunk.meshes[chunk.lod]) chunk.meshes[chunk.lod].visible = false;
       if (chunk.meshes[lod]) chunk.meshes[lod].visible = true;
