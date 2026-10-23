@@ -41,14 +41,19 @@ const PLACE_ALIAS = {
   Urgull: ['Urgull mendia', 'Monte Urgull']
 };
 
-// Auzoak: the municipal layer's upper-case Basque names -> [Basque, Spanish]
+// Auzoak: the municipal layer's upper-case Basque names -> [Basque, Spanish], all nineteen of the layer (only those
+// under the core are baked)
 const DISTRICTS = {
-  IGELDO: ['Igeldo', 'Igueldo'], IBAETA: ['Ibaeta', 'Ibaeta'], ANTIGUA: ['Antigua', 'Antiguo'], AIETE: ['Aiete', 'Ayete'],
-  ERDIALDEA: ['Erdialdea', 'Centro'], 'MIRAMON - ZORROAGA': ['Miramon-Zorroaga', 'Miramón-Zorroaga'],
+  IGELDO: ['Igeldo', 'Igueldo'], IBAETA: ['Ibaeta', 'Ibaeta'], AÑORGA: ['Añorga', 'Añorga'], ANTIGUA: ['Antigua', 'Antiguo'],
+  AIETE: ['Aiete', 'Ayete'], ERDIALDEA: ['Erdialdea', 'Centro'], 'MIRAMON - ZORROAGA': ['Miramon-Zorroaga', 'Miramón-Zorroaga'],
   AMARABERRI: ['Amara Berri', 'Amara Berri'], GROS: ['Gros', 'Gros'], EGIA: ['Egia', 'Egia'],
   'ATEGORRIETA - ULIA': ['Ategorrieta-Ulia', 'Ategorrieta-Ulía'], LOIOLA: ['Loiola', 'Loyola'],
-  MARTUTENE: ['Martutene', 'Martutene'], INTXAURRONDO: ['Intxaurrondo', 'Intxaurrondo']
+  MARTUTENE: ['Martutene', 'Martutene'], INTXAURRONDO: ['Intxaurrondo', 'Intxaurrondo'], ALTZA: ['Altza', 'Alza'],
+  'MIRAKRUZ - BIDEBIETA': ['Mirakruz-Bidebieta', 'Miracruz-Bidebieta'], ZUBIETA: ['Zubieta', 'Zubieta'],
+  OARAIN: ['Oarain', 'Oarain'], LANDERBASO: ['Landerbaso', 'Landerbaso']
 };
+// A district the table does not know yet (the core grew into it) still reads as a name, not as the map's upper case
+const titleCase = (key) => key.toLocaleLowerCase('eu').replace(/(^|[\s-])(\p{L})/gu, (m, sep, c) => sep + c.toLocaleUpperCase('eu'));
 
 // La Concha bay, drawn by hand generously over the land: only its water counts (the HUD checks the ground class).
 // The mouth runs from the Peine del Viento at the foot of Igeldo to the tip of Urgull.
@@ -228,7 +233,8 @@ function bakeDistricts() {
   const byName = new Map();
   for (const f of loadLayer('auzoak.json').features) {
     const key = f.p.IzenAuzo;
-    const [eu, es] = DISTRICTS[key] || [key, key];
+    if (!DISTRICTS[key] && !byName.has(key)) log(`district ${key} has no display name in DISTRICTS: shown as ${titleCase(key)}`);
+    const [eu, es] = DISTRICTS[key] || [titleCase(key), titleCase(key)];
     let d = byName.get(key);
     if (!d) byName.set(key, d = { name: eu, es: es !== eu ? es : null, rings: [] });
     for (const ring of f.g) {
