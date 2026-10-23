@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, attribute, float, vec2, vec3, abs, max, min, mix, floor, fract, sin, dot, clamp, smoothstep, step, select,
+  Fn, attribute, float, vec2, vec3, abs, max, min, mix, floor, fract, sin, dot, clamp, smoothstep, step, select, fwidth,
   positionWorld, mx_noise_float
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
@@ -17,12 +17,18 @@ import { PartBin, Frame, westMaterials as M, rgb } from './igeldo.js';
 // overlapping rectangles (each a wing with its own ridge, cross-gables where they meet), with chimneys on the ridges,
 // dormers on the slopes facing the bay and the octagonal tower on the corner nearest the bay.
 //
+// From the photographs (Wikimedia Commons: the garden front from the lawn, 2007-2019): the ground floor is grey-green
+// sandstone ashlar with brick only above it; the roofs are brown-red tiles, not slate; the gables are half-timbered,
+// dark timbers on white render; the octagonal tower ends in a belvedere of white timber-framed windows under a steep
+// tiled spire.
+//
 // build(sites, ctx) receives the GEO.landmarks entries ['miramar'] and ctx = { GEO, terrain, kit }.
 
 const PITCH = THREE.MathUtils.degToRad(50);
 const MAX_RISE = 6.5;
 const BAY = [-430, 330]; // the middle of La Concha bay
-const BRICK = new THREE.Color(0x9a4b36), DRESSING = new THREE.Color(0xd8ccb2);
+const BRICK = new THREE.Color(0xa24a33), DRESSING = new THREE.Color(0xb0ab92);
+const TIMBERED = 199; // facade.y code of the half-timbered gables (facade.x, .z: the gable's horizontal direction)
 const POT = rgb(0x8c4a33), STONE = rgb(0xcfc3a8), CREAM = rgb(0xe4dccb);
 
 // Exposed brick with stone dressings: plinth, string courses, quoins and window surrounds, read from the per-wall
@@ -50,7 +56,7 @@ function createBrickMaterial(eaveHeight) {
   const quoinW = mix(float(0.35), float(0.62), step(0.5, fract(v.div(0.62))));
   const quoin = clamp(step(u, quoinW).add(step(len.sub(quoinW), u)), 0.0, 1.0);
   const courses = band(3.85, 4.1).add(band(7.4, 7.62)).add(band(top.sub(0.5), top.add(0.02)));
-  const plinth = step(v, 0.8);
+  const plinth = step(v, 3.95); // the stone ground floor (and the basement under it)
   const dressing = clamp(plinth.add(courses).add(quoin).add(surround), 0.0, 1.0).mul(facadeZone);
 
   // brick tone varies course by course and across the wall; no mortar lines (they would only shimmer at distance)
@@ -62,7 +68,20 @@ function createBrickMaterial(eaveHeight) {
   const storeyV = fract(v.sub(1.2).div(3.5));
   const bars = max(smoothstep(0.012, 0.004, abs(bu.sub(0.5))), smoothstep(0.02, 0.008, abs(storeyV.sub(0.38))));
   const glass = mix(vec3(0.045, 0.055, 0.065), vec3(0.82, 0.8, 0.75), bars);
-  mat.colorNode = Fn(() => mix(mix(brick, stone, dressing), glass, window))();
+  // half-timbering on the gables: studs every 0.9 m, rails every 1.3 m and a diagonal brace in every other row, dark oak
+  // on white render, settling to their mean tone before they shrink to a pixel
+  const timbered = step(150.0, v);
+  const gs = dot(positionWorld.xz, vec2(u, len)).div(0.9), gy = positionWorld.y.div(1.3);
+  const cx = fract(gs), cy = fract(gy);
+  const fw = max(fwidth(gs), fwidth(gy)).max(0.001);
+  const line = (d, w) => smoothstep(fw.add(w), fw.negate().add(w), d);
+  const studs = line(abs(cx.sub(0.5)).oneMinus().sub(0.5), 0.07).max(line(abs(cy.sub(0.5)).oneMinus().sub(0.5), 0.055));
+  const checker = fract(floor(gs).add(floor(gy)).mul(0.5)).mul(2.0);
+  const evenRow = float(1).sub(fract(floor(gy).mul(0.5)).mul(2.0));
+  const braces = mix(line(abs(cx.add(cy).sub(1.0)), 0.08), line(abs(cx.sub(cy)), 0.08), checker).mul(evenRow);
+  const timber = studs.max(braces).mul(smoothstep(0.35, 0.15, fw)).add(smoothstep(0.15, 0.35, fw).mul(0.3));
+  const halfTimber = mix(vec3(0.86, 0.84, 0.78), vec3(0.08, 0.05, 0.035), timber);
+  mat.colorNode = Fn(() => mix(mix(mix(brick, stone, dressing), glass, window), halfTimber, timbered))();
   mat.roughnessNode = mix(float(0.86), float(0.15), window.mul(float(1.0).sub(bars)));
   mat.metalnessNode = mix(float(0.0), float(0.3), window.mul(float(1.0).sub(bars)));
 
@@ -73,6 +92,17 @@ function createBrickMaterial(eaveHeight) {
   const lit = step(h, clamp(cityUniforms.uInteriorGlow.mul(0.36), 0.0, 0.7)).mul(window).mul(float(1.0).sub(bars));
   const warm = select(h.lessThan(0.15), vec3(1.0, 0.82, 0.6), vec3(1.0, 0.7, 0.4));
   mat.emissiveNode = warm.mul(lit).mul(cityUniforms.uInteriorGlow).mul(1.5);
+  return mat;
+}
+
+// Brown-red clay tiles: courses every 0.3 m up the slope (horizontal in the world), each tile a little different
+function createTileMaterial() {
+  const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.78, metalness: 0 });
+  const yc = positionWorld.y.div(0.3);
+  const fw = fwidth(yc).max(0.001);
+  const course = smoothstep(fw, float(0).sub(fw), fract(yc).sub(0.12)).mul(smoothstep(0.5, 0.2, fw));
+  const tone = mx_noise_float(positionWorld.mul(vec3(2.2, 3.3, 2.2))).mul(0.06).add(mx_noise_float(positionWorld.mul(0.2)).mul(0.06)).add(1.0);
+  mat.colorNode = vec3(0.2, 0.085, 0.06).mul(tone).mul(float(1).sub(course.mul(0.35)));
   return mat;
 }
 
@@ -221,7 +251,7 @@ export function build(sites, ctx) {
   const ob = kit.orientedBox(ring);
   const fr = new Frame(ob.x, ob.z, ob.angle);
   const brick = createBrickMaterial(eaveH);
-  const slate = kit.materials.slate;
+  const slate = createTileMaterial(); // (the brown-red tiles the photographs show; named for the roofs it covers)
   const bin = new PartBin();
   const NO_WINDOWS = { facade: [0, 99, 0, 0] };
   const bayDir = (() => {
@@ -270,7 +300,9 @@ export function build(sites, ctx) {
       const g = new THREE.ExtrudeGeometry(tri, { depth: 0.4, bevelEnabled: false });
       g.rotateY(Math.PI / 2);
       g.translate(end * (L / 2) - 0.2, 0, 0);
-      put(g, brick, null, NO_WINDOWS);
+      // the gable's horizontal direction in the world, for the half-timbering
+      const t = alongU ? [-fr.s, fr.c] : [-fr.c, -fr.s];
+      put(g, brick, null, { facade: [t[0], TIMBERED, t[1], 0] });
     }
     put(new THREE.BoxGeometry(L + 0.7, 0.18, 0.34).translate(0, rise + 0.14, 0), M.stone, STONE);
     // tall chimney stacks astride the ridge near the gable ends, one or two a wing (not on every parallel ridge)
@@ -333,7 +365,7 @@ export function build(sites, ctx) {
     }
   }
   if (corner) {
-    const r = 3.1, top = eave + 4.2;
+    const r = 3.1, top = eave + 3.0, belv = top + 2.6;
     const oct = [];
     for (let k = 0; k < 8; k++) {
       const a = fr.angle + Math.PI / 8 + (k * Math.PI) / 4;
@@ -350,9 +382,22 @@ export function build(sites, ctx) {
       g.translate(corner.x, (y0 + y1) / 2, corner.z);
       return g;
     };
-    bin.add(M.stone, octagon(r + 0.3, r + 0.12, top - 0.1, top + 0.35), STONE);
-    bin.add(slate, octagon(0.12, r + 0.4, top + 0.35, top + 7.5));
-    bin.add(M.metal, octagon(0.04, 0.04, top + 7.5, top + 8.8), rgb(0x2a2a2a));
+    // the belvedere: a ring of white timber-framed windows over a stone string course, under an overhanging cornice
+    bin.add(M.stone, octagon(r + 0.2, r + 0.05, top - 0.1, top + 0.3), STONE);
+    bin.add(M.paint, octagon(r + 0.12, r + 0.12, top + 0.3, belv), CREAM);
+    for (let k = 0; k < 8; k++) {
+      const a = fr.angle + (k * Math.PI) / 4; // the faces' normals (the corners sit at odd multiples of pi / 8)
+      const d = (r + 0.12) * Math.cos(Math.PI / 8) + 0.03;
+      for (const off of [-0.55, 0.55]) {
+        const g = new THREE.BoxGeometry(0.85, 1.55, 0.06);
+        g.rotateY(-a + Math.PI / 2);
+        g.translate(corner.x + Math.cos(a) * d - Math.sin(a) * off, top + 0.6 + 0.78, corner.z + Math.sin(a) * d + Math.cos(a) * off);
+        bin.add(kit.materials.glass, g);
+      }
+    }
+    bin.add(M.paint, octagon(r + 0.55, r + 0.2, belv, belv + 0.35), rgb(0x3a2a20));
+    bin.add(slate, octagon(0.1, r + 0.55, belv + 0.35, belv + 6.2));
+    bin.add(M.metal, octagon(0.06, 0.06, belv + 6.2, belv + 8.0), rgb(0x2a2a2a));
   }
 
   const group = new THREE.Group();
