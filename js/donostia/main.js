@@ -260,10 +260,7 @@ async function initApp() {
 
   status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
   const DEBUG = new URLSearchParams(location.search).has('debug');
-  const renderer = new THREE.WebGPURenderer({
-    antialias: true, powerPreference: 'high-performance', reversedDepthBuffer: true,
-    trackTimestamp: DEBUG // GPU pass timings for slopDebug.bench
-  });
+  const renderer = new THREE.WebGPURenderer({ antialias: true, powerPreference: 'high-performance', reversedDepthBuffer: true });
   renderer.setPixelRatio(1.0);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -305,16 +302,23 @@ async function initApp() {
 
   // ?debug: frame-by-frame access for profiling, set up before the shader compile below (which waits on animation
   // frames, and requestAnimationFrame stops in hidden tabs; these calls don't). await slopDebug.bench(60) renders 60
-  // frames and reports the CPU time to submit them, the GPU time of their passes (timestamp queries) and the draws.
+  // frames back to back (at most two in flight, like the swap chain) and reports the time per frame (the frame rate's
+  // bound without vsync), the CPU time to simulate & submit one, the draws and the triangles. Each bench frame advances
+  // the renderer's frame (three r186.1 internals: the pass nodes render once per frame id, which the animation loop
+  // otherwise advances). Timestamp queries are left out: on Apple GPUs the passes' intervals overlap and their sum
+  // means nothing.
   if (DEBUG) {
     const device = renderer.backend.device;
     window.slopDebug = {
       THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
       async bench(n = 60, dt = 1 / 60) {
-        let cpu = 0, gpu = 0, draws = 0, triangles = 0;
+        let cpu = 0, draws = 0, triangles = 0, inFlight = null;
+        await device.queue.onSubmittedWorkDone();
         const t0 = performance.now();
         for (let i = 0; i < n; i++) {
           const c0 = performance.now();
+          if (renderer.info.autoReset) renderer.info.reset();
+          renderer._nodes.nodeFrame.update();
           simulate(dt);
           // the compile below may be mid-await with the scene pass's MRT target bound: render to the canvas meanwhile
           const target = renderer.getRenderTarget(), targetMRT = renderer.getMRT();
@@ -326,11 +330,13 @@ async function initApp() {
           cpu += performance.now() - c0;
           draws += renderer.info.render.drawCalls;
           triangles += renderer.info.render.triangles;
-          await device.queue.onSubmittedWorkDone();
-          gpu += (await renderer.resolveTimestampsAsync(THREE.TimestampQuery.RENDER)) || 0;
+          const done = device.queue.onSubmittedWorkDone();
+          if (inFlight) await inFlight;
+          inFlight = done;
         }
+        await device.queue.onSubmittedWorkDone();
         const f = (v) => +(v / n).toFixed(2);
-        return { frames: n, wallMs: f(performance.now() - t0), cpuMs: f(cpu), gpuMs: f(gpu), draws: Math.round(draws / n), triangles: Math.round(triangles / n) };
+        return { frames: n, frameMs: f(performance.now() - t0), cpuMs: f(cpu), draws: Math.round(draws / n), triangles: Math.round(triangles / n) };
       }
     };
   }
