@@ -17,14 +17,17 @@ import { URGULL_PARTS } from '../data-urgull-parts.js';
 // the low tiled wings to the west (8 and 9.2 m), the tall south wing (14.5 m), the round battery on the east (a 9 m
 // terrace behind a parapet), the central block (11.5 m) and the Macho (14 m), which carries the monument. The monument
 // (1950, architect Pedro Muguruza, sculptor Federico Coullaut-Valera) is a ~16 m stone base holding a chapel, with the
-// 12.5 m statue on it, 29 m above the ground in all (OSM; "more than 24 m" says the tourist board). So the figure's
-// feet stand at 16.5 m and OSM's 20.5 m square pedestal part is read as the lower robe. The statue faces the city
-// across the Parte Vieja, as does one side of that pedestal. OSM heights are taken above each part's lowest ground.
+// 12.5 m statue on it, 29 m above the ground in all (OSM; "more than 24 m" says the tourist board). The photographs
+// (Wikimedia Commons, from the city and from the terrace) show the chapel as a battered block rising over the terrace
+// about two-thirds as high as the statue, then a stepped pedestal; OSM's 14 m Macho would bury it behind the battery's
+// parapet, so the chapel is raised to 17 m and the figure's feet stand at 19.3 m, its head at ~32 m. The statue faces
+// the city across the Parte Vieja, as does one side of OSM's square pedestal part. OSM heights are taken above each
+// part's lowest ground.
 
 const PARTS = URGULL_PARTS['mota-gaztelua'];
 const STATUE_H = 12.5;
-const MONUMENT_H = 29;
-const PLINTH_H = MONUMENT_H - STATUE_H; // top of the stepped plinth above the Macho's ground
+const CHAPEL_H = 17.0; // the chapel block's top above the Macho's ground
+const PLINTH_H = 19.3; // the statue's feet above the Macho's ground
 const ROOF_RISE = { 1493466698: 2.8, 1493466704: 2.6, 1493466705: 1.7 }; // tiled roofs (OSM roof:levels 1, 1, 0.6)
 const MACHO = 1493466701, PEDESTAL = 1493466700, STATUE = 1493466699, BATTERY = 1493466703, CENTRE = 1493466702;
 
@@ -192,6 +195,15 @@ function hipRoof(ring, eave, rise, inset) {
   return t.geometry();
 }
 
+function pointInRing(x, z, r) {
+  let inside = false;
+  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) {
+    const xi = r[2 * i], zi = r[2 * i + 1], xj = r[2 * j], zj = r[2 * j + 1];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 function centroid(r) {
   let x = 0, z = 0;
   for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
@@ -226,45 +238,53 @@ const darkMaterial = () => new THREE.MeshStandardNodeMaterial({ color: 0x14120f,
 
 // --- the Sagrado Corazón -------------------------------------------------------------------------------------------------
 
-// Christ in a long robe, arms open and a little forward, built around the origin facing +z, 12.5 m tall
+// Christ in a long robe and a mantle, built around the origin facing +z, 12.5 m tall. The photographs (Wikimedia
+// Commons: "Monumento al Sagrado Corazón de Jesús, Monte Urgull", "2016 jesusen bihotza") show him blessing the city: the
+// right arm raised with the hand beside the head, a wide sleeve hanging from it, the left hand laid on the heart; the
+// mantle falls over both shoulders in deep folds to the feet.
 function sacredHeartGeometries() {
   const out = [];
-  // robe: a lathe, oval in section (wider than deep), flaring a little to the hem
+  // robe: a lathe, oval in section (wider than deep), barely flaring to the hem
   const profile = [
-    [0, 0], [1.7, 0], [1.76, 0.22], [1.66, 0.6], [1.52, 1.8], [1.38, 3.4], [1.24, 5.0], [1.12, 6.3], [1.1, 7.0],
-    [1.2, 8.0], [1.36, 9.0], [1.54, 9.65], [1.48, 10.05], [1.1, 10.4], [0.55, 10.62], [0, 10.66]
+    [0, 0], [1.45, 0], [1.5, 0.2], [1.46, 0.6], [1.4, 1.8], [1.3, 3.4], [1.2, 5.0], [1.12, 6.3], [1.12, 7.0],
+    [1.3, 8.0], [1.55, 9.0], [1.72, 9.65], [1.62, 10.05], [1.15, 10.4], [0.55, 10.62], [0, 10.66]
   ].map(([r, y]) => new THREE.Vector2(r, y));
   out.push(new THREE.LatheGeometry(profile, 22).scale(1, 1, 0.64));
-  // mantle falling over the back from the shoulders
-  const mantle = new THREE.CylinderGeometry(1.32, 1.7, 9.2, 16, 1, true, Math.PI * 0.6, Math.PI * 0.8);
-  out.push(mantle.scale(1, 1, 0.7).translate(0, 5.35, -0.06));
+  // the mantle: open at the front, falling from the shoulders to the feet, a little wider than the robe
+  const mantle = new THREE.CylinderGeometry(1.75, 1.85, 9.6, 18, 1, true, Math.PI * 0.42, Math.PI * 1.16);
+  out.push(mantle.scale(1, 1, 0.72).translate(0, 5.0, -0.04));
+  // its edges hanging in front either side, the deep folds of the photographs
+  for (const side of [-1, 1]) {
+    out.push(new THREE.BoxGeometry(0.5, 7.6, 0.55).rotateZ(side * 0.05).translate(side * 1.25, 5.5, 0.66));
+  }
   // neck, head (and the hair falling to the shoulders, the beard)
   out.push(new THREE.CylinderGeometry(0.34, 0.42, 0.55, 12).translate(0, 10.85, 0.02));
   out.push(new THREE.SphereGeometry(1, 16, 12).scale(0.58, 0.78, 0.66).translate(0, 11.72, 0.06));
   out.push(new THREE.SphereGeometry(1, 14, 10).scale(0.66, 0.86, 0.6).translate(0, 11.5, -0.16));
   out.push(new THREE.SphereGeometry(1, 10, 8).scale(0.34, 0.4, 0.22).translate(0, 11.2, 0.42));
-  // the heart on the chest, a little relief left of centre
-  out.push(new THREE.SphereGeometry(0.34, 10, 8).scale(1, 1, 0.45).translate(0.28, 8.75, 0.62));
-  for (const side of [-1, 1]) {
-    // arms open 24° below the horizontal and 18° forward, in wide sleeves, palms to the front
-    const down = THREE.MathUtils.degToRad(24), fwd = THREE.MathUtils.degToRad(18);
-    const dir = new THREE.Vector3(side * Math.cos(down) * Math.cos(fwd), -Math.sin(down), Math.cos(down) * Math.sin(fwd));
-    const shoulder = new THREE.Vector3(side * 1.28, 9.78, 0.02);
-    out.push(along(new THREE.CylinderGeometry(0.4, 0.46, 1.7, 12).translate(0, 0.85, 0), shoulder.toArray(), dir));
-    const elbow = shoulder.clone().addScaledVector(dir, 1.6);
-    out.push(along(new THREE.CylinderGeometry(0.6, 0.38, 1.8, 12).translate(0, 0.9, 0), elbow.toArray(), dir));
-    // the sleeve hanging under the forearm
-    const drape = new THREE.BoxGeometry(0.16, 1.15, 1.5).translate(0, -0.45, 0);
-    const mid = elbow.clone().addScaledVector(dir, 1.05);
-    drape.applyMatrix4(_m.compose(mid, _q.setFromEuler(_e.set(0, Math.atan2(dir.x, dir.z), 0)), _s.set(1, 1, 1)));
-    out.push(drape);
-    const wrist = elbow.clone().addScaledVector(dir, 1.8);
-    const cuff = new THREE.CylinderGeometry(0.2, 0.22, 0.32, 10);
-    out.push(cuff.applyMatrix4(_m.compose(wrist, _q.setFromUnitVectors(UP, dir), _s.set(1, 1, 1))));
-    const hand = new THREE.SphereGeometry(1, 10, 8).scale(0.36, 0.58, 0.14);
-    hand.applyMatrix4(_m.compose(wrist.clone().addScaledVector(dir, 0.55), _q.setFromUnitVectors(UP, dir), _s.set(1, 1, 1)));
-    out.push(hand);
-  }
+  // the heart on the chest, under the left hand
+  out.push(new THREE.SphereGeometry(0.34, 10, 8).scale(1, 1, 0.45).translate(0.32, 9.0, 0.66));
+  const limb = (r0, r1, a, b) => {
+    const d = new THREE.Vector3().subVectors(b, a);
+    return along(new THREE.CylinderGeometry(r1, r0, d.length(), 12).translate(0, d.length() / 2, 0), a.toArray(), d);
+  };
+  // the right arm (at -x: the figure faces +z): upper arm down and out, the forearm raised to the hand beside the head
+  const rs = new THREE.Vector3(-1.5, 9.75, 0.05), re = new THREE.Vector3(-2.05, 8.75, 0.5);
+  const rw = new THREE.Vector3(-1.85, 10.95, 0.6);
+  out.push(limb(0.46, 0.42, rs, re));
+  out.push(limb(0.36, 0.3, re, rw));
+  // the sleeve gathered round the raised forearm, wide at the elbow, falling back to the wrist
+  out.push(limb(0.72, 0.42, re.clone().add(new THREE.Vector3(0, -0.3, 0)), re.clone().lerp(rw, 0.72)));
+  out.push(new THREE.SphereGeometry(1, 10, 8).scale(0.24, 0.36, 0.22).translate(rw.x + 0.02, rw.y + 0.35, rw.z));
+  // the wide sleeve hanging from the raised forearm down past the elbow
+  out.push(new THREE.CylinderGeometry(0.45, 0.75, 2.6, 12, 1, true).translate(-2.0, 8.55, 0.52));
+  out.push(new THREE.BoxGeometry(0.25, 2.6, 1.2).rotateZ(-0.12).translate(-2.2, 7.4, 0.45));
+  // the left arm: down to the elbow, the forearm across the chest, the hand on the heart
+  const ls = new THREE.Vector3(1.5, 9.75, 0.05), le = new THREE.Vector3(1.75, 8.3, 0.5);
+  const lw = new THREE.Vector3(0.62, 9.05, 0.85);
+  out.push(limb(0.46, 0.42, ls, le));
+  out.push(limb(0.4, 0.3, le, lw));
+  out.push(new THREE.SphereGeometry(1, 10, 8).scale(0.42, 0.24, 0.16).translate(0.38, 9.2, 0.92));
   return out;
 }
 
@@ -290,7 +310,7 @@ export function build(sites, ctx) {
   parts.add(stone, kit.prism(outline, outlineBase, median + 2.2));
 
   for (const p of PARTS.parts) {
-    if (p.osm === STATUE || p.osm === PEDESTAL || !p.height) continue;
+    if (p.osm === STATUE || p.osm === PEDESTAL || p.osm === MACHO || !p.height) continue;
     const g0 = ground(p.ring);
     const rise = ROOF_RISE[p.osm] || 0;
     const eave = g0 + p.height - rise;
@@ -344,12 +364,11 @@ export function build(sites, ctx) {
     }
   }
 
-  // The monument on the Macho: the chapel block's cornice, a stepped plinth (OSM's square pedestal) and the statue
+  // The monument on the Macho: the chapel, a battered block whose walls lean in as they rise (the photographs), with
+  // an arched door and a carved panel over it on the side facing the city; a stepped pedestal; the statue
   const macho = byId.get(MACHO);
   const gm = ground(macho.ring);
-  const machoTop = gm + macho.height;
-  const cornice = insetRing(wound(macho.ring), -0.35);
-  if (cornice) parts.add(stone, kit.prism(cornice, machoTop - 0.6, machoTop));
+  const machoTop = gm + CHAPEL_H;
   const ped = kit.orientedBox(byId.get(PEDESTAL).ring);
   const statueAt = PARTS.points[0]?.at || [ped.x, ped.z];
   // face the city: of the pedestal's four sides, the one looking most towards Alderdi Eder (the frame origin)
@@ -360,15 +379,45 @@ export function build(sites, ctx) {
     if (d > best) { best = d; facing = a; }
   }
   const yaw = Math.atan2(Math.cos(facing), Math.sin(facing)); // rotation.y that turns local +z to the facing direction
-  const side = Math.max(ped.length, ped.width);
+  const fx = Math.cos(facing), fz = Math.sin(facing);
   const baseY = gm + PLINTH_H;
-  parts.add(stone, box(side + 1.4, 0.9, side + 1.4, ped.x, machoTop, ped.z, yaw));
-  parts.add(stone, box(side + 0.6, baseY - machoTop - 1.1, side + 0.6, ped.x, machoTop + 0.9, ped.z, yaw));
-  parts.add(stone, box(side + 1.0, 0.35, side + 1.0, ped.x, baseY - 0.55, ped.z, yaw));
-
   const statue = statueMaterial(baseY);
-  // the statue's own plinth, then the figure
-  parts.add(statue, box(side - 0.2, 0.2, side - 0.2, ped.x, baseY - 0.2, ped.z, yaw));
+  {
+    const r = wound(simplify(macho.ring));
+    const y0 = gm - 0.5, batter = 1.3; // the walls lean in 1.3 m over the block's height
+    const top = insetRing(r, batter) || r;
+    const t = new Tris();
+    for (let i = 0, n = r.length / 2; i < n; i++) {
+      const q = (i + 1) % n;
+      const a0 = [r[2 * i], y0, r[2 * i + 1]], a1 = [r[2 * q], y0, r[2 * q + 1]];
+      const b0 = [top[2 * i], machoTop, top[2 * i + 1]], b1 = [top[2 * q], machoTop, top[2 * q + 1]];
+      t.tri(a0, a1, b1);
+      t.tri(a0, b1, b0);
+    }
+    t.cap(top, machoTop);
+    parts.add(stone, t.geometry());
+    const cornice = insetRing(top, -0.35);
+    if (cornice) parts.add(stone, kit.prism(cornice, machoTop - 0.5, machoTop + 0.05));
+    // the door at the terrace's level (the central block's roof) and the carved panel high over it, on the city side
+    const terrace = gm + (byId.get(CENTRE)?.height ?? 11.5);
+    let reach = 0;
+    while (reach < 20 && pointInRing(ped.x + fx * reach, ped.z + fz * reach, r)) reach += 0.1;
+    const lean = (y) => (batter * (y - y0)) / (machoTop - y0); // inset of the wall at height y
+    const at = (y, out) => [ped.x + fx * (reach - lean(y) + out), ped.z + fz * (reach - lean(y) + out)];
+    const [dx, dz] = at(terrace + 1.4, 0.05);
+    parts.add(dark, box(1.9, 2.6, 0.3, dx, terrace, dz, yaw));
+    parts.add(dark, new THREE.CylinderGeometry(0.95, 0.95, 0.3, 12, 1, false, -Math.PI / 2, Math.PI)
+      .rotateX(-Math.PI / 2).rotateY(yaw).translate(dx, terrace + 2.6, dz));
+    const [px, pz] = at(machoTop - 1.4, 0.08);
+    parts.add(statue, box(1.6, 1.4, 0.25, px, machoTop - 2.2, pz, yaw));
+  }
+  const side = Math.max(ped.length, ped.width);
+  // the stepped pedestal: a broad low step, a tall block, a narrower cap under the statue's feet
+  parts.add(stone, box(side + 1.6, 0.5, side + 1.6, ped.x, machoTop, ped.z, yaw));
+  parts.add(stone, box(side + 0.8, baseY - machoTop - 1.3, side + 0.8, ped.x, machoTop + 0.5, ped.z, yaw));
+  parts.add(stone, box(side + 1.1, 0.25, side + 1.1, ped.x, baseY - 0.8, ped.z, yaw));
+  parts.add(stone, box(side + 0.1, 0.55, side + 0.1, ped.x, baseY - 0.55, ped.z, yaw));
+
   const place = new THREE.Matrix4().compose(new THREE.Vector3(ped.x, baseY, ped.z),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1));
   for (const g of sacredHeartGeometries()) parts.add(statue, g, place);

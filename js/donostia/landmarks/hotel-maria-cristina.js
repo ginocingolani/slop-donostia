@@ -1,11 +1,13 @@
 import { CivicModel, civicFrame, facadeStyle, WIN, TONE, rect, ngon, arc, offsetRing, ccwRing } from './udaletxea.js';
 
 // js/donostia/landmarks/hotel-maria-cristina.js
-// Hotel María Cristina (1912, Charles Mewès, the architect of the Paris and London Ritz): a white-stone Belle Époque
-// hotel on the Urumea, opened with the Victoria Eugenia across Okendo plaza. A U-shaped block of a tall ground floor and
-// four floors with long iron balconies, a slate mansard with a row of dormers, a domed rotunda on the corner facing the
-// theatre and the river, a raised pavilion over the centre of the river front and a round porch beside it. b5m
-// measures 23 m on average and 28.9 m at the dome.
+// Hotel María Cristina (1912, Charles Mewès, the architect of the Paris and London Ritz): a Belle Époque hotel of the
+// same golden sandstone as the Victoria Eugenia, on the Urumea, opened with the theatre across Okendo plaza. A U-shaped
+// block of a tall rusticated ground floor of round-arched windows and five floors of French windows behind net
+// curtains (stone balconies on the first floor, iron ones on the second, a continuous iron balcony along the top floor),
+// a slate mansard with a row of dormers, a domed rotunda on the corner facing the theatre and the river, a raised
+// pavilion over the centre of the river front and a round porch beside it (Wikimedia Commons photographs of the river
+// and garden fronts). b5m measures 21 m to the eaves, 23 m on average and 28.9 m at the dome.
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['hotel-maria-cristina'] (footprint ring, at [x, z], buildings,
 // height — see tools/donostia/build.mjs) and ctx = { GEO, terrain, kit }. It returns an Object3D in world (local-frame)
@@ -42,13 +44,14 @@ export function build(sites, ctx) {
   if (!site?.footprint) return null;
   const { materials } = ctx.kit;
   const frame = civicFrame(ctx, site, RIVER_DIR, { front: [0, 31.0] });
-  const m = new CivicModel(frame);
-  const F = m.facade, trim = materials.limestone, slate = materials.slate, zinc = materials.zinc, iron = materials.iron;
+  const T = TONE.honey;
+  const m = new CivicModel(frame, { tone: T });
+  // stone trim (cornices, string courses, balconies) in the facade's own stone
+  const F = m.facade, trim = F, slate = materials.slate, zinc = materials.zinc, iron = materials.iron;
   const P = frame.plinth;
-  const T = TONE.white;
 
-  // Ground floor 5 m (lobby & salons), four floors of 3.9 m with French windows
-  const rooms = facadeStyle(WIN.residential, T, { bay: 3.4, ground: 5.0, floor: 3.9 });
+  // Ground floor 5 m (lobby & salons) of round-arched windows, five floors of 3.2 m with French windows
+  const rooms = facadeStyle(WIN.hotel, T, { bay: 3.4, ground: 5.0, floor: 3.2 });
   const plain = facadeStyle(WIN.plain, T);
   const arcade = facadeStyle(WIN.arcade, T, { bay: 2.6, ground: 4.6, floor: 4 });
 
@@ -79,9 +82,18 @@ export function build(sites, ctx) {
       if (k === 0 || k === bays - 1 || !clear(p)) continue;
       m.dormer(slate, T, p[0], p[1], dir, ROOF + 0.3, { w: 1.5, h: 2.4, depth: 1.7 });
     }
-    // continuous iron balconies on the first and fourth floors of the street fronts (not the courtyard ends)
+    // the street fronts (not the courtyard ends): a stone balcony with balusters at every first-floor window and an
+    // iron one at every second-floor window, a continuous iron balcony along the top floor
     if (w.n[1] < -0.9) continue;
-    for (const y of [8.9, 16.7]) {
+    for (let k = 0; k < bays; k++) {
+      const t = (k + 0.5) * bw;
+      if (k === 0 || k === bays - 1 || !clear(along(w, t, 0.5))) continue;
+      m.wall(trim, along(w, t - 1.0, 0.33), along(w, t + 1.0, 0.33), 0.66, 4.95, 5.22);
+      m.balustrade(trim, T, along(w, t - 1.0, 0.6), along(w, t + 1.0, 0.6), 5.22, 0.9);
+      m.wall(trim, along(w, t - 0.85, 0.25), along(w, t + 0.85, 0.25), 0.5, 8.24, 8.42);
+      m.railing(iron, along(w, t - 0.85, 0.47), along(w, t + 0.85, 0.47), 8.42, 0.95, 0.42);
+    }
+    for (const y of [17.86]) {
       let t0 = null;
       const flush = (t1) => {
         if (t0 == null || t1 - t0 < 3) return;
@@ -102,17 +114,21 @@ export function build(sites, ctx) {
   {
     const { u, v, r } = ROTUNDA;
     const ring = ngon(u, v, r, 20);
-    const round = facadeStyle(WIN.residential, T, { bay: 3.0, ground: 5.0, floor: 3.9 });
+    const round = facadeStyle(WIN.hotel, T, { bay: 3.0, ground: 5.0, floor: 3.2 });
     m.prism(F, ring, P, EAVE, round, { top: false, smooth: true, continuous: true });
     m.cornice(trim, ring, EAVE, 0.6, 0.66);
     m.prism(trim, offsetRing(ring, -0.12), 4.9, 5.2, null, { bottom: true, top: false });
-    m.dome(slate, u, v, ROOF, [[r + 0.25, 0], [r + 0.1, 0.8], [r * 0.92, 2.2], [r * 0.74, 3.6], [r * 0.5, 4.6], [r * 0.24, 5.3], [0.6, 5.5]],
-      20);
-    m.prism(zinc, ngon(u, v, 0.6, 10), ROOF + 5.5, ROOF + 6.3, null, { top: false });
-    m.dome(zinc, u, v, ROOF + 6.3, [[0.8, 0], [0.8, 0.15], [0.05, 1.0]], 10);
-    // dormers at the dome's foot over the two street fronts
-    m.dormer(slate, T, u + r + 0.35, v, '+u', ROOF + 0.4, { w: 1.2, h: 1.8, depth: 1.5 });
-    m.dormer(slate, T, u, v + r + 0.35, '+v', ROOF + 0.4, { w: 1.2, h: 1.8, depth: 1.5 });
+    // the photographs show the dome standing well clear of the mansard's crest (b5m's maximum stops at the crest): a
+    // steep slate drum with dormers, then the ribbed dome and its lantern
+    const D = 2.9; // drum height
+    m.dome(slate, u, v, ROOF, [[r + 0.25, 0], [r + 0.05, 1.2], [r * 0.9, D]], 20);
+    m.dome(slate, u, v, ROOF + D, [[r * 0.9, 0], [r * 0.88, 0.8], [r * 0.78, 2.2], [r * 0.6, 3.5], [r * 0.38, 4.4], [r * 0.16, 4.9],
+      [0.6, 5.0]], 20, { smooth: false });
+    m.prism(zinc, ngon(u, v, 0.6, 10), ROOF + D + 5.0, ROOF + D + 6.0, null, { top: false });
+    m.dome(zinc, u, v, ROOF + D + 6.0, [[0.8, 0], [0.8, 0.15], [0.05, 1.1]], 10);
+    // dormers in the drum over the two street fronts
+    m.dormer(slate, T, u + r + 0.2, v, '+u', ROOF + 0.4, { w: 1.2, h: 1.8, depth: 1.6 });
+    m.dormer(slate, T, u, v + r + 0.2, '+v', ROOF + 0.4, { w: 1.2, h: 1.8, depth: 1.6 });
   }
 
   // Central pavilion of the river front: slightly proud, under a taller roof with three dormers

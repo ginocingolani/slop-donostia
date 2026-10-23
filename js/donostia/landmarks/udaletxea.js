@@ -8,11 +8,11 @@ import { cityUniforms } from '../../city-uniforms.js';
 // js/donostia/landmarks/udaletxea.js
 // Donostiako Udaletxea — the City Hall, built 1882-87 as the Gran Casino (Luis Aladrén & Adolfo Morales de los Ríos,
 // after the Monte Carlo casino; a casino until gambling was banned in 1924, the City Hall since the 1940s): an eclectic
-// Belle Époque palace in cream stone. A central body with two slender towers flanking the entrance faces the Alderdi
-// Eder gardens (their footprints are the two small projections either side of the entrance in the OSM outline); long
-// wings with arched windows run out to end pavilions under tall slate roofs, and the old ballroom (now the Salón de
-// Plenos) projects behind towards the harbour. The municipal heritage catalogue (PEPPUC, grado A) describes "un cuerpo
-// central y dos laterales unidos por galerías"; b5m measures 15.6 m on average and 25.3 m at the tower tops.
+// Belle Époque palace of golden sandstone. A central body with two slender towers flanking the entrance faces the
+// Alderdi Eder gardens (their footprints are the two small projections either side of the entrance in the OSM outline);
+// wings run out through galleries to end pavilions, and the old ballroom (now the Salón de Plenos) projects behind
+// towards the harbour. The municipal heritage catalogue (PEPPUC, grado A) describes "un cuerpo central y dos laterales
+// unidos por galerías"; b5m measures the body at 13.4-15.6 m.
 //
 // This file also holds the small kit shared by the four civic landmarks (victoria-eugenia.js, hotel-maria-cristina.js
 // and artzain-ona.js import it from here): a geometry builder that works in the landmark's own frame (u along its long
@@ -27,15 +27,22 @@ import { cityUniforms } from '../../city-uniforms.js';
 // Facade styles
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Stone of each landmark: the cream ashlar of the City Hall, the white stone of the María Cristina, the warmer stone of
-// the Victoria Eugenia and the Igeldo sandstone of the Buen Pastor
-export const TONE = { cream: 0, white: 1, ochre: 2, sandstone: 3 };
-const TONES = [[0.85, 0.79, 0.67], [0.9, 0.88, 0.83], [0.84, 0.75, 0.6], [0.66, 0.55, 0.41]];
+// Stone of each landmark: the cream ashlar of the City Hall, a white stone, a pale ochre, the Igeldo sandstone of the
+// Buen Pastor, and the golden sandstone that the photographs show on the Victoria Eugenia (golden) and the María
+// Cristina (honey, a shade paler), cut from the same quarries
+export const TONE = { cream: 0, white: 1, ochre: 2, sandstone: 3, golden: 4, honey: 5 };
+const TONES = [[0.85, 0.79, 0.67], [0.9, 0.88, 0.83], [0.84, 0.75, 0.6], [0.47, 0.39, 0.29], [0.69, 0.49, 0.23],
+  [0.72, 0.53, 0.27]];
 
 // What the shader draws on a wall: plain ashlar; Belle Époque windows (arched on the ground & main floors, square-headed
 // above); round-arched openings throughout; pointed lancets with tracery & stained glass; a balustrade; rusticated
-// masonry; a rose window; tall French windows (hotel & flats). CAP marks horizontal faces (no coursing).
-export const WIN = { plain: 0, civic: 1, arcade: 2, lancet: 3, balustrade: 4, rusticated: 5, rose: 6, residential: 7, cap: 15 };
+// masonry; a rose window; tall French windows (flats); a grand hotel's (round-arched on a rusticated ground floor, tall
+// French windows with net curtains above); square-headed windows throughout; a palace's (square-headed on the ground
+// floor and above, round-arched on the main floor). CAP marks horizontal faces (no coursing).
+export const WIN = {
+  plain: 0, civic: 1, arcade: 2, lancet: 3, balustrade: 4, rusticated: 5, rose: 6, residential: 7, hotel: 8, square: 9,
+  palace: 10, cap: 15
+};
 
 // bay: target window spacing (m; the wall is split into whole bays); floor / ground: storey heights above the part's
 // base (the storey grid starts at `base`, metres above the landmark's ground); for a balustrade `floor` is its height,
@@ -69,7 +76,9 @@ export function civicFacadeMaterial() {
   const kCivic = isKind(WIN.civic), kArcade = isKind(WIN.arcade), kLancet = isKind(WIN.lancet);
   const kBal = isKind(WIN.balustrade), kRust = isKind(WIN.rusticated), kRose = isKind(WIN.rose);
   const kRes = isKind(WIN.residential), kCap = isKind(WIN.cap);
-  const hasWin = kCivic.add(kArcade).add(kLancet).add(kRes);
+  const kHotel = isKind(WIN.hotel), kSquare = isKind(WIN.square), kPalace = isKind(WIN.palace);
+  const kRect = kCivic.add(kSquare).add(kPalace); // the kinds sharing the civic window's proportions
+  const hasWin = kCivic.add(kArcade).add(kLancet).add(kRes).add(kHotel).add(kSquare).add(kPalace);
   const isStained = max(kLancet, kRose);
 
   // metres per pixel on the wall, for anti-aliasing and fading fine detail with distance
@@ -97,20 +106,23 @@ export function civicFacadeMaterial() {
 
   // Opening of each kind: half-width (share of the bay), sill & head (m above the storey's floor), arch (0 square, 1 round,
   // 2 pointed). Kinds are exclusive, so masked sums pick one set.
-  const halfFrac = kCivic.mul(mix(mix(float(0.22), float(0.25), noble), float(0.28), g))
+  const halfFrac = kRect.mul(mix(mix(float(0.22), float(0.25), noble), float(0.28), g))
+    .add(kHotel.mul(mix(float(0.19), float(0.27), g)))
     .add(kArcade.mul(mix(float(0.33), float(0.36), g)))
     .add(kLancet.mul(0.22))
     .add(kRes.mul(mix(float(0.2), float(0.3), g)));
   const halfW = halfFrac.mul(bayW);
-  const sill = kCivic.mul(mix(mix(float(0.28), float(0.2), noble).mul(storeyH), float(0.45), g))
+  const sill = kRect.mul(mix(mix(float(0.28), float(0.2), noble).mul(storeyH), float(0.45), g))
+    .add(kHotel.mul(mix(storeyH.mul(0.08), float(0.5), g)))
     .add(kArcade.mul(mix(storeyH.mul(0.16), float(0.0), g)))
     .add(kLancet.mul(mix(storeyH.mul(0.22), float(0.0), g)))
     .add(kRes.mul(mix(storeyH.mul(0.05), float(0.0), g)));
-  const head = kCivic.mul(mix(mix(float(0.8), float(0.88), noble).mul(storeyH), storeyH.sub(0.5), g))
+  const head = kRect.mul(mix(mix(float(0.8), float(0.88), noble).mul(storeyH), storeyH.sub(0.5), g))
+    .add(kHotel.mul(mix(storeyH.mul(0.84), storeyH.sub(0.45), g)))
     .add(kArcade.mul(mix(storeyH.mul(0.9), storeyH.sub(0.35), g)))
     .add(kLancet.mul(storeyH.mul(mix(float(0.92), float(0.85), g))))
     .add(kRes.mul(mix(storeyH.mul(0.8), storeyH.sub(0.6), g)));
-  const arch = kCivic.mul(max(noble, g)).add(kArcade).add(kLancet.mul(2.0));
+  const arch = kCivic.mul(max(noble, g)).add(kPalace.mul(noble)).add(kArcade).add(kLancet.mul(2.0)).add(kHotel.mul(g));
   const pointed = arch.greaterThan(1.5), round = arch.greaterThan(0.5);
   const spring = head.sub(select(pointed, halfW.mul(1.732), select(round, halfW, float(0))));
   const dyA = max(py.sub(spring), 0.0);
@@ -166,11 +178,11 @@ export function civicFacadeMaterial() {
   const head2 = abs(fract(s.div(block).add(odd.mul(0.5)).add(0.5)).sub(0.5)).mul(block);
   const plainWall = float(1).sub(kCap).mul(float(1).sub(kBal));
   const joint = max(lineAA(bed, 0.012), lineAA(head2, 0.012)).mul(float(1).sub(smoothstep(0.012, 0.04, pix))).mul(plainWall);
-  const rustZone = max(kRust, g.mul(kCivic.add(kArcade).add(kRes))).mul(float(1).sub(kCap));
+  const rustZone = max(kRust, g.mul(kRect.add(kArcade).add(kRes).add(kHotel))).mul(float(1).sub(kCap));
   const groove = lineAA(abs(fract(h.div(0.6).add(0.5)).sub(0.5)).mul(0.6), 0.045)
     .mul(float(1).sub(smoothstep(0.03, 0.1, pix)));
   const band = float(1).sub(smoothstep(0.3, pix.add(0.3), py)).mul(float(1).sub(g))
-    .mul(kCivic.add(kArcade).add(kRes)).mul(step(0.0, h));
+    .mul(kRect.add(kArcade).add(kRes).add(kHotel)).mul(step(0.0, h));
   const wall = stone.mul(grain)
     .mul(float(1).sub(joint.mul(0.2)))
     .mul(float(1).sub(groove.mul(rustZone).mul(0.42)))
@@ -181,14 +193,17 @@ export function civicFacadeMaterial() {
   // Glass: dark panes with a sky-tinted Fresnel sheen; stained glass in lancets & roses (dark by day, glowing at night)
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const fres = pow(float(1).sub(clamp(abs(dot(viewDir, normalWorld)), 0.0, 1.0)), 3.0);
-  const plainGlass = mix(vec3(0.045, 0.06, 0.075), cityUniforms.uSkyHorizonColor.mul(0.55), fres.mul(0.75).add(0.05));
+  const plainGlass = mix(vec3(0.05, 0.065, 0.08), cityUniforms.uSkyHorizonColor.mul(0.6), fres.mul(0.8).add(0.06));
   const cellRect = floor(vec2(px.div(0.32), py.div(0.42)));
   const cellRose = floor(vec2(sector, rr.div(0.6)));
   const cell = select(kRose.greaterThan(0.5), cellRose, cellRect);
   const hs = fract(sin(dot(cell.add(seed.mul(3.7)), vec2(12.9898, 78.233))).mul(43758.5453));
   const stained = select(hs.lessThan(0.42), vec3(0.12, 0.2, 0.62), select(hs.lessThan(0.66), vec3(0.62, 0.1, 0.1),
     select(hs.lessThan(0.86), vec3(0.7, 0.5, 0.12), vec3(0.14, 0.42, 0.2))));
-  const glassCol = mix(plainGlass, stained.mul(0.3).add(plainGlass.mul(0.6)), isStained);
+  // the hotel's net curtains, drawn behind its upper windows' glass
+  const curtain = kHotel.mul(float(1).sub(g)).mul(0.72);
+  // stained glass reads dark from outside by day, its colours only faintly through the reflections
+  const glassCol = mix(mix(plainGlass, vec3(0.62, 0.61, 0.57), curtain), stained.mul(0.05).add(plainGlass.mul(0.8)), isStained);
   const paneMask = max(opening.mul(float(1).sub(bars)), roseGlass);
   const frameMask = max(opening.mul(bars), inRose.mul(tracery));
   const frameCol = mix(vec3(0.86, 0.85, 0.82), stone.mul(0.85), isStained); // white joinery; stone tracery in churches
@@ -201,13 +216,15 @@ export function civicFacadeMaterial() {
   // the stone washed by warm floodlights, as these four are lit after dark
   const key = vec2(bayIdx.add(seed.mul(7.13)), storey.add(wallLen.mul(0.731)).add(wallTop.mul(0.317)));
   const hw = fract(sin(dot(key, vec2(12.9898, 78.233))).mul(43758.5453));
-  const litShare = clamp(cityUniforms.uInteriorGlow.mul(0.42), 0.0, 0.85);
+  // (offices, foyers and hotel rooms: the night photographs show most windows dark or dimly lit behind curtains)
+  const litShare = clamp(cityUniforms.uInteriorGlow.mul(0.26), 0.0, 0.5);
   const lit = step(hw, litShare).mul(paneMask).mul(float(1).sub(isStained));
   const warm = mix(vec3(1.0, 0.72, 0.42), vec3(0.95, 0.85, 0.7), fract(hw.mul(13.1)));
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
   const stainedGlow = stained.mul(paneMask).mul(isStained).mul(night).mul(0.9);
-  const flood = stone.mul(vec3(1.0, 0.8, 0.55)).mul(night).mul(0.13).mul(float(1).sub(paneMask));
-  mat.emissiveNode = warm.mul(lit).mul(cityUniforms.uInteriorGlow).mul(1.5).add(stainedGlow).add(flood);
+  // floodlights wash the stone a pale warm cream (night photographs), not the stone's own deep gold
+  const flood = mix(stone, vec3(0.85, 0.8, 0.7), 0.35).mul(vec3(1.0, 0.88, 0.7)).mul(night).mul(0.15).mul(float(1).sub(paneMask));
+  mat.emissiveNode = warm.mul(lit).mul(cityUniforms.uInteriorGlow).mul(1.1).add(stainedGlow).add(flood);
 
   facadeMaterial = mat;
   return mat;
@@ -334,8 +351,10 @@ export function civicFrame(ctx, site, expect, { front = null } = {}) {
 // material. Faces are planar polygons wound counter-clockwise seen from outside; facade faces carry the window
 // attributes of civicFacadeMaterial.
 export class CivicModel {
-  constructor(frame) {
+  // tone: the stone of the parts built in the facade material without a style of their own (cornices, copings...)
+  constructor(frame, { tone = 0 } = {}) {
     this.frame = frame;
+    this.tone = tone;
     this.facade = civicFacadeMaterial();
     this.buckets = new Map();
   }
@@ -358,7 +377,7 @@ export class CivicModel {
     const b = this.bucket(mat);
     let fac = null, sty = null;
     if (b.fac) {
-      let style = st || facadeStyle(WIN.plain, 0);
+      let style = st || facadeStyle(WIN.plain, this.tone);
       const base = style.base;
       let maxY = -Infinity, cx = 0, cz = 0;
       for (const p of pts) {
@@ -403,11 +422,12 @@ export class CivicModel {
     }
   }
 
-  // A face turned to look along dir (any winding in)
+  // A face turned to look along dir (any winding in). The first point stays first: face() fans from it, so a polygon
+  // that is only star-shaped from its first point (an arch's spandrel) still triangulates right.
   faceDir(mat, pts, dir, st = null) {
     const n = newell(pts);
     if (!n) return;
-    if (n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2] < 0) pts = pts.slice().reverse();
+    if (n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2] < 0) pts = [pts[0], ...pts.slice(1).reverse()];
     this.face(mat, pts, st);
   }
 
@@ -593,6 +613,56 @@ export class CivicModel {
     this.wall(trim, a, b, 0.4, y + h - 0.12, y + h);
   }
 
+  // Open arcade along a segment [u, v] -> [u, v]: n round arches (springing at `spring`) between n + 1 piers `pier` wide,
+  // in a wall `depth` thick from y0 to yTop, open right through (a belvedere's loggia shows the sky). Each face is cut
+  // into piers and spandrels, the spandrel over each half arch a fan from its top corner; soffits and jambs line the
+  // openings.
+  openArcade(mat, a, b, y0, spring, yTop, n, { depth = 0.6, pier = 0.5, st = null, segments = 6 } = {}) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const du = (b[0] - a[0]) / L, dv = (b[1] - a[1]) / L;
+    const nu = dv, nv = -du; // one side's normal
+    const span = (L - (n + 1) * pier) / n, r = span / 2;
+    if (span <= 0.2 || yTop < spring + r + 0.05) return;
+    const P = (s, y, side) => [a[0] + du * s + nu * side * depth / 2, y, a[1] + dv * s + nv * side * depth / 2];
+    const arcPt = (xc, t, side) => P(xc + r * Math.cos(t), spring + r * Math.sin(t), side);
+    for (const side of [-1, 1]) {
+      const out = [nu * side, 0, nv * side];
+      for (let k = 0; k <= n; k++) {
+        const s0 = k * (pier + span);
+        this.faceDir(mat, [P(s0, y0, side), P(s0 + pier, y0, side), P(s0 + pier, yTop, side), P(s0, yTop, side)], out, st);
+      }
+      for (let j = 0; j < n; j++) {
+        const x0 = pier + j * (pier + span), xc = x0 + r, x1 = x0 + span;
+        const left = [P(x0, yTop, side), P(x0, spring, side)];
+        const right = [P(x1, yTop, side), P(x1, spring, side)];
+        for (let q = 1; q <= segments; q++) {
+          left.push(arcPt(xc, Math.PI - (q * Math.PI) / (2 * segments), side));
+          right.push(arcPt(xc, (q * Math.PI) / (2 * segments), side));
+        }
+        left.push(P(xc, yTop, side));
+        right.push(P(xc, yTop, side));
+        this.faceDir(mat, left, out, st);
+        this.faceDir(mat, right, out, st);
+      }
+    }
+    for (let j = 0; j < n; j++) {
+      const x0 = pier + j * (pier + span), xc = x0 + r, x1 = x0 + span;
+      // jambs, facing into the opening, and the soffit under the arch, facing its centre
+      this.faceDir(mat, [P(x0, y0, -1), P(x0, y0, 1), P(x0, spring, 1), P(x0, spring, -1)], [du, 0, dv], st);
+      this.faceDir(mat, [P(x1, y0, -1), P(x1, y0, 1), P(x1, spring, 1), P(x1, spring, -1)], [-du, 0, -dv], st);
+      for (let q = 0; q < 2 * segments; q++) {
+        const t0 = Math.PI - (q * Math.PI) / (2 * segments), t1 = Math.PI - ((q + 1) * Math.PI) / (2 * segments);
+        const tm = (t0 + t1) / 2;
+        this.faceDir(mat, [arcPt(xc, t0, -1), arcPt(xc, t1, -1), arcPt(xc, t1, 1), arcPt(xc, t0, 1)],
+          [-Math.cos(tm) * du, -Math.sin(tm), -Math.cos(tm) * dv], st);
+      }
+    }
+    // ends and top
+    this.faceDir(mat, [P(0, y0, -1), P(0, y0, 1), P(0, yTop, 1), P(0, yTop, -1)], [-du, 0, -dv], st);
+    this.faceDir(mat, [P(L, y0, -1), P(L, y0, 1), P(L, yTop, 1), P(L, yTop, -1)], [du, 0, dv], st);
+    this.faceDir(mat, [P(0, yTop, -1), P(L, yTop, -1), P(L, yTop, 1), P(0, yTop, 1)], [0, 1, 0], st);
+  }
+
   // Iron railing (top & bottom rails, bars every `step` m) along a segment
   railing(iron, a, b, y, h = 1.0, stepLen = 0.45) {
     const p = (q, yy) => [q[0], yy, q[1]];
@@ -710,128 +780,206 @@ export class CivicModel {
 
 // Frame (from the OSM outline): +u runs west-south-west along the main body towards the bay, +v north-north-west towards
 // the harbour, so the gardens front faces -v. Plan positions below are metres in that frame from the outline's centre.
+//
+// What the photographs show (Wikimedia Commons: the 2019 panorama from Alderdi Eder, the frontal view of the entrance,
+// the night views): every part shares one cornice line at about 14.6 m over a tall ground floor of square-headed
+// windows and a 6 m main floor of round-arched windows on balconies (pedimented ones on the wings beside the towers, an
+// open arcade on the galleries). Over the entrance, three arched doors under three arched windows, a lettered frieze, an
+// attic with a clock in an aedicule and, behind it, a slate dome over the staircase. The towers rise to twice the cornice
+// (scaled from the panorama: their top cornice at ~28.8 m, the slate domes to ~31 m, ball and weathervane to ~34 m)
+// through a storey of paired arched windows, a balcony, an open arched belfry and a deep bracketed cornice. The end
+// pavilions are crowned by segmental gables over great arched windows, with small slate domes and lanterns beside them
+// over the galleries' ends; the roofs behind the cornices are low.
 const FRONT_DIR = [-0.885, 0.465];
+const GF = 5.0, MAIN = 6.0, EAVE = 14.6; // ground floor, main floor, the common cornice
 
 export function build(sites, ctx) {
   const site = sites[0];
   if (!site?.footprint) return null;
   const { materials } = ctx.kit;
   const frame = civicFrame(ctx, site, FRONT_DIR, { front: [1.0, -29.5] });
-  const m = new CivicModel(frame);
-  const F = m.facade, trim = materials.limestone, slate = materials.slate, zinc = materials.zinc;
+  const T = TONE.golden;
+  const m = new CivicModel(frame, { tone: T });
+  const F = m.facade, slate = materials.slate, zinc = materials.zinc, iron = materials.iron;
   const P = frame.plinth;
-  const T = TONE.cream;
 
-  // Ground floor 5 m, main floor and upper floor 4.2 m: eaves at 13.4 m as b5m measures
-  const civic = facadeStyle(WIN.civic, T, { bay: 4.3, ground: 5.0, floor: 4.2 });
-  const arcade = facadeStyle(WIN.arcade, T, { bay: 3.2, ground: 5.0, floor: 4.6 });
-  const hall = facadeStyle(WIN.arcade, T, { bay: 3.6, ground: 4.0, floor: 7.6 });
-  const towerStyle = facadeStyle(WIN.civic, T, { bay: 2.6, ground: 5.0, floor: 4.2 });
+  const plain = facadeStyle(WIN.plain, T);
+  const palace = facadeStyle(WIN.palace, T, { bay: 4.3, ground: GF, floor: MAIN });
+  const galleryLow = facadeStyle(WIN.square, T, { bay: 3.2, ground: GF, floor: MAIN });
+  const gallery = facadeStyle(WIN.arcade, T, { bay: 3.2, ground: 0, floor: MAIN, base: GF });
 
-  // [u0, u1, v0, v1, eave]: wings, inner wings, central body, end pavilions
-  const wings = [[-37.5, -21.4, -20.5, 0.3, 13.4], [22.7, 38.3, -20.4, 0.6, 13.4]];
-  const inner = [[-21.4, -8.6, -24.0, 2.9, 14.2], [10.7, 22.7, -23.8, 3.1, 14.2]];
-  const centre = [-8.6, 10.7, -23.9, 3.0, 14.6];
-  const pavilions = [[-45.6, -37.4, -24.0, 3.0, 15.4], [38.2, 47.0, -24.2, 3.3, 15.4]];
-  const bays = [[-48.4, -45.5, -14.0, -6.9], [46.9, 48.4, -15.0, -6.0]];
+  // a balcony under a main-floor window: slab and balustrade standing out of a wall facing -v
+  const balcony = (u, v, w = 2.4) => {
+    m.box(F, u - w / 2, u + w / 2, GF - 0.05, GF + 0.2, v - 0.6, v, null, { bottom: true });
+    m.balustrade(F, T, [u - w / 2, v - 0.5], [u + w / 2, v - 0.5], GF + 0.2, 0.9);
+  };
+  // a segmental gable (a slab whose top is an arc) standing on y along a wall facing -v, from u0 to u1
+  const segmentalGable = (u0, u1, v, y, rise, depth = 0.6) => {
+    const half = (u1 - u0) / 2, uc = (u0 + u1) / 2;
+    const R = (half * half + rise * rise) / (2 * rise), a = Math.asin(half / R);
+    const arcPts = (vv) => {
+      const pts = [];
+      for (let k = 0; k <= 10; k++) {
+        const t = -a + (2 * a * k) / 10;
+        pts.push([uc + R * Math.sin(t), y + rise - R + R * Math.cos(t), vv]);
+      }
+      return pts;
+    };
+    const front = arcPts(v), back = arcPts(v + depth);
+    m.faceDir(F, [[uc, y, v], ...front], [0, 0, -1], plain);
+    m.faceDir(F, [[uc, y, v + depth], ...back], [0, 0, 1], plain);
+    for (let k = 0; k < 10; k++) {
+      const t = -a + (2 * a * (k + 0.5)) / 10;
+      m.faceDir(F, [front[k], front[k + 1], back[k + 1], back[k]], [Math.sin(t), Math.cos(t), 0], plain);
+    }
+    // a moulded edge along the arc
+    for (let k = 0; k < 10; k++) {
+      const p0 = [front[k][0], front[k][1] + 0.15, v - 0.15], p1 = [front[k + 1][0], front[k + 1][1] + 0.15, v - 0.15];
+      m.beam(F, p0, p1, 0.35, 0.3);
+    }
+  };
 
-  for (const [u0, u1, v0, v1, eave] of [...wings, ...inner, ...pavilions]) {
-    m.box(F, u0, u1, P, eave, v0, v1, civic);
-    m.cornice(trim, rect(u0, u1, v0, v1), eave, 0.55, 0.6);
-    m.prism(trim, offsetRing(rect(u0, u1, v0, v1), -0.12), 4.85, 5.15, null, { bottom: true, top: false });
-  }
-  // Wing roofs: low slate mansards behind a balustrade on the gardens front, with a dormer over every other bay
-  for (const [u0, u1, v0, v1, eave] of [...wings, ...inner]) {
-    const y = eave + 0.6;
-    m.mansard(slate, rect(u0, u1, v0, v1), y, 3.2, 1.25);
-    m.chimneys(trim, offsetRing(rect(u0, u1, v0, v1), 1.25), y + 3.2, { spacing: 7, inset: 0.9, h: 1.5 });
-    m.balustrade(trim, T, [u0, v0 - 0.3], [u1, v0 - 0.3], y);
-    const n = Math.max(1, Math.round((u1 - u0) / 4.3));
+  // --- the wings beside the towers (pedimented windows on balconies) and the galleries beyond --------------------------
+  const inner = [[-21.4, -8.6, -24.0, 2.9], [10.7, 22.7, -23.8, 3.1]];
+  const galleries = [[-37.5, -21.4, -20.5, 0.3], [22.7, 38.3, -20.4, 0.6]];
+  for (const [u0, u1, v0, v1] of inner) {
+    m.box(F, u0, u1, P, EAVE, v0, v1, palace, { top: false });
+    m.cornice(F, rect(u0, u1, v0, v1), EAVE, 0.6, 0.65);
+    m.prism(F, offsetRing(rect(u0, u1, v0, v1), -0.12), GF - 0.15, GF + 0.15, null, { bottom: true, top: false });
+    m.pitched(slate, u0 + 0.3, u1 - 0.3, v0 + 0.3, v1 - 0.3, EAVE + 0.6, 2.6, { axis: 'u', hip: true });
+    m.balustrade(F, T, [u0, v0 - 0.35], [u1, v0 - 0.35], EAVE + 0.65, 0.9);
+    const n = Math.max(1, Math.round((u1 - u0) / 4.3)), bw = (u1 - u0) / n;
     for (let k = 0; k < n; k++) {
-      if (k % 2) continue;
-      const u = u0 + ((k + 0.5) * (u1 - u0)) / n;
-      m.dormer(slate, T, u, v0 - 0.05, '-v', y + 0.3, { w: 1.4, h: 2.0, depth: 1.6 });
+      const u = u0 + (k + 0.5) * bw;
+      balcony(u, v0);
+      m.pitched(F, u - 1.35, u + 1.35, v0 - 0.45, v0 + 0.02, GF + MAIN * 0.88 + 0.35, 0.75, { axis: 'v', endStyle: plain });
     }
   }
+  for (const [u0, u1, v0, v1] of galleries) {
+    m.box(F, u0, u1, P, GF, v0, v1, galleryLow, { faces: [galleryLow, palace, palace, palace], top: false });
+    m.box(F, u0, u1, GF, EAVE - 0.4, v0, v1, palace, { faces: [gallery, plain, plain, plain], top: false });
+    m.prism(F, offsetRing(rect(u0, u1, v0, v1), -0.12), GF - 0.15, GF + 0.15, null, { bottom: true, top: false });
+    m.cornice(F, rect(u0, u1, v0, v1), EAVE - 0.4, 0.6, 0.65);
+    m.pitched(slate, u0 + 0.3, u1 - 0.3, v0 + 0.3, v1 - 0.3, EAVE + 0.2, 2.4, { axis: 'u', hip: true });
+    m.balustrade(F, T, [u0, v0 - 0.35], [u1, v0 - 0.35], EAVE + 0.25, 0.9);
+    // the small slate dome and lantern over the gallery's outer end
+    const cu = u0 < 0 ? u0 + 4.6 : u1 - 4.6, cv = (v0 + v1) / 2 - 2.0, a = 3.0;
+    m.box(F, cu - a, cu + a, EAVE + 0.2, EAVE + 2.0, cv - a, cv + a, plain, { top: false });
+    m.cornice(F, rect(cu - a, cu + a, cv - a, cv + a), EAVE + 2.0, 0.3, 0.35);
+    m.squareDome(slate, cu, cv, EAVE + 2.35, [[a + 0.2, 0], [a, 0.7], [a * 0.8, 1.7], [a * 0.5, 2.5], [0.75, 3.0]]);
+    m.box(F, cu - 0.7, cu + 0.7, EAVE + 5.35, EAVE + 6.4, cv - 0.7, cv + 0.7, plain, { top: false });
+    m.squareDome(zinc, cu, cv, EAVE + 6.4, [[0.9, 0], [0.9, 0.12], [0.05, 0.9]]);
+  }
 
-  // Central body: the entrance between the towers, round-arched; a pediment over it and a glazed lantern lighting the
-  // staircase hall
+  // --- the central body: three arched doors under three arched windows, the frieze, the attic and the clock; the slate
+  // dome over the staircase behind -------------------------------------------------------------------------------------
   {
-    const [u0, u1, v0, v1, eave] = centre;
-    m.box(F, u0, u1, P, eave, v0, v1, civic, { faces: [arcade, civic, civic, civic] });
-    m.cornice(trim, rect(u0, u1, v0, v1), eave, 0.55, 0.6);
-    m.mansard(slate, rect(u0, u1, v0 + 2.5, v1), eave + 0.6, 3.0, 1.2);
-    m.box(F, -3.6, 5.7, eave, eave + 2.2, v0 - 0.3, v0 + 1.2, facadeStyle(WIN.plain, T));
-    m.cornice(trim, rect(-3.6, 5.7, v0 - 0.3, v0 + 1.2), eave + 2.2, 0.4, 0.45);
-    m.pitched(trim, -3.9, 6.0, v0 - 0.7, v0 + 1.2, eave + 2.65, 1.7, { axis: 'v' });
-    m.dome(zinc, 1.05, v0 - 0.1, eave + 4.35, [[0.35, 0], [0.5, 0.5], [0.12, 1.4], [0.02, 1.9]], 8);
-    m.loft(materials.glass, [rect(-2.4, 4.4, -17.0, -4.0), rect(0.7, 1.3, -11.0, -10.0)], [eave + 3.6, eave + 5.6]);
-    m.prism(zinc, rect(-2.6, 4.6, -17.2, -3.8), eave + 3.3, eave + 3.6);
+    const u0 = -8.6, u1 = 10.7, v0 = -23.9, v1 = 3.0, cu = 1.05;
+    m.box(F, u0, u1, P, EAVE, v0, v1, palace, { faces: [plain, palace, palace, palace], top: false });
+    const front = facadeStyle(WIN.civic, T, { bay: 3.1, ground: GF, floor: MAIN });
+    m.box(F, -3.6, 5.7, P, EAVE, v0 - 0.3, v0 + 0.2, plain, { faces: [front, plain, plain, plain], top: false });
+    m.cornice(F, rect(u0, u1, v0 - 0.3, v1), EAVE, 0.6, 0.65);
+    m.prism(F, offsetRing(rect(-3.6, 5.7, v0 - 0.3, v1), -0.12), GF - 0.15, GF + 0.15, null, { bottom: true, top: false });
+    for (const u of [-2.05, 1.05, 4.15]) balcony(u, v0 - 0.3, 2.2);
+    m.pitched(slate, u0 + 0.3, u1 - 0.3, v0 + 2.0, v1 - 0.3, EAVE + 0.6, 2.4, { axis: 'u', hip: true });
+    // attic over the entrance and the clock's aedicule with its pinnacles
+    const a0 = EAVE + 0.65, a1 = EAVE + 1.9;
+    m.box(F, -3.6, 5.7, a0, a1, v0 - 0.3, v0 + 1.0, plain);
+    m.cornice(F, rect(-3.6, 5.7, v0 - 0.3, v0 + 1.0), a1, 0.25, 0.3);
+    const c0 = a1 + 0.3, c1 = c0 + 2.7;
+    m.box(F, cu - 1.9, cu + 1.9, c0, c1, v0 - 0.35, v0 + 1.2, plain, { top: false });
+    m.cornice(F, rect(cu - 1.9, cu + 1.9, v0 - 0.35, v0 + 1.2), c1, 0.3, 0.4);
+    segmentalGable(cu - 2.1, cu + 2.1, v0 - 0.55, c1 + 0.4, 0.7, 1.7);
+    for (const du of [-1.9, 1.9]) m.pinnacle(F, cu + du, v0 - 0.2, c1 + 0.4, c1 + 0.8, 0.2, 1.1);
+    const clock = [];
+    for (let k = 0; k < 20; k++) clock.push([cu + 0.95 * Math.cos((k * Math.PI) / 10), c0 + 1.35 + 0.95 * Math.sin((k * Math.PI) / 10), v0 - 0.38]);
+    m.faceDir(materials.whiteIron, clock, [0, 0, -1]);
+    // the staircase dome: a short drum, the slate dome and its glazed lantern
+    const dv = -13.5, r = 4.8, d0 = EAVE + 1.6;
+    m.prism(F, ngon(cu, dv, r, 8, Math.PI / 8), EAVE + 0.6, d0, plain, { top: false });
+    m.dome(slate, cu, dv, d0, [[r + 0.15, 0], [r, 0.5], [r * 0.86, 1.6], [r * 0.6, 2.6], [r * 0.3, 3.15], [1.0, 3.3]], 8,
+      { phase: Math.PI / 8, smooth: false });
+    m.prism(materials.glass, ngon(cu, dv, 0.95, 8, Math.PI / 8), d0 + 3.3, d0 + 4.2, null, { top: false });
+    m.dome(zinc, cu, dv, d0 + 4.2, [[1.15, 0], [1.1, 0.15], [0.05, 0.9]], 8, { phase: Math.PI / 8 });
     // entrance steps
-    m.box(trim, -3.4, 5.5, P, 0.25, v0 - 3.0, v0, null);
-    m.box(trim, -3.4, 5.5, P, 0.5, v0 - 2.0, v0, null);
-    m.box(trim, -3.4, 5.5, P, 0.75, v0 - 1.0, v0, null);
+    m.box(F, -3.4, 5.5, P, 0.25, v0 - 3.3, v0 - 0.3, null);
+    m.box(F, -3.4, 5.5, P, 0.5, v0 - 2.3, v0 - 0.3, null);
+    m.box(F, -3.4, 5.5, P, 0.75, v0 - 1.3, v0 - 0.3, null);
   }
 
-  // The two towers flanking the entrance: three storeys and an arcaded belvedere to 20.6 m, then a slate imperial dome
-  // and a lantern; b5m's 25.3 m maximum is the dome tops
-  const belvedere = facadeStyle(WIN.arcade, T, { bay: 2.6, ground: 0, floor: 3.0, base: 17.6 });
+  // --- the towers ---------------------------------------------------------------------------------------------------
+  const lower = facadeStyle(WIN.palace, T, { bay: 2.6, ground: GF, floor: MAIN });
   for (const [u0, u1] of [[-8.8, -3.6], [5.7, 10.9]]) {
-    const v0 = -26.5, v1 = -21.4, cu = (u0 + u1) / 2, cv = (v0 + v1) / 2, a = (u1 - u0) / 2;
-    m.box(F, u0, u1, P, 17.6, v0, v1, towerStyle, { top: false });
-    m.box(F, u0 + 0.2, u1 - 0.2, 17.6, 20.6, v0 + 0.2, v1 - 0.2, belvedere);
-    m.cornice(trim, rect(u0, u1, v0, v1), 14.6, 0.35, 0.45);
-    m.cornice(trim, rect(u0, u1, v0, v1), 17.3, 0.3, 0.3);
-    m.cornice(trim, rect(u0, u1, v0, v1), 20.6, 0.45, 0.55);
-    m.prism(trim, offsetRing(rect(u0, u1, v0, v1), -0.12), 4.9, 5.2, null, { bottom: true, top: false });
-    m.squareDome(slate, cu, cv, 21.15,
-      [[a + 0.15, 0], [a + 0.15, 0.4], [a, 1.2], [a * 0.82, 2.1], [a * 0.58, 2.9], [a * 0.3, 3.4], [0.5, 3.5]]);
-    m.prism(zinc, rect(cu - 0.5, cu + 0.5, cv - 0.5, cv + 0.5), 24.65, 25.4, null, { top: false });
-    m.squareDome(zinc, cu, cv, 25.4, [[0.7, 0], [0.7, 0.15], [0.05, 0.8]]);
-    m.beam(materials.iron, [cu, 26.1, cv], [cu, 27.2, cv], 0.08, 0.08);
-  }
-
-  // End pavilions: a storey taller, under steep slate pavilion roofs with an iron cresting; a bay window on each end with a
-  // balustraded terrace
-  for (const [u0, u1, v0, v1, eave] of pavilions) {
-    const y = eave + 0.6;
-    const r = rect(u0, u1, v0, v1), top = offsetRing(r, 2.3);
-    m.loft(slate, [offsetRing(r, -0.15), offsetRing(r, 1.1), top], [y, y + 3.8, y + 4.6]);
+    const v0 = -26.5, v1 = -21.4, cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+    const ring = (d) => rect(u0 + d, u1 - d, v0 + d, v1 - d);
+    m.box(F, u0, u1, P, EAVE, v0, v1, lower, { top: false });
+    m.prism(F, offsetRing(ring(0), -0.12), GF - 0.15, GF + 0.15, null, { bottom: true, top: false });
+    m.cornice(F, ring(0), EAVE, 0.6, 0.65);
+    // a storey of paired arched windows
+    const y1 = EAVE + 0.65, y2 = y1 + 4.0;
+    m.prism(F, ring(0.15), y1, y2, facadeStyle(WIN.arcade, T, { bay: 2.4, ground: 0, floor: 3.9, base: y1 }), { top: false });
+    m.cornice(F, ring(0.15), y2, 0.35, 0.45);
+    // the band and the balcony all round
+    const y3 = y2 + 0.45, y4 = y3 + 1.4;
+    m.prism(F, ring(0.3), y3, y4, plain, { top: false });
+    m.prism(F, offsetRing(ring(0), -0.25), y4, y4 + 0.3, null, { bottom: true });
+    const g = offsetRing(ring(0), -0.15);
     for (let k = 0; k < 4; k++) {
       const j = (k + 1) % 4;
-      m.railing(materials.iron, [top[2 * k], top[2 * k + 1]], [top[2 * j], top[2 * j + 1]], y + 4.6, 0.6, 0.6);
+      m.balustrade(F, T, [g[2 * k], g[2 * k + 1]], [g[2 * j], g[2 * j + 1]], y4 + 0.3, 0.95);
     }
-    const n = Math.max(1, Math.round((u1 - u0) / 4.3));
-    for (let k = 0; k < n; k++) {
-      const u = u0 + ((k + 0.5) * (u1 - u0)) / n;
-      m.dormer(slate, T, u, v0 - 0.05, '-v', y + 0.3, { w: 1.5, h: 2.2, depth: 1.7 });
-      m.dormer(slate, T, u, v1 + 0.05, '+v', y + 0.3, { w: 1.5, h: 2.2, depth: 1.7 });
-    }
-    // the long end facade over the bay window
-    const outer = u0 < 0 ? u0 - 0.05 : u1 + 0.05;
-    const ne = Math.max(1, Math.round((v1 - v0) / 4.3));
-    for (let k = 0; k < ne; k++) {
-      const v = v0 + ((k + 0.5) * (v1 - v0)) / ne;
-      m.dormer(slate, T, outer, v, u0 < 0 ? '-u' : '+u', y + 0.3, { w: 1.5, h: 2.2, depth: 1.7 });
-    }
-  }
-  for (const [u0, u1, v0, v1] of bays) {
-    m.box(F, u0, u1, P, 9.2, v0, v1, civic);
-    m.cornice(trim, rect(u0, u1, v0, v1), 9.2, 0.35, 0.4);
-    const out = u0 < 0 ? u0 - 0.2 : u1 + 0.2;
-    const back = u0 < 0 ? u1 : u0;
-    m.balustrade(trim, T, [back, v0 - 0.2], [out, v0 - 0.2], 9.6);
-    m.balustrade(trim, T, [out, v0 - 0.2], [out, v1 + 0.2], 9.6);
-    m.balustrade(trim, T, [out, v1 + 0.2], [back, v1 + 0.2], 9.6);
+    // the open belfry: one round arch through each face
+    const b0 = y4 + 0.3, bTop = b0 + 4.4, d = 0.6, bu0 = u0 + 0.35, bu1 = u1 - 0.35, bv0 = v0 + 0.35, bv1 = v1 - 0.35;
+    const span = 2.3, pierU = (bu1 - bu0 - span) / 2, pierV = (bv1 - bv0 - 2 * d - span) / 2;
+    const spring = bTop - 0.6 - span / 2;
+    m.openArcade(F, [bu0, bv0 + d / 2], [bu1, bv0 + d / 2], b0, spring, bTop, 1, { depth: d, pier: pierU });
+    m.openArcade(F, [bu0, bv1 - d / 2], [bu1, bv1 - d / 2], b0, spring, bTop, 1, { depth: d, pier: pierU });
+    m.openArcade(F, [bu0 + d / 2, bv0 + d], [bu0 + d / 2, bv1 - d], b0, spring, bTop, 1, { depth: d, pier: pierV });
+    m.openArcade(F, [bu1 - d / 2, bv0 + d], [bu1 - d / 2, bv1 - d], b0, spring, bTop, 1, { depth: d, pier: pierV });
+    m.box(F, bu0 + d, bu1 - d, b0, b0 + 0.1, bv0 + d, bv1 - d, null);
+    // the deep bracketed cornice and frieze, the slate dome, ball and weathervane
+    const c0 = bTop;
+    m.cornice(F, ring(0.35), c0, 0.45, 0.5);
+    m.prism(F, ring(0.1), c0 + 0.5, c0 + 1.6, plain, { top: false });
+    m.cornice(F, ring(0.1), c0 + 1.6, 0.75, 0.85);
+    const top = c0 + 2.45, a = (u1 - u0) / 2;
+    m.dome(slate, cu, cv, top, [[a * 0.95, 0], [a * 0.93, 0.5], [a * 0.82, 1.3], [a * 0.6, 2.0], [a * 0.3, 2.45], [0.2, 2.55]], 12);
+    m.dome(zinc, cu, cv, top + 2.5, [[0.1, 0], [0.12, 0.45], [0.32, 0.6], [0.38, 0.85], [0.3, 1.08], [0.04, 1.2]], 8);
+    m.beam(iron, [cu, top + 3.6, cv], [cu, top + 5.0, cv], 0.05, 0.05);
+    m.beam(iron, [cu - 0.7, top + 4.6, cv], [cu + 0.7, top + 4.6, cv], 0.05, 0.05);
   }
 
-  // The old ballroom (Salón de Plenos) behind: tall arched windows round its apsidal sides, a hipped slate roof and a
-  // glazed ridge lantern
+  // --- the end pavilions: a great arched window under a segmental gable, a low roof, a bay window on each end with a
+  // balustraded terrace ---------------------------------------------------------------------------------------------
+  const pavilions = [[-45.6, -37.4, -24.0, 3.0], [38.2, 47.0, -24.2, 3.3]];
+  const bays = [[-48.4, -45.5, -14.0, -6.9], [46.9, 48.4, -15.0, -6.0]];
+  const great = facadeStyle(WIN.palace, T, { bay: 8.8, ground: GF, floor: MAIN + 1.0 });
+  for (const [u0, u1, v0, v1] of pavilions) {
+    m.box(F, u0, u1, P, EAVE + 0.4, v0, v1, palace, { faces: [great, palace, palace, palace], top: false });
+    m.prism(F, offsetRing(rect(u0, u1, v0, v1), -0.12), GF - 0.15, GF + 0.15, null, { bottom: true, top: false });
+    m.cornice(F, rect(u0, u1, v0, v1), EAVE + 0.4, 0.6, 0.65);
+    m.pitched(slate, u0 + 0.3, u1 - 0.3, v0 + 0.3, v1 - 0.3, EAVE + 1.0, 2.8, { axis: 'v', hip: true });
+    segmentalGable(u0 + 0.6, u1 - 0.6, v0 - 0.3, EAVE + 1.05, 2.2, 0.8);
+    balcony((u0 + u1) / 2, v0, 4.6);
+  }
+  for (const [u0, u1, v0, v1] of bays) {
+    m.box(F, u0, u1, P, 9.2, v0, v1, palace);
+    m.cornice(F, rect(u0, u1, v0, v1), 9.2, 0.35, 0.4);
+    const out = u0 < 0 ? u0 - 0.2 : u1 + 0.2;
+    const back = u0 < 0 ? u1 : u0;
+    m.balustrade(F, T, [back, v0 - 0.2], [out, v0 - 0.2], 9.6);
+    m.balustrade(F, T, [out, v0 - 0.2], [out, v1 + 0.2], 9.6);
+    m.balustrade(F, T, [out, v1 + 0.2], [back, v1 + 0.2], 9.6);
+  }
+
+  // --- the old ballroom (Salón de Plenos) behind: tall arched windows round its apsidal sides, a hipped slate roof and a
+  // glazed ridge lantern -----------------------------------------------------------------------------------------------
   {
+    const hall = facadeStyle(WIN.arcade, T, { bay: 3.6, ground: 4.0, floor: 7.6 });
     const ring = [-8.5, 2.5, -8.6, 8.7, -10.5, 8.8, -12.7, 11.4, -12.6, 18.1, -10.3, 20.5, -8.6, 20.5, -8.6, 26.4,
       10.2, 26.5, 10.2, 20.3, 11.7, 20.4, 14.3, 17.6, 14.2, 11.5, 11.8, 8.6, 10.2, 8.6, 10.3, 2.5];
     m.prism(F, ring, P, 13.0, hall);
-    m.cornice(trim, ring, 13.0, 0.5, 0.55);
+    m.cornice(F, ring, 13.0, 0.5, 0.55);
     m.pitched(slate, -8.9, 10.5, 2.5, 26.8, 13.55, 4.0, { axis: 'v', hip: true });
     m.loft(materials.glass, [rect(-0.9, 2.5, 11.0, 18.0), rect(0.6, 1.0, 11.4, 17.6)], [16.9, 18.3]);
   }

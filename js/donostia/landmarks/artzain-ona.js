@@ -22,17 +22,22 @@ const AISLE = 11.5, AISLE_TOP = 15.5, EAVE = 24.0, RIDGE = 33.3;
 const NV0 = -6.2, NV1 = 6.8, VC = (NV0 + NV1) / 2;
 const TR0 = -8.5, TR1 = 3.6, TW = 18.7;
 const TOWER = { u0: 33.3, u1: 44.4, v0: -4.6, v1: 6.5 };
-const SPIRE_BASE = 45.0, SPIRE_TOP = 73.0;
+// The tower's stages (scaled from the frontal photograph, Wikimedia Commons "Catedral del Buen Pastor (9225828442)", on
+// the 75 m total): the square base with the portal, a traceried window and the rose to ~30 m; a clock stage between the
+// corner buttresses' tall pinnacles (to ~49 m); the belfry of paired lancets under gablets and pinnacles to ~53 m; the
+// octagonal openwork spire with crockets on its arrises to the cross
+const BASE_TOP = 30.0, CLOCK_TOP = 37.6, BELFRY_TOP = 52.6, SPIRE_TOP = 73.5;
 
 export function build(sites, ctx) {
   const site = sites[0];
   if (!site?.footprint) return null;
   const { materials } = ctx.kit;
   const frame = civicFrame(ctx, site, TOWER_DIR, { front: [47.5, 1.0] });
-  const m = new CivicModel(frame);
-  const F = m.facade, stone = materials.sandstone, slate = materials.slate, iron = materials.iron;
-  const P = frame.plinth;
   const T = TONE.sandstone;
+  const m = new CivicModel(frame, { tone: T });
+  // buttresses, pinnacles and tracery in the facade's own stone (one material, one tone)
+  const F = m.facade, stone = F, slate = materials.slate, iron = materials.iron;
+  const P = frame.plinth;
 
   const plain = facadeStyle(WIN.plain, T);
   const aisleStyle = facadeStyle(WIN.lancet, T, { bay: 5.0, ground: 0, floor: AISLE });
@@ -157,45 +162,76 @@ export function build(sites, ctx) {
     m.dome(stone, 32.6, cv, 26.35, [[2.3, 0], [2.3, 0.3], [0.12, 7.6]], 8, { phase: Math.PI / 8, smooth: false });
   }
 
-  // The tower: the portal storey under a great window, a belfry of paired lancets, a gallery with corner pinnacles, and
-  // the octagonal openwork spire with crockets up its arrises to the cross at 75 m
+  // The tower: the portal storey under a gablet, a great traceried window and the rose; the clock stage between the
+  // corner buttresses' pinnacles; the belfry of paired lancets under gablets; the octagonal openwork spire with crockets
+  // up its arrises to the cross at 75 m
   {
     const { u0, u1, v0, v1 } = TOWER;
     const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
-    const base = facadeStyle(WIN.lancet, T, { bay: u1 - u0, ground: 13, floor: 9 });
-    const belfry = facadeStyle(WIN.lancet, T, { bay: 4.6, ground: 0, floor: 21, base: 22.1 });
-    m.box(F, u0, u1, P, 22.1, v0, v1, base, { top: false });
+    const base = facadeStyle(WIN.lancet, T, { bay: u1 - u0, ground: 13, floor: 8.5 });
+    const rose = facadeStyle(WIN.rose, T, { bay: 2.3, floor: 4.0, base: 21.5 });
+    const upper = facadeStyle(WIN.lancet, T, { bay: 3.6, ground: 0, floor: 8.5, base: 21.5 });
+    m.box(F, u0, u1, P, 21.5, v0, v1, base, { top: false });
+    m.box(F, u0, u1, 21.5, BASE_TOP, v0, v1, upper, { faces: [upper, rose, upper, plain], top: false });
     m.prism(stone, offsetRing(rect(u0, u1, v0, v1), -0.15), 12.7, 13.1, null, { bottom: true, top: false });
-    m.cornice(stone, rect(u0, u1, v0, v1), 21.6, 0.4, 0.5);
-    const b = rect(u0 + 0.5, u1 - 0.5, v0 + 0.5, v1 - 0.5);
-    m.prism(F, b, 22.1, 43.5, belfry, { top: false });
-    m.cornice(stone, b, 43.5, 0.6, 0.7);
-    m.cap(stone, offsetRing(b, -0.6), 44.2, true);
-    const g = offsetRing(b, -0.35);
+    // the gablet over the portal, and a smaller one over the great window
+    m.pitched(stone, u1 - 0.3, u1 + 0.6, cv - 3.0, cv + 3.0, 13.1, 4.6, { axis: 'u' });
+    m.pinnacle(stone, u1 + 0.2, cv, 17.5, 18.0, 0.25, 1.6);
+    m.cornice(stone, rect(u0, u1, v0, v1), BASE_TOP - 0.5, 0.45, 0.6);
+    // the clock stage: blind tracery, a clock on each face, a gallery of openwork parapet at its foot
+    const c = rect(u0 + 0.6, u1 - 0.6, v0 + 0.6, v1 - 0.6);
+    m.prism(F, c, BASE_TOP, CLOCK_TOP, facadeStyle(WIN.lancet, T, { bay: 1.6, ground: 0, floor: 4.2, base: BASE_TOP }), { top: false });
+    const g = offsetRing(rect(u0, u1, v0, v1), -0.1);
     for (let k = 0; k < 4; k++) {
       const j = (k + 1) % 4;
-      m.balustrade(stone, T, [g[2 * k], g[2 * k + 1]], [g[2 * j], g[2 * j + 1]], 44.2, 1.0);
-      m.pinnacle(stone, b[2 * k], b[2 * k + 1], 44.2, 47.2, 0.42, 5.2);
+      m.balustrade(stone, T, [g[2 * k], g[2 * k + 1]], [g[2 * j], g[2 * j + 1]], BASE_TOP + 0.1, 0.9);
     }
-    // stepped diagonal buttresses at the four corners
+    const cy = CLOCK_TOP - 1.7, cr = 1.05;
+    for (const [nu, nv] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const pu = nu ? (nu > 0 ? u1 - 0.55 : u0 + 0.55) : cu, pv = nv ? (nv > 0 ? v1 - 0.55 : v0 + 0.55) : cv;
+      const pts = [];
+      for (let k = 0; k < 18; k++) {
+        const a = (k * Math.PI * 2) / 18, h = cr * Math.cos(a);
+        pts.push([pu + (nv ? h : 0), cy + cr * Math.sin(a), pv + (nu ? h : 0)]);
+      }
+      m.faceDir(materials.whiteIron, pts, [nu, 0, nv]);
+    }
+    m.cornice(stone, c, CLOCK_TOP, 0.4, 0.5);
+    // the belfry: paired lancets, a gablet over each face, pinnacles at its corners
+    const b = rect(u0 + 1.0, u1 - 1.0, v0 + 1.0, v1 - 1.0);
+    const belfry = facadeStyle(WIN.lancet, T, { bay: (u1 - u0 - 2.0) / 2, ground: 0, floor: BELFRY_TOP - CLOCK_TOP - 0.5, base: CLOCK_TOP + 0.5 });
+    m.prism(F, b, CLOCK_TOP + 0.5, BELFRY_TOP, belfry, { top: false });
+    m.cornice(stone, b, BELFRY_TOP, 0.35, 0.4);
+    const bu0 = u0 + 1.0, bu1 = u1 - 1.0, bv0 = v0 + 1.0, bv1 = v1 - 1.0, h = 3.4;
+    m.pitched(stone, cu - 2.4, cu + 2.4, bv0 - 0.3, bv0 + 0.4, BELFRY_TOP - 1.2, h, { axis: 'v' });
+    m.pitched(stone, cu - 2.4, cu + 2.4, bv1 - 0.4, bv1 + 0.3, BELFRY_TOP - 1.2, h, { axis: 'v' });
+    m.pitched(stone, bu0 - 0.3, bu0 + 0.4, cv - 2.4, cv + 2.4, BELFRY_TOP - 1.2, h, { axis: 'u' });
+    m.pitched(stone, bu1 - 0.4, bu1 + 0.3, cv - 2.4, cv + 2.4, BELFRY_TOP - 1.2, h, { axis: 'u' });
+    for (const [pu, pv] of [[bu0, bv0], [bu1, bv0], [bu1, bv1], [bu0, bv1]]) {
+      m.pinnacle(stone, pu, pv, CLOCK_TOP + 0.5, BELFRY_TOP + 1.2, 0.5, 3.8);
+    }
+    // stepped diagonal buttresses at the four corners, rising into the tall pinnacles beside the clock stage
     for (const [pu, pv] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) {
       const du = Math.sign(pu - cu), dv = Math.sign(pv - cv);
       const at = (d) => [pu + du * d, pv + dv * d];
-      const [a1, b1] = at(0.55), [a2, b2] = at(0.4), [a3, b3] = at(0.25);
+      const [a1, b1] = at(0.55), [a2, b2] = at(0.4), [a3, b3] = at(0.3);
       // diamonds (ngon phase 0): faces square to the diagonal
       m.prism(stone, ngon(a1, b1, 1.6, 4), P, 15, null, { top: false });
-      m.prism(stone, ngon(a2, b2, 1.25, 4), 15, 29, null, { top: false });
-      m.prism(stone, ngon(a3, b3, 0.95, 4), 29, 39.5, null, { top: false });
-      m.pinnacle(stone, a3, b3, 39.5, 40.5, 0.5, 4.2);
+      m.prism(stone, ngon(a2, b2, 1.25, 4), 15, 24, null, { top: false });
+      m.prism(stone, ngon(a3, b3, 1.0, 4), 24, BASE_TOP + 1.5, null, { top: false });
+      m.prism(stone, ngon(a3, b3, 0.8, 8, Math.PI / 8), BASE_TOP + 1.5, 41.0, facadeStyle(WIN.lancet, T, { bay: 0.6, ground: 0, floor: 3.2, base: BASE_TOP + 1.5 }), { top: false });
+      m.cornice(stone, ngon(a3, b3, 0.8, 8, Math.PI / 8), 41.0, 0.2, 0.3);
+      m.dome(stone, a3, b3, 41.3, [[0.85, 0], [0.85, 0.25], [0.06, 7.2]], 8, { phase: Math.PI / 8, smooth: false });
+      cross(a3, b3, 48.4, 1.1);
     }
-    // spire
-    const spire = facadeStyle(WIN.lancet, T, { bay: 1.3, ground: 0, floor: 3.0, base: SPIRE_BASE });
-    const r0 = 4.6, r1 = 0.22;
-    m.loft(F, [ngon(cu, cv, r0, 8, Math.PI / 8), ngon(cu, cv, r1, 8, Math.PI / 8)], [SPIRE_BASE, SPIRE_TOP], { st: spire });
+    // the spire, octagonal and pierced, with crockets on its arrises
+    const spire = facadeStyle(WIN.lancet, T, { bay: 1.3, ground: 0, floor: 3.0, base: BELFRY_TOP + 0.4 });
+    const r0 = 4.1, r1 = 0.22;
+    m.loft(F, [ngon(cu, cv, r0, 8, Math.PI / 8), ngon(cu, cv, r1, 8, Math.PI / 8)], [BELFRY_TOP + 0.4, SPIRE_TOP], { st: spire });
     for (let k = 0; k < 8; k++) {
       const a = Math.PI / 8 + (k * Math.PI) / 4;
-      for (let y = SPIRE_BASE + 2.2; y < SPIRE_TOP - 1.5; y += 2.4) {
-        const r = r0 + ((r1 - r0) * (y - SPIRE_BASE)) / (SPIRE_TOP - SPIRE_BASE) + 0.15;
+      for (let y = BELFRY_TOP + 2.2; y < SPIRE_TOP - 1.5; y += 2.0) {
+        const r = r0 + ((r1 - r0) * (y - BELFRY_TOP - 0.4)) / (SPIRE_TOP - BELFRY_TOP - 0.4) + 0.15;
         m.prism(stone, ngon(cu + r * Math.cos(a), cv + r * Math.sin(a), 0.24, 4, a), y - 0.16, y + 0.16);
       }
     }
