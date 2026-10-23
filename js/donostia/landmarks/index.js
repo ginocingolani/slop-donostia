@@ -13,6 +13,13 @@ import * as santaKlara from './santa-klara.js';
 import * as miramar from './miramar.js';
 import * as haizearenOrrazia from './haizearen-orrazia.js';
 import * as uliaDorrea from './ulia-dorrea.js';
+import * as bretxa from './bretxa.js';
+import * as boulevardKioskoa from './boulevard-kioskoa.js';
+import * as tenisKluba from './tenis-kluba.js';
+import * as tabakalera from './tabakalera.js';
+import * as atotxaDorrea from './atotxa-dorrea.js';
+import * as anoeta from './anoeta.js';
+import * as illunbe from './illunbe.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
@@ -31,7 +38,14 @@ const MODELS = [
   [santaKlara, ['santa-klara-itsasargia']],
   [miramar, ['miramar']],
   [haizearenOrrazia, ['haizearen-orrazia']],
-  [uliaDorrea, ['ulia-dorrea']]
+  [uliaDorrea, ['ulia-dorrea']],
+  [bretxa, ['bretxa', 'bretxa-merkatua', 'bretxa-plaza']],
+  [boulevardKioskoa, ['boulevard-kioskoa']],
+  [tenisKluba, ['tenis-kluba', 'tenis-pistak']],
+  [tabakalera, ['tabakalera']],
+  [atotxaDorrea, ['atotxa-dorrea']],
+  [anoeta, ['anoeta']],
+  [illunbe, ['illunbe']]
 ];
 
 export function buildLandmarks(GEO, terrain) {

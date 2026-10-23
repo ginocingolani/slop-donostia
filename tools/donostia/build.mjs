@@ -210,8 +210,31 @@ function osmPolygons(e) {
   const ring = (geom) => geom.flatMap((p) => lonLatToLocal(p.lon, p.lat));
   if (e.type === 'way' && e.geometry && e.geometry.length >= 4) return [[ring(e.geometry)]];
   if (e.type === 'relation' && e.members) {
-    const rings = e.members.filter((m) => m.geometry && m.geometry.length >= 4).map((m) => ring(m.geometry));
-    return rings.length ? [rings] : [];
+    // multipolygon rings are often split over several member ways: chain them end to end per role
+    const join = (role) => {
+      const parts = e.members.filter((m) => m.type === 'way' && m.role === role && m.geometry?.length >= 2).map((m) => m.geometry.slice());
+      const key = (p) => `${p.lat},${p.lon}`;
+      const rings = [];
+      while (parts.length) {
+        let chain = parts.shift();
+        for (let grown = true; grown && key(chain[0]) !== key(chain[chain.length - 1]);) {
+          grown = false;
+          for (let i = 0; i < parts.length; i++) {
+            const p = parts[i], head = key(chain[chain.length - 1]);
+            if (key(p[0]) === head) chain = chain.concat(p.slice(1));
+            else if (key(p[p.length - 1]) === head) chain = chain.concat(p.slice(0, -1).reverse());
+            else continue;
+            parts.splice(i, 1);
+            grown = true;
+            break;
+          }
+        }
+        if (chain.length >= 4) rings.push(ring(chain));
+      }
+      return rings;
+    };
+    const outers = join('outer'), inners = join('inner');
+    return outers.map((o, k) => (k === 0 ? [o, ...inners] : [o]));
   }
   return [];
 }
@@ -716,11 +739,16 @@ const LANDMARKS = [
   ['miramar', 'way', 184853018], ['victoria-eugenia', 'way', 28196019], ['hotel-maria-cristina', 'way', 28196020],
   ['mota-gaztelua', 'way', 28156564], ['santa-klara-itsasargia', 'way', 28161366], ['igeldo-itsasargia', 'way', 152623295],
   ['igeldo-torreoia', 'way', 168045920], ['itsas-museoa', 'way', 27263481], ['haizearen-orrazia', 'node', 361066700],
-  ['aquariuma', 'node', 259491671], ['ulia-dorrea', 'way', 417178149]
+  ['aquariuma', 'node', 259491671], ['ulia-dorrea', 'way', 417178149],
+  // round 2 (queries/landmarks.overpassql)
+  ['bretxa', 'way', 23905020], ['bretxa-merkatua', 'way', 23905055], ['bretxa-plaza', 'way', 119089295],
+  ['boulevard-kioskoa', 'way', 184003729], ['tenis-kluba', 'way', 182691330], ['tenis-pistak', 'way', 39244628],
+  ['tabakalera', 'relation', 3266749], ['atotxa-dorrea', 'way', 172593495],
+  ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607]
 ];
 
 function bakeLandmarks(buildings) {
-  const osm = loadLayer('osm_places.json').elements;
+  const osm = [...loadLayer('osm_places.json').elements, ...loadLayer('osm_landmarks.json').elements];
   const byKey = new Map(osm.map((e) => [`${e.type}/${e.id}`, e]));
   const sites = [];
   // 1 m mask of each landmark footprint; a 1:500 building belongs to the landmark when half its area lies inside, or
@@ -747,7 +775,8 @@ function bakeLandmarks(buildings) {
     if (type === 'node') {
       site.at = lonLatToLocal(e.lon, e.lat);
     } else {
-      const ring = osmPolygons(e)[0][0];
+      const ring = osmPolygons(e)[0]?.[0];
+      if (!ring) { log(`landmark ${id}: OSM ${type}/${osmId} has no closed outline`); continue; }
       site.footprint = ring.map(r2);
       const b = ringBounds(ring);
       site.at = [r2((b.minX + b.maxX) / 2), r2((b.minZ + b.maxZ) / 2)];

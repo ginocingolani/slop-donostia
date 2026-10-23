@@ -10,4 +10,4 @@
   nwr["place"~"^(island|islet|neighbourhood|quarter|suburb|square)$"](43.284,-2.018,43.339,-1.962);
   way["building:part"](43.284,-2.018,43.339,-1.962);
 );
-out geom tags;
+out geom;
