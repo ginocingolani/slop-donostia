@@ -14,7 +14,7 @@ import { IGELDO } from '../data-funicular.js';
 // ulia-dorrea.js): vertex-coloured materials, parts merged per material, a sweep along a path and a lighthouse light.
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['igeldo-itsasargia', 'igeldo-torreoia'] and
-// ctx = { GEO, terrain, kit }; the funicular, turrets and coaster come from js/donostia/data-funicular.js
+// ctx = { GEO, terrain, kit }; the funicular, turrets and the coaster's loop come from js/donostia/data-funicular.js
 // (tools/donostia/bake-funicular.mjs).
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -767,128 +767,347 @@ function buildFunicular(ctx, bin) {
 
 // --- Montaña Suiza ------------------------------------------------------------------------------------------------------
 
-// Scenic railway by Erich Heidrich (1928): about 400 m of track, 9.8 m high at most, 50 km/h; wooden two-car trains
-// with a brakeman riding between the cars (en.wikipedia "Montaña Suiza"). The centreline is the 1:500 map's
-// (data-funicular.js); the lift and the hills here are a plausible profile, not a survey.
+// Montaña Suiza (Erich Heidrich, 1928), the scenic railway round the summit: about 400 m of track, 9.8 m high at most,
+// 50 km/h, a cable lift halfway round (en.wikipedia "Montaña Suiza"; thecoasterkings.com, "Spanish theme park history
+// 3"). It has none of the usual trestles: the running track lies in a concrete trough partly sunk into the ground,
+// runs along the top of the coastal wall over the cliff and crosses the boating pond on a bridge; two trains of two
+// wooden cars, five rows of two seats each, with a brakeman riding between the cars to work the brakes. The photos show
+// the trains as they run today: green-painted cars with red and yellow scrollwork, blue seat backs trimmed in yellow
+// and a dragon figurehead, on a weathered concrete deck with a concrete railing.
+//
+// The loop is OpenStreetMap's (data-funicular.js, in the direction of travel from the station). The heights along it
+// are a plausible profile fitted to the LiDAR ground, not a survey: out of the station and gently down the long
+// south-eastern straight with a dip, over the pond, round the hairpin, up the cable lift on the coastal wall to the
+// high point at the north-western corner, the big drop along the cliff, the tunnel and the climb into the station,
+// where the brakeman brings it to a stop.
+const COASTER = {
+  gauge: 1.0, // m between the rails
+  lift: 2.2, // m/s, the cable
+  vmax: 13.9, // 50 km/h
+  latAcc: 5.0, // m/s², what the brakeman allows in the turns
+  dwell: 24, // s loading in the station
+  carLength: 4.0, carGap: 1.0, bogie: 1.45 // m; the brakeman sits in the gap, on the rear car's nose
+};
+// [x, z, top of rail]: the nearest point of the loop takes the height; monotone cubic in between
+const COASTER_PROFILE = [
+  [-1686.0, 0.5, 177.8], [-1669.2, 21.9, 177.8], // the station, level
+  [-1673.9, 32.7, 176.2], [-1691.5, 42.0, 175.0], [-1705.7, 49.5, 174.7], [-1719.7, 57.1, 174.9], [-1730.2, 63.0, 174.2],
+  [-1737.0, 67.3, 170.6], [-1747.2, 73.5, 172.6], [-1757.7, 79.4, 172.8], // the dip on the south-eastern straight
+  [-1762.8, 82.1, 171.0], [-1775.3, 94.6, 169.8], // over the pond
+  [-1783.2, 95.8, 169.6], [-1787.4, 86.5, 169.9], // the hairpin and the foot of the lift
+  [-1778.6, 39.1, 180.4], [-1771.8, 35.0, 180.0], // the top of the lift, on the coastal wall
+  [-1747.2, 21.7, 170.4], [-1735.7, 15.9, 170.9], [-1726.0, 11.0, 171.3], // the drop, the tunnel
+  [-1712.5, 4.1, 173.0], [-1704.6, -0.4, 174.6], [-1693.0, -2.6, 176.6] // up into the station
+];
+const LIFT = [[-1787.4, 86.5], [-1778.6, 39.1]]; // from, to
+
+// Fritsch–Carlson monotone cubic through (s, y) knots, sorted by s
+function monotoneCubic(ks, ys) {
+  const n = ks.length;
+  const d = [], m = new Array(n).fill(0);
+  for (let i = 0; i + 1 < n; i++) d.push((ys[i + 1] - ys[i]) / (ks[i + 1] - ks[i]));
+  for (let i = 1; i + 1 < n; i++) {
+    // weighted harmonic mean of the neighbouring slopes, flat at a turning point (Fritsch & Butland)
+    const h0 = ks[i] - ks[i - 1], h1 = ks[i + 1] - ks[i];
+    m[i] = d[i - 1] * d[i] <= 0 ? 0 : (3 * (h0 + h1)) / ((2 * h1 + h0) / d[i - 1] + (h1 + 2 * h0) / d[i]);
+  }
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  return (s) => {
+    let i = 0;
+    while (i + 2 < n && ks[i + 1] < s) i++;
+    const h = ks[i + 1] - ks[i], t = Math.min(1, Math.max(0, (s - ks[i]) / h));
+    const t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1];
+  };
+}
+
+function coasterTrain(front) {
+  // One car of a train, +x forward, rails at y = 0 (the trough's curbs hide the bogies): the front car carries the
+  // dragon figurehead, the rear car the brakeman's perch on its nose
+  const bin = new PartBin();
+  const GREEN = rgb(0x2e7b3c), RED = rgb(0xb3241c), YELLOW = rgb(0xe8b81f), BLUE = rgb(0x1f5cc0), NAVY = rgb(0x173a78);
+  const DARK = rgb(0x1a1a1a), SKIN = rgb(0xd7a787);
+  const L = COASTER.carLength, W = 1.36, half = L / 2;
+  const box = (sx, sy, sz, x, y, z, color) => bin.add(M.paint, new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color);
+  box(L, 0.42, W, 0, 0.33, 0, GREEN); // chassis
+  box(L + 0.02, 0.07, W + 0.02, 0, 0.38, 0, RED); // scrollwork bands
+  box(L + 0.02, 0.035, W + 0.02, 0, 0.5, 0, YELLOW);
+  box(L + 0.02, 0.035, W + 0.02, 0, 0.27, 0, YELLOW);
+  box(0.05, 0.08, 0.05, 0, 0.12, 0, DARK);
+  for (const z of [-1, 1]) box(L, 0.32, 0.06, 0, 0.7, z * (W / 2 - 0.03), GREEN); // the tub's sides
+  // five rows: seat, blue back trimmed in yellow, riders (seeded so each car looks different)
+  let seed = front ? 3 : 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const SHIRTS = [0x2b4f8f, 0xd8d4c8, 0xb33a3a, 0x3d7d4c, 0xe0b23a, 0x6a3f7a, 0x2a2a2e, 0xe57f3a].map(rgb);
+  for (let r = 0; r < 5; r++) {
+    const x = -half + 0.55 + r * 0.76;
+    box(0.5, 0.1, W - 0.16, x + 0.05, 0.62, 0, NAVY);
+    box(0.1, 0.62, W - 0.1, x - 0.24, 0.95, 0, BLUE);
+    box(0.12, 0.06, W - 0.06, x - 0.24, 1.27, 0, YELLOW);
+    for (const z of [-0.3, 0.3]) {
+      if (rnd() < 0.3) continue;
+      box(0.26, 0.48, 0.3, x + 0.02, 0.92, z, SHIRTS[Math.floor(rnd() * SHIRTS.length)]);
+      bin.add(M.paint, new THREE.SphereGeometry(0.105, 8, 6).translate(x + 0.04, 1.29, z), SKIN);
+    }
+  }
+  if (front) {
+    // the figurehead: a blue shield trimmed in gold, the dragon's red neck and head reaching forward, a green crest
+    box(0.14, 1.25, W - 0.1, half - 0.07, 1.0, 0, BLUE);
+    box(0.16, 0.08, W, half - 0.07, 1.62, 0, YELLOW);
+    bin.add(M.paint, strut([half - 0.1, 1.2, 0], [half + 0.25, 1.95, 0], 0.26, 0.26), RED);
+    box(0.62, 0.3, 0.3, half + 0.45, 2.0, 0, RED);
+    box(0.4, 0.12, 0.24, half + 0.72, 1.86, 0, RED);
+    box(0.5, 0.18, 0.08, half + 0.25, 2.2, 0, GREEN);
+    for (const z of [-0.1, 0.1]) box(0.06, 0.06, 0.04, half + 0.56, 2.08, z, YELLOW);
+  } else {
+    // the brakeman's perch on the nose of the rear car, his lever and the man himself in the park's green shirt
+    box(0.5, 0.5, 0.9, half + 0.3, 0.65, 0, GREEN);
+    box(0.36, 0.08, 0.5, half + 0.3, 1.02, 0, NAVY);
+    box(0.26, 0.5, 0.36, half + 0.3, 1.31, 0, rgb(0x2f8f3a));
+    bin.add(M.paint, new THREE.SphereGeometry(0.11, 8, 6).translate(half + 0.32, 1.7, 0), SKIN);
+    for (const z of [-0.12, 0.12]) box(0.08, 0.1, 0.05, half + 0.32, 1.71, z, YELLOW); // ear defenders
+    box(0.3, 0.16, 0.3, half + 0.5, 1.0, 0.12, rgb(0x2a2c33)); // knees
+    bin.add(M.paint, strut([half + 0.55, 0.6, -0.3], [half + 0.68, 1.35, -0.3], 0.05, 0.05), DARK);
+  }
+  const group = new THREE.Group();
+  bin.build(group);
+  return group;
+}
+
 function buildCoaster(ctx, bin) {
   const { terrain } = ctx;
+  const K = ctx.kit.materials;
   const c = IGELDO.coaster;
-  const n = c.length / 2;
-  const xs = [], zs = [];
-  for (let k = 0; k < c.length; k += 2) { xs.push(c[k]); zs.push(c[k + 1]); }
-  // the boating pond under the western leg is baked as sea-level water, a pit in the summit: ignore anything well below
-  // the ground around it and bridge across
-  const raw = xs.map((x, i) => terrain.heightAt(x, zs[i]));
-  const valid = raw.map((h, i) => {
-    const near = [];
-    for (let j = -12; j <= 12; j++) near.push(raw[(i + j + n) % n]);
-    near.sort((p, q) => p - q);
-    return h > near[12] - 5;
-  });
-  const g = raw.slice();
-  for (let i = 0; i < n; i++) {
-    if (valid[i]) continue;
-    let a = i, b = i;
-    while (!valid[(a - 1 + n) % n] && a - i > -n) a--;
-    while (!valid[(b + 1) % n] && b - i < n) b++;
-    const ga = raw[(a - 1 + n) % n], gb = raw[(b + 1) % n];
-    g[i] = ga + ((gb - ga) * (i - a + 1)) / (b - a + 2);
-  }
-  const step = 1.5;
-  const L = n * step;
+  const n = c.pts.length / 2;
+  const xs = [], zs = [], kind = [];
+  for (let i = 0; i < n; i++) { xs.push(c.pts[2 * i]); zs.push(c.pts[2 * i + 1]); kind.push(Number(c.kind[i])); }
+  // plan arc length from the station's start
+  const S = [0];
+  for (let i = 1; i <= n; i++) S.push(S[i - 1] + Math.hypot(xs[i % n] - xs[i - 1], zs[i % n] - zs[i - 1]));
+  const L = S[n];
   const nearest = (x, z) => {
     let best = 0, d = Infinity;
     for (let i = 0; i < n; i++) {
       const e = Math.hypot(xs[i] - x, zs[i] - z);
       if (e < d) { d = e; best = i; }
     }
-    return best * step;
+    return best;
   };
-  const liftStart = nearest(-1737.8, 69.5), liftEnd = nearest(-1674.0, 32.2);
-  const liftLen = (liftEnd - liftStart + L) % L;
-  const bump = (d, at, h, w) => h * Math.exp(-(((d - at) / w) ** 2));
-  const clearance = (s) => {
-    const d = (s - liftStart + L) % L;
-    let h = 1.0;
-    if (d <= liftLen) h += 8.8 * (d / liftLen);
-    else if (d <= liftLen + 26) h += 8.8 * (0.5 + 0.5 * Math.cos((Math.PI * (d - liftLen)) / 26));
-    h += bump(d, liftLen + 50, 4.5, 9) + bump(d, liftLen + 100, 3.5, 8) + bump(d, liftLen + 150, 3.0, 9) + bump(d, liftLen + 205, 2.2, 10);
-    return h;
-  };
-  const avg = (arr, i, w) => {
-    let sum = 0;
-    for (let j = -w; j <= w; j++) sum += arr[(i + j + n) % n];
-    return sum / (2 * w + 1);
-  };
-  let y = g.map((_, i) => avg(g, i, 6) + clearance(i * step));
-  for (let pass = 0; pass < 3; pass++) y = y.map((_, i) => Math.max(avg(y, i, 2), g[i] + 0.7));
+  // lateral unit vectors (right of travel)
+  const lat = xs.map((_, i) => {
+    const a = (i - 1 + n) % n, b = (i + 1) % n;
+    const dx = xs[b] - xs[a], dz = zs[b] - zs[a], h = Math.hypot(dx, dz) || 1;
+    return [-dz / h, dx / h];
+  });
+  const at = (i, l) => terrain.heightAt(xs[i] + lat[i][0] * l, zs[i] + lat[i][1] * l);
+  // ground inside the trough (must stay under its floor) and the lowest ground under the structure (for its walls)
+  const gIn = xs.map((_, i) => Math.max(at(i, 0), at(i, -0.6), at(i, 0.6)));
+  const gLow = xs.map((_, i) => Math.min(at(i, 0), at(i, -1.3), at(i, 1.3)));
 
+  // the profile: knots at the nearest loop points, the curve through them, lifted clear of the ground where open
+  const knots = COASTER_PROFILE.map(([x, z, y]) => [S[nearest(x, z)], y]).sort((p, q) => p[0] - q[0]);
+  const ks = [knots[knots.length - 1][0] - L, ...knots.map((k) => k[0]), knots[0][0] + L];
+  const kys = [knots[knots.length - 1][1], ...knots.map((k) => k[1]), knots[0][1]];
+  const curve = monotoneCubic(ks, kys);
+  const liftFrom = S[nearest(...LIFT[0])], liftTo = S[nearest(...LIFT[1])];
+  const onLift = (s) => s >= liftFrom && s <= liftTo;
+  const open = (i) => kind[i] === 0 || kind[i] === 3;
+  let y = S.slice(0, n).map((s) => curve(s));
+  for (let pass = 0; pass < 4; pass++) {
+    y = y.map((h, i) => (open(i) ? Math.max(h, gIn[i] + 0.25) : h));
+    if (pass < 3) y = y.map((h, i) => (onLift(S[i]) || !open(i) ? h : (y[(i - 1 + n) % n] + 2 * h + y[(i + 1) % n]) / 4));
+  }
+
+  // --- the structure: a concrete deck between curbs, timber stringers under steel rails, a wall down to the ground
+  // (the coastal wall), piers under the bridge, a railing where it stands high
+  const CONCRETE = rgb(0xa39b8a), CURB = rgb(0xb3aa96), WALL = rgb(0xa8a092), TIMBER = rgb(0x5a4330);
   const path = [];
   for (let i = 0; i < n; i++) path.push(xs[i], y[i], zs[i]);
-  const GREEN = rgb(0x2f4a3b), TIE = rgb(0x4a3b2c);
-  bin.add(M.metal, sweep(path, () => [-0.32, -0.62, 0.32, -0.62, 0.32, -0.22, -0.32, -0.22], { closed: true }), GREEN);
-  for (const l of [-0.45, 0.45]) {
-    bin.add(M.metal, sweep(path, () => [l - 0.04, -0.1, l + 0.04, -0.1, l + 0.04, 0, l - 0.04, 0], { closed: true }), STEEL);
+  const g = COASTER.gauge / 2;
+  bin.add(M.paint, sweep(path, () => [-1.15, -0.5, 1.15, -0.5, 1.15, -0.2, -1.15, -0.2], { closed: true }), CONCRETE);
+  for (const sgn of [-1, 1]) {
+    bin.add(M.paint, sweep(path, () => [sgn * 0.85, -0.5, sgn * 1.15, -0.5, sgn * 1.15, 0.36, sgn * 0.85, 0.36], { closed: true }), CURB);
+    const r0 = sgn * g - 0.1, r1 = sgn * g + 0.1, s0 = sgn * g - 0.035, s1 = sgn * g + 0.035;
+    bin.add(M.paint, sweep(path, () => [r0, -0.21, r1, -0.21, r1, -0.08, r0, -0.08], { closed: true }), TIMBER);
+    bin.add(M.metal, sweep(path, () => [s0, -0.08, s1, -0.08, s1, 0, s0, 0], { closed: true }), STEEL);
   }
+  // below the deck: a wall down to the ground (underground where the trough is sunk), or, where it stands more than
+  // about three metres up (the pond, the lift's viaduct on the cliff edge, the north-eastern turn), a beam on piers
+  const viaduct = (i) => kind[i] === 3 || (open(i) && y[i] - 0.5 - gLow[i] > 3.2);
+  bin.add(M.stone, sweep(path, (i) => {
+    const bottom = viaduct(i) ? -1.1 : Math.min(-0.55, gLow[i] - y[i] - 0.4);
+    return [-1.0, -0.5, 1.0, -0.5, 1.0, bottom, -1.0, bottom];
+  }, { closed: true }), WALL);
   const track = new Path3(xs, y, zs, true);
-  const v = new THREE.Vector3(), w = new THREE.Vector3();
-  for (let s = 0; s < track.length; s += 1.2) {
-    track.at(s - 0.05, v);
-    track.at(s + 0.05, w);
-    const dx = w.x - v.x, dz = w.z - v.z, h = Math.hypot(dx, dz) || 1;
-    const lx = -dz / h, lz = dx / h;
-    bin.add(M.paint, strut([v.x - lx * 0.62, v.y - 0.16, v.z - lz * 0.62], [v.x + lx * 0.62, v.y - 0.16, v.z + lz * 0.62], 0.16, 0.1), TIE);
-    if (Math.round(s / 1.2) % 4) continue;
-    // a trestle bent every 4.8 m: two legs, braced when tall
-    const i = Math.round(s / step) % n;
-    const ground = g[i] - 0.3;
-    const top = v.y - 0.62;
-    if (top - ground < 0.4) continue;
-    const left = [v.x - lx * 0.7, top, v.z - lz * 0.7], right = [v.x + lx * 0.7, top, v.z + lz * 0.7];
-    const leftFoot = [v.x - lx * 1.0, ground, v.z - lz * 1.0], rightFoot = [v.x + lx * 1.0, ground, v.z + lz * 1.0];
-    bin.add(M.metal, strut(leftFoot, left, 0.16), GREEN);
-    bin.add(M.metal, strut(rightFoot, right, 0.16), GREEN);
-    if (top - ground > 2.5) {
-      const mid = (top + ground) / 2;
-      bin.add(M.metal, strut([v.x - lx * 0.85, mid, v.z - lz * 0.85], [v.x + lx * 0.85, mid, v.z + lz * 0.85], 0.1), GREEN);
-      bin.add(M.metal, strut(leftFoot, right, 0.08), GREEN);
+  const p = new THREE.Vector3(), q = new THREE.Vector3();
+  const frameAt = (s) => {
+    track.at(s - 0.1, p);
+    track.at(s + 0.1, q);
+    const dx = q.x - p.x, dz = q.z - p.z, h = Math.hypot(dx, dz) || 1;
+    track.at(s, p);
+    return [p.x, p.y, p.z, -dz / h, dx / h];
+  };
+  const indexAt = (s) => Math.min(n - 1, Math.max(0, Math.round((s / track.length) * n)));
+  for (let s = 0; s < track.length; s += 4.5) {
+    if (!viaduct(indexAt(s))) continue;
+    const [px, py, pz, lx, lz] = frameAt(s);
+    const h = (l) => terrain.heightAt(px + lx * l, pz + lz * l);
+    const ground = Math.min(h(0), h(0.9), h(-0.9)) - 0.6;
+    const pier = new THREE.BoxGeometry(0.75, Math.max(0.5, py - 1.1 - ground), 1.8);
+    pier.rotateY(Math.atan2(lx, lz));
+    pier.translate(px, (py - 1.1 + ground) / 2, pz);
+    bin.add(M.paint, pier, CONCRETE);
+  }
+  // the railing: concrete posts every 1.8 m on both curbs, two rails between them, wherever the deck stands more than
+  // a metre and a half above the ground
+  let prev = null;
+  for (let s = 0; s <= track.length; s += 1.8) {
+    const i = indexAt(s % track.length);
+    const high = open(i) && y[i] - 0.5 - gLow[i] > 1.5;
+    const [px, py, pz, lx, lz] = frameAt(s % track.length);
+    const posts = [-1, 1].map((sgn) => [px + lx * sgn * 1.0, py, pz + lz * sgn * 1.0]);
+    if (high) {
+      for (const [x, yy, z] of posts) bin.add(M.paint, new THREE.BoxGeometry(0.14, 0.82, 0.14).translate(x, yy + 0.77, z), CURB);
+      if (prev) {
+        for (let k = 0; k < 2; k++) {
+          for (const dy of [1.15, 0.78]) {
+            const a = [prev[k][0], prev[k][1] + dy, prev[k][2]], b = [posts[k][0], posts[k][1] + dy, posts[k][2]];
+            bin.add(M.paint, strut(a, b, 0.1, 0.08), CURB);
+          }
+        }
+      }
     }
+    prev = high ? posts : null;
   }
 
-  // the train: two open wooden cars
-  const trainBin = new PartBin();
-  const WOOD = rgb(0x8a5532), SEAT = rgb(0x6d1714);
-  trainBin.add(M.paint, new THREE.BoxGeometry(2.2, 0.7, 1.2).translate(0, 0.65, 0), WOOD);
-  trainBin.add(M.paint, new THREE.BoxGeometry(1.9, 0.12, 1.0).translate(0, 1.0, 0), SEAT);
-  trainBin.add(M.paint, new THREE.BoxGeometry(0.12, 0.5, 1.0).translate(-0.2, 1.25, 0), SEAT);
-  trainBin.add(M.paint, new THREE.BoxGeometry(0.12, 0.5, 1.0).translate(0.75, 1.25, 0), SEAT);
-  trainBin.add(M.paint, new THREE.BoxGeometry(1.6, 0.25, 0.9).translate(0, 0.18, 0), rgb(0x161616));
-  const trainGeo = trainBin.merged(M.paint);
-  const cars = [0, 1].map(() => {
-    const car = new THREE.Mesh(trainGeo, M.paint);
-    car.rotation.order = 'YZX';
-    car.castShadow = true;
-    return car;
+  // the station: a long shed over the level stretch, cream walls with the platform on the left, a green-painted roof
+  // flush with the park above it; the tunnel: a concrete box
+  const run = (k) => {
+    const idx = [];
+    for (let i = 0; i < n; i++) if (kind[i] === k) idx.push(i);
+    return idx;
+  };
+  const padded = (idx, pad) => {
+    // a run of points padded by `pad` points either side
+    const out = [];
+    for (let k = -pad; k < idx.length + pad; k++) out.push((idx[0] + k + n) % n);
+    return out;
+  };
+  const pathOf = (idx) => idx.flatMap((i) => [xs[i], y[i], zs[i]]);
+  const PARK_GREEN = rgb(0x2f6b45);
+  const station = run(1);
+  if (station.length > 2) {
+    const si = padded(station, 1), sp = pathOf(si);
+    // the roof clears the ground inside the shed (the LiDAR keeps part of the station's bulk as ground)
+    let roof = -Infinity;
+    for (const i of station) for (const l of [-3.5, -2, 0, 1.5]) roof = Math.max(roof, at(i, l) - y[i]);
+    const h = Math.max(3.4, roof + 0.15);
+    bin.add(K.whiteRender, sweep(sp, () => [-3.9, -0.6, -3.6, -0.6, -3.6, h, -3.9, h], { caps: true }));
+    bin.add(K.whiteRender, sweep(sp, () => [1.6, -0.6, 1.9, -0.6, 1.9, h, 1.6, h], { caps: true }));
+    // masonry under the walls, down to the slope the station stands on
+    for (const [l0, l1] of [[-3.95, -3.55], [1.55, 1.95]]) {
+      bin.add(M.stone, sweep(sp, (k) => {
+        const i = si[k];
+        const bottom = Math.min(-0.65, Math.min(at(i, l0), at(i, l1)) - y[i] - 0.4);
+        return [l0, bottom, l1, bottom, l1, -0.6, l0, -0.6];
+      }, { caps: true }), WALL);
+    }
+    bin.add(M.paint, sweep(sp, () => [-3.6, -0.6, -1.25, -0.6, -1.25, 0.9, -3.6, 0.9], { caps: true }), CURB); // platform
+    bin.add(M.paint, sweep(sp, () => [-4.3, h, 2.3, h, 2.3, h + 0.3, -4.3, h + 0.3], { caps: true }), PARK_GREEN);
+    bin.add(M.paint, sweep(sp, () => [-4.35, h - 0.35, -4.25, h - 0.35, -4.25, h + 0.32, -4.35, h + 0.32], { caps: true }), PARK_GREEN);
+    bin.add(M.paint, sweep(sp, () => [2.25, h - 0.35, 2.35, h - 0.35, 2.35, h + 0.32, 2.25, h + 0.32], { caps: true }), PARK_GREEN);
+    // gables over the two portals
+    for (const end of [0, sp.length / 3 - 1]) {
+      const k = 3 * end;
+      const a = 3 * (end === 0 ? 0 : end - 1), b = a + 3; // travel direction at that end
+      const dx = sp[b] - sp[a], dz = sp[b + 2] - sp[a + 2], hh = Math.hypot(dx, dz) || 1;
+      const gable = new THREE.BoxGeometry(0.3, h - 2.7, 5.8);
+      gable.translate(0, (h + 2.7) / 2, -0.85);
+      gable.rotateY(Math.atan2(-dz / hh, dx / hh));
+      gable.translate(sp[k], sp[k + 1], sp[k + 2]);
+      bin.add(K.whiteRender, gable);
+    }
+  }
+  const tunnel = run(2);
+  if (tunnel.length > 2) {
+    const tp = pathOf(padded(tunnel, 0));
+    for (const sgn of [-1, 1]) {
+      bin.add(M.stone, sweep(tp, () => [sgn * 1.15, -0.5, sgn * 1.5, -0.5, sgn * 1.5, 2.9, sgn * 1.15, 2.9], { caps: true }), WALL);
+    }
+    bin.add(M.stone, sweep(tp, () => [-1.6, 2.9, 1.6, 2.9, 1.6, 3.3, -1.6, 3.3], { caps: true }), WALL);
+  }
+
+  // --- the trains: speeds from the profile (gravity, rolling losses, the cable on the lift, the brakeman's limits in
+  // the turns and into the station), integrated once into a table of distance against time
+  const car = [coasterTrain(true), coasterTrain(false)].map((grp) => grp.children[0]);
+  const stopAt = S[station[station.length - 1] ?? 0] - 2.5; // the front car's centre when the train stands loaded
+  const plan2track = track.length / L;
+  const radiusAt = (i) => {
+    // plan radius of the turn through three points 3 apart
+    const a = (i - 3 + n) % n, b = (i + 3) % n;
+    const ax = xs[a] - xs[i], az = zs[a] - zs[i], bx = xs[b] - xs[i], bz = zs[b] - zs[i];
+    const cross = Math.abs(ax * bz - az * bx);
+    return cross < 1e-6 ? Infinity : (Math.hypot(ax, az) * Math.hypot(bx, bz) * Math.hypot(bx - ax, bz - az)) / (2 * cross);
+  };
+  const vcap = xs.map((_, i) => Math.min(COASTER.vmax, Math.sqrt(COASTER.latAcc * radiusAt(i))));
+  const du = 0.5, steps = Math.ceil(track.length / du);
+  const height = (u) => track.at(stopAt * plan2track + u, p).y;
+  const v = new Float64Array(steps + 1);
+  let vv = 0;
+  for (let k = 0; k <= steps; k++) {
+    const u = k * du;
+    const s = ((stopAt * plan2track + u) % track.length) / plan2track;
+    if (k > 0) vv = Math.sqrt(Math.max(0, vv * vv - 2 * 9.81 * (height(u) - height(u - du)) - 2 * 0.012 * 9.81 * du));
+    // pushed out of the station at walking pace; never quite stalls
+    vv = Math.max(vv, Math.min(1.4, Math.sqrt(2 * 0.6 * u)), k > 0 ? 1.0 : 0);
+    if (onLift(s)) vv = Math.max(vv, COASTER.lift);
+    vv = Math.min(vv, vcap[indexAt(s * plan2track)]);
+    v[k] = vv;
+  }
+  // braked to a stop at the end of the lap
+  for (let k = 0; k <= steps; k++) v[k] = Math.min(v[k], Math.sqrt(2 * 1.2 * Math.max(0, track.length - k * du)) + 0.05);
+  const tAt = new Float64Array(steps + 1);
+  for (let k = 1; k <= steps; k++) tAt[k] = tAt[k - 1] + du / Math.max(0.25, (v[k] + v[k - 1]) / 2);
+  const lap = tAt[steps], cycle = lap + COASTER.dwell;
+  const TT = 0.1, table = new Float32Array(Math.ceil(lap / TT) + 2);
+  for (let j = 0, k = 0; j < table.length; j++) {
+    const t = j * TT;
+    while (k < steps && tAt[k + 1] < t) k++;
+    const f = k < steps ? Math.min(1, (t - tAt[k]) / (tAt[k + 1] - tAt[k] || 1)) : 0;
+    table[j] = Math.min(track.length, (k + f) * du);
+  }
+
+  // two trains, half a cycle apart; each car is an instance (front cars in one draw, rear cars in another)
+  const meshes = car.map((m) => {
+    const im = new THREE.InstancedMesh(m.geometry, m.material, 2);
+    im.castShadow = im.receiveShadow = true;
+    im.frustumCulled = false;
+    return im;
   });
   const group = new THREE.Group();
   group.name = 'MontanaSuiza';
-  for (const car of cars) group.add(car);
-  // speed from the drop below the top of the lift (with losses), a steady chain speed on the lift
-  const top = Math.max(...y);
-  const speed = y.map((h, i) => {
-    const d = (i * step - liftStart + L) % L;
-    if (d <= liftLen) return 2.2;
-    return Math.min(13.9, Math.max(2.5, Math.sqrt(2 * 9.81 * 0.75 * Math.max(0, top + 0.4 - h))));
-  });
-  const centre = new THREE.Vector3(xs[0], y[0], zs[0]);
-  let s = liftStart;
-  const update = (dt, camera) => {
-    const far = camera.position.distanceTo(centre) > 1500;
-    s = (s + speed[Math.min(n - 1, Math.floor((s / track.length) * n))] * dt) % track.length;
+  for (const m of meshes) group.add(m);
+  const dummy = new THREE.Object3D();
+  dummy.rotation.order = 'YZX';
+  const centre = new THREE.Vector3(-1728, 174, 45);
+  const start = stopAt * plan2track, spacing = COASTER.carLength + COASTER.carGap;
+  let frames = 0;
+  const update = (dt, elapsed, camera) => {
+    const far = camera.position.distanceTo(centre) > 1500 && frames > 3;
+    frames++;
+    for (const m of meshes) m.visible = !far;
+    if (far) return;
     for (let k = 0; k < 2; k++) {
-      cars[k].visible = !far;
-      if (!far) placeOnTrack(cars[k], track, s - k * 2.6, 0.8);
+      const ph = (elapsed + k * cycle / 2) % cycle;
+      const u = ph < COASTER.dwell ? 0 : table[Math.min(table.length - 1, Math.floor((ph - COASTER.dwell) / TT))];
+      for (let c2 = 0; c2 < 2; c2++) {
+        placeOnTrack(dummy, track, start + u - c2 * spacing, COASTER.bogie);
+        dummy.updateMatrix();
+        meshes[c2].setMatrixAt(k, dummy.matrix);
+      }
     }
+    for (const m of meshes) m.instanceMatrix.needsUpdate = true;
   };
   return { object: group, update };
 }
@@ -912,7 +1131,7 @@ export function build(sites, ctx) {
   updaters.push((dt, elapsed, camera) => funicular.update(elapsed, camera));
   const coaster = buildCoaster(ctx, bin);
   group.add(coaster.object);
-  updaters.push((dt, elapsed, camera) => coaster.update(dt, camera));
+  updaters.push(coaster.update);
   bin.build(group);
   relayUpdate(group, (dt, elapsed, camera) => {
     for (let k = 0; k < updaters.length; k++) updaters[k](dt, elapsed, camera);

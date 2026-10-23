@@ -5,11 +5,12 @@
 //   - the 1912 funicular from the Ondarreta station to the summit: OSM railway=funicular ways chained into the two
 //     routes the cars take (they share the line but for the passing loop halfway up), with the bridge spans flagged;
 //   - the Torreón's corner turrets and the lighthouse's round tower (OSM building:part outlines as circles);
-//   - the Montaña Suiza (1928 scenic railway) as a closed centreline: OSM maps only the span over the boating pond, so
-//     the loop is traced from the municipal 1:500 map's TRENBIDEA strips (tools/donostia/data/c500_TRENBIDEA.json,
-//     features 0, 12, 13, 14), with its gaps (station shed, covered turns) bridged by eye.
-// Inputs: tools/donostia/data/osm_streets.json, osm_places.json (© OpenStreetMap contributors, ODbL) and the 1:500 map
-// (Donostiako Udala, CC BY-SA 3.0); the output is share-alike like the rest of the derived data.
+//   - the Montaña Suiza (1928 scenic railway) as a closed centreline: the OSM roller_coaster=track ways
+//     (tools/donostia/data/osm_landmarks.json, queries/landmarks.overpassql) chained node to node into the loop, in
+//     their own direction of travel from the station, smoothed and resampled, each point flagged as open track,
+//     station, tunnel or bridge.
+// Inputs: tools/donostia/data/osm_streets.json, osm_places.json, osm_landmarks.json (© OpenStreetMap contributors,
+// ODbL); the output is share-alike like the rest of the derived data.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -107,22 +108,47 @@ function buildingParts() {
 
 // --- Montaña Suiza ----------------------------------------------------------------------------------------------------
 
-// Centreline traced from the 1:500 TRENBIDEA strips (each strip is the 1.8 m wide track), clockwise from above starting
-// at the north-eastern end of the western leg; points between strips are where the map shows no track
-const COASTER_TRACE = [
-  [-1744.2, 20.4], [-1755.1, 26.0], [-1766.8, 31.8], [-1774.5, 35.6], [-1779.6, 39.3], [-1781.8, 43.9], [-1784.0, 60.0],
-  [-1786.9, 86.3], [-1788.0, 91.7], [-1786.6, 96.3], [-1784.5, 97.6], [-1781.4, 98.1], [-1778.3, 97.8], [-1775.8, 96.6],
-  [-1773.0, 93.6], [-1769.1, 89.3], [-1766.0, 86.1], [-1754.5, 79.3], [-1747.7, 75.2], [-1737.8, 69.5], [-1726.3, 62.6],
-  [-1716.3, 57.0], [-1704.7, 50.3], [-1696.2, 45.8], [-1687.0, 39.4], [-1674.0, 32.2], [-1671.0, 29.6], [-1669.3, 26.5],
-  [-1668.8, 22.4], [-1669.6, 17.4], [-1672.6, 12.6], [-1677.6, 9.0], [-1684.3, 6.3], [-1687.7, 2.0], [-1689.7, -0.9],
-  [-1692.2, -2.0], [-1695.0, -2.4], [-1697.3, -2.1], [-1700.3, -0.8], [-1712.6, 5.9], [-1723.9, 10.7], [-1734.0, 15.6]
-];
+// Track kinds along the loop (data-funicular.js coaster.kind)
+const OPEN = 0, STATION = 1, TUNNEL = 2, BRIDGE = 3;
 
-// Closed centripetal Catmull-Rom through the trace, resampled every `step` metres
-function closedSpline(pts, step) {
+// The OSM ways chained into one closed loop, starting where the station way starts. Each OSM way is drawn in the
+// direction of travel (the station way runs towards the north-eastern turn), so following them end to start gives
+// the ride: out of the station round the north-eastern turn, down the long south-eastern straight, over the boating
+// pond, round the south-western hairpin, north along the coastal wall, east along the cliff and through the tunnel
+// back into the station (clockwise seen from above).
+function coasterLoop() {
+  const seen = new Set();
+  const ways = [...loadLayer('osm_landmarks.json').elements, ...loadLayer('osm_streets.json').elements]
+    .filter((e) => e.type === 'way' && e.tags?.roller_coaster === 'track' && e.geometry && !seen.has(e.id) && seen.add(e.id));
+  const byFirst = new Map(ways.map((w) => [w.nodes[0], w]));
+  const first = ways.find((w) => w.tags['roller_coaster:track'] === 'station');
+  if (!first) throw new Error('coaster: no station way');
+  const pts = [], kinds = [];
+  let w = first;
+  for (let guard = 0; guard <= ways.length; guard++) {
+    const kind = w.tags.tunnel === 'yes' ? TUNNEL : w.tags.bridge === 'yes' ? BRIDGE
+      : w.tags['roller_coaster:track'] === 'station' ? STATION : OPEN;
+    const p = w.geometry.map((g) => lonLatToLocal(g.lon, g.lat));
+    // every way but the first starts on the previous one's last node; the segment from point i takes kinds[i]
+    for (let i = pts.length ? 1 : 0; i < p.length; i++) pts.push(p[i]);
+    for (let i = 0; i + 1 < p.length; i++) kinds[pts.length - p.length + i] = kind;
+    const next = byFirst.get(w.nodes[w.nodes.length - 1]);
+    if (!next) throw new Error(`coaster: way ${w.id} leads nowhere`);
+    if (next === first) {
+      pts.pop(); // the loop's last node is its first
+      return { pts, kinds, ways: guard + 1 };
+    }
+    w = next;
+  }
+  throw new Error('coaster: the track ways do not close into a loop');
+}
+
+// Closed centripetal Catmull-Rom through `pts`, resampled every `step` metres; each sample keeps the kind of the
+// segment it lies on
+function closedSpline(pts, step, kinds) {
   const n = pts.length;
   const P = (i) => pts[((i % n) + n) % n];
-  const dense = [];
+  const dense = [], denseKind = [];
   for (let i = 0; i < n; i++) {
     const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
     const tj = (a, b) => Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])) || 1e-4;
@@ -139,29 +165,33 @@ function closedSpline(pts, step) {
         out[c] = ((t2 - t) / (t2 - t1)) * b1 + ((t - t1) / (t2 - t1)) * b2;
       }
       dense.push(out);
+      denseKind.push(kinds[i]);
     }
   }
   dense.push(dense[0]);
+  denseKind.push(denseKind[0]);
   let total = 0;
   const cum = [0];
   for (let i = 1; i < dense.length; i++) cum.push((total += Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1])));
   const count = Math.round(total / step);
-  const out = [];
+  const out = [], kind = [];
   let j = 0;
   for (let k = 0; k < count; k++) {
     const s = (k * total) / count;
     while (cum[j + 1] < s) j++;
     const f = (s - cum[j]) / (cum[j + 1] - cum[j] || 1);
     out.push(r2(dense[j][0] + (dense[j + 1][0] - dense[j][0]) * f), r2(dense[j][1] + (dense[j + 1][1] - dense[j][1]) * f));
+    kind.push(denseKind[j]);
   }
-  return { pts: out, length: total };
+  return { pts: out, kind: kind.join(''), length: total };
 }
 
 // --- Write ------------------------------------------------------------------------------------------------------------
 
 const routes = funicularRoutes();
 const parts = buildingParts();
-const coaster = closedSpline(COASTER_TRACE, 1.5);
+const loop = coasterLoop();
+const coaster = closedSpline(loop.pts, 1.5, loop.kinds);
 const lengths = routes.map((r) => {
   let l = 0;
   for (let k = 2; k < r.pts.length; k += 2) l += Math.hypot(r.pts[k] - r.pts[k - 2], r.pts[k + 1] - r.pts[k - 1]);
@@ -172,13 +202,16 @@ const data = {
   funicular: routes,
   turrets: parts.turrets,
   lighthouseTower: parts.lighthouseTower,
-  coaster: coaster.pts
+  // the loop every ~1.5 m in the direction of travel from the station, and per point the kind of track it is on
+  // (0 open, 1 station, 2 tunnel, 3 bridge)
+  coaster: { pts: coaster.pts, kind: coaster.kind }
 };
 const js = `// js/donostia/data-funicular.js — generated by tools/donostia/bake-funicular.mjs, do not edit.
 // Igeldo: funicular routes, Torreón turrets, lighthouse tower, Montaña Suiza centreline (local frame, metres).
-// © OpenStreetMap contributors (ODbL); Donostiako Udala 1:500 map (CC BY-SA 3.0).
+// © OpenStreetMap contributors (ODbL).
 export const IGELDO = ${JSON.stringify(data)};
 `;
 fs.writeFileSync(OUT, js);
 log(`${path.relative(ROOT, OUT)}: ${(js.length / 1e3).toFixed(1)} kB; funicular routes ${lengths.map((l) => l.toFixed(0)).join(' / ')} m ` +
-  `(plan), ${routes.map((r) => r.bridges.filter(Boolean).length).join(' / ')} bridge spans; coaster ${coaster.length.toFixed(0)} m`);
+  `(plan), ${routes.map((r) => r.bridges.filter(Boolean).length).join(' / ')} bridge spans; coaster ${loop.ways} ways, ` +
+  `${coaster.length.toFixed(0)} m (plan)`);
