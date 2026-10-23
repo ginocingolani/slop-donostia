@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { STREETSCAPE } from './data-streetscape.js';
 import { createLeafAtlas } from './trees-atlas.js';
-import { SPECIES, buildTreeGeometries, buildFarGeometry } from './trees-species.js';
-import { createTreeMaterial, createFarTreeMaterial } from './trees-material.js';
+import { SPECIES, buildTreeGeometries, buildFarGeometry, buildBillboardGeometry } from './trees-species.js';
+import { createTreeMaterial, createFarTreeMaterial, createBillboardTreeMaterial } from './trees-material.js';
 
 // js/donostia/vegetation.js
 // Donostia's trees: the municipal tree pits (9,118 street trees), OSM's mapped trees, the woodland masses of Urgull,
@@ -30,6 +30,7 @@ const LOD_HYSTERESIS = 6; // m, between near & mid only (the far shader can't se
 const FAR_END = 3400; // m: the far trees shrink away before this
 const REPICK = 3; // m the camera moves before the levels are picked again
 const CELL = 64; // m, cells searched for trees in reach
+const BILLBOARD_START = 900; // m: beyond this a crown spans a few pixels and the far trees are billboards
 const VIEW_MARGIN = THREE.MathUtils.degToRad(10); // the far trees are culled to a frustum this much wider on every side
 const SHADOW_MARGIN = 30; // m beyond the shadow range whose far trees still cast
 
@@ -168,6 +169,17 @@ export async function buildVegetation(GEO, terrain) {
   farMesh.receiveShadow = true;
   farMesh.matrixAutoUpdate = false;
   group.add(farMesh);
+  // the far trees beyond BILLBOARD_START in view: one camera-facing quad each
+  const billboardGeo = buildBillboardGeometry();
+  const billboardsInView = farAttributes(billboardGeo);
+  billboardGeo.instanceCount = 1;
+  const billboardMesh = new THREE.Mesh(billboardGeo, createBillboardTreeMaterial(atlas.texture, SPECIES.map((sp) => sp.far), far.uniforms));
+  billboardMesh.name = 'Trees_billboard';
+  billboardMesh.frustumCulled = false;
+  billboardMesh.castShadow = false;
+  billboardMesh.receiveShadow = true;
+  billboardMesh.matrixAutoUpdate = false;
+  group.add(billboardMesh);
   // the far trees within shadow range, seen only by the sun's cascade cameras
   const shadowGeo = new THREE.InstancedBufferGeometry();
   for (const name of ['position', 'normal', 'uv', 'aFarPart']) shadowGeo.setAttribute(name, farGeo.attributes[name]);
@@ -281,6 +293,9 @@ export async function buildVegetation(GEO, terrain) {
   const cullCamera = new THREE.PerspectiveCamera();
   const frustum = new THREE.Frustum(), bounds = new THREE.Box3(), projScreen = new THREE.Matrix4();
   const lastCull = { dir: new THREE.Vector3(), fov: 0, aspect: 0, reach: -1 };
+  let billboardStart = BILLBOARD_START;
+  // (a quality knob: the distance where far trees turn into billboards; Infinity keeps the cards; refills next frame)
+  group.userData.setBillboardStart = (d) => { billboardStart = d; lastCull.reach = -Infinity; };
   const dir = new THREE.Vector3();
   const pack = ([p, s, d], n, i) => {
     for (let k = 0; k < 4; k++) {
@@ -318,8 +333,8 @@ export async function buildVegetation(GEO, terrain) {
     cullCamera.quaternion.copy(camera.quaternion);
     cullCamera.updateMatrixWorld();
     frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse));
-    const farEnd2 = FAR_END * FAR_END, shadow2 = (reach + SHADOW_MARGIN) ** 2;
-    let nView = 0, nShadow = 0;
+    const farEnd2 = FAR_END * FAR_END, shadow2 = (reach + SHADOW_MARGIN) ** 2, billboard2 = billboardStart * billboardStart;
+    let nView = 0, nShadow = 0, nBillboard = 0;
     for (let c = 0; c < gw * gh; c++) {
       if (cellStart[c] === cellStart[c + 1]) continue;
       bounds.min.fromArray(cellBox, c * 6);
@@ -334,11 +349,15 @@ export async function buildVegetation(GEO, terrain) {
         // the far shader's crown-centre distance
         const dx = farPos[i * 4] - cam.x, dy = farPos[i * 4 + 1] + farShape[i * 4] - cam.y, dz = farPos[i * 4 + 2] - cam.z;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (inView && d2 < farEnd2) pack(farInView, nView++, i);
+        if (inView && d2 < farEnd2) {
+          if (d2 < billboard2) pack(farInView, nView++, i);
+          else pack(billboardsInView, nBillboard++, i);
+        }
         if (inShadow && d2 < shadow2) pack(farInShadow, nShadow++, i);
       }
     }
     upload(farInView, farGeo, nView);
+    upload(billboardsInView, billboardGeo, nBillboard);
     upload(farInShadow, shadowGeo, nShadow);
   }
 
@@ -357,7 +376,7 @@ export async function buildVegetation(GEO, terrain) {
   };
 
   const triangles = kits.map((v) => v.map((k) => k.geometries.map((g) => g.userData.triangles)));
-  group.userData.stats = { trees: N, triangles, meshes: meshes.length + 2 };
-  group.userData.farCounts = () => ({ view: farGeo.instanceCount, shadow: shadowGeo.instanceCount });
+  group.userData.stats = { trees: N, triangles, meshes: meshes.length + 3 };
+  group.userData.farCounts = () => ({ view: farGeo.instanceCount, billboards: billboardGeo.instanceCount, shadow: shadowGeo.instanceCount });
   return group;
 }

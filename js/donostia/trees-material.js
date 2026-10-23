@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, color, attribute, uniform, varying, uv, texture, time, sin, cos, abs, floor, fract, mix,
-  step, smoothstep, clamp, dot, length, normalize, pow, select, frontFacing, positionLocal, positionGeometry,
+  Fn, If, float, vec2, vec3, vec4, color, attribute, uniform, varying, uv, texture, time, sin, cos, abs, floor, fract, mix,
+  step, smoothstep, clamp, max, dot, length, normalize, pow, select, frontFacing, positionLocal, positionGeometry,
   normalLocal, normalGeometry, normalView, normalViewGeometry, positionViewDirection, cameraViewMatrix
 } from 'three/tsl';
 
@@ -144,10 +144,14 @@ export function createTreeMaterial(leafAtlas) {
   mat.alphaTestNode = float(0.5);
   mat.maskShadowNode = alpha.greaterThan(0.5);
 
+  // Leaf cards & bark tubes are whole triangles of one or the other: the bark's noise only runs on the bark (the atlas
+  // read, with its implicit derivatives, stays in the main flow)
   mat.colorNode = Fn(() => {
-    const foliage = foliageColour(aData.xyz, leaf).mul(crownAO.mul(0.45).add(0.55));
-    const bark = barkColour(species, uv(), rnd).mul(crownAO.mul(0.4).add(0.6));
-    return vec4(mix(bark, foliage, isLeaf), alpha);
+    const c = foliageColour(aData.xyz, leaf).mul(crownAO.mul(0.45).add(0.55)).toVar();
+    If(isLeaf.lessThan(0.5), () => {
+      c.assign(barkColour(species, uv(), rnd).mul(crownAO.mul(0.4).add(0.6)));
+    });
+    return vec4(c, alpha);
   })();
 
   mat.roughnessNode = mix(float(0.93), float(0.72).sub(leaf.r.mul(0.1)), isLeaf);
@@ -206,7 +210,8 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
   const tile = select(species.lessThan(0.5), float(farTiles[0]), select(species.lessThan(1.5), float(farTiles[1]),
     select(species.lessThan(2.5), float(farTiles[2]), select(species.lessThan(3.5), float(farTiles[3]),
       select(species.lessThan(4.5), float(farTiles[4]), float(farTiles[5]))))));
-  const leaf = texture(leafAtlas, uv().add(vec2(tile.sub(6.0).div(3.0), 0.0)));
+  // (one read, in a variable: built as a plain node, the colour, alpha, roughness & translucency slots each sampled it)
+  const leaf = texture(leafAtlas, uv().add(vec2(tile.sub(6.0).div(3.0), 0.0))).toVar('farLeaf');
   // lower cards sit deeper in shade
   const shade = varying(select(isCrown, smoothstep(-0.9, 0.9, g.y).mul(0.5).add(0.5), float(0.85)), 'vFarShade');
 
@@ -214,12 +219,85 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
   mat.alphaTestNode = float(0.5);
   mat.maskShadowNode = alpha.greaterThan(0.5);
   mat.colorNode = Fn(() => {
-    const foliage = foliageColour(aData.xyz, leaf).mul(shade);
-    const bark = barkColour(species, uv().mul(vec2(3.0, 4.0)), rnd).mul(0.8);
-    return vec4(select(isCrown, foliage, bark), alpha);
+    const c = foliageColour(aData.xyz, leaf).mul(shade).toVar();
+    If(isCrown.not(), () => {
+      c.assign(barkColour(species, uv().mul(vec2(3.0, 4.0)), rnd).mul(0.8));
+    });
+    return vec4(c, alpha);
   })();
   mat.roughnessNode = select(isCrown, float(0.72).sub(leaf.r.mul(0.1)), float(0.93));
   mat.aoNode = shade.mul(0.7).add(0.3);
   mat.translucencyNode = select(isCrown, aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.2)).mul(shade), vec3(0.0));
   return { material: mat, uniforms };
+}
+
+// How squarely the billboards' crown normals face the camera (1: a solid ball), matched on the mean colour of the
+// aerial views' distant woods against the far shell's cards
+const BILLBOARD_FACING = 0.65;
+
+// The species' far tile (6, 7 or 8) as the u offset from the broadleaf tile's uvs
+const farTileShift = (species, farTiles) => {
+  const tile = select(species.lessThan(0.5), float(farTiles[0]), select(species.lessThan(1.5), float(farTiles[1]),
+    select(species.lessThan(2.5), float(farTiles[2]), select(species.lessThan(3.5), float(farTiles[3]),
+      select(species.lessThan(4.5), float(farTiles[4]), float(farTiles[5]))))));
+  return vec2(tile.sub(6.0).div(3.0), 0.0);
+};
+
+/**
+ * The most distant far trees (vegetation.js hands over those beyond BILLBOARD_START, where a crown spans a few pixels):
+ * one camera-facing quad per tree over its species' far tile, as wide as the far shell's crown and as tall as that
+ * spheroid looks from the camera's elevation, lit as a round crown (sphere normals leaning skyward like the shell's)
+ * with the far trees' colour, shade & translucency. It stands in for the shell's twelve overlapping alpha-tested
+ * cards, which made the distant woods the costliest pixels of the aerial views. Same instance attributes as the far
+ * trees (aFarPos, aFarShape, aTreeData) and the far material's uniforms (view, farEnd).
+ */
+export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
+  const mat = new DonostiaTreeMaterial({ alphaToCoverage: true, metalness: 0.0, roughness: 0.8 });
+  const P = attribute('aFarPos', 'vec4');
+  const S = attribute('aFarShape', 'vec4');
+  const aData = attribute('aTreeData', 'vec4');
+  const isCrown = attribute('aFarPart', 'float').greaterThan(0.5);
+  const species = floor(aData.w);
+  const g = positionGeometry; // the quad's corner: crown x & y in -1..1, trunk x in -1..1 & y in 0..1
+
+  mat.positionNode = Fn(() => {
+    // the far shell reaches from -0.92 to 1.1 crown half-heights about its centre, and 1.1 crown radii out
+    const centre = P.xyz.add(vec3(0.0, S.x.add(S.z.mul(0.09)), 0.0)).toVar();
+    const toCam = normalize(uniforms.view.sub(centre)).toVar();
+    const pole = select(abs(toCam.y).greaterThan(0.99), vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0));
+    const right = normalize(pole.cross(toCam)).toVar();
+    const up = toCam.cross(right);
+    // the crown spheroid (radius S.y, half-height S.z) seen from the camera's elevation
+    const sinE = toCam.y, cosE = float(1.0).sub(sinE.mul(sinE)).max(0.0).sqrt();
+    const halfW = S.y.mul(1.05);
+    const halfH = S.z.mul(cosE).mul(S.z.mul(cosE)).add(S.y.mul(sinE).mul(S.y.mul(sinE))).sqrt().mul(1.05);
+    const crown = centre.add(right.mul(g.x.mul(halfW)).add(up.mul(g.y.mul(halfH))));
+    // the trunk: upright, turned to the camera, from the root flare to under the crown
+    const trunkTop = max(S.x.sub(S.z.mul(0.3)), S.x.mul(0.5));
+    const trunk = P.xyz.add(right.mul(g.x.mul(S.w))).add(vec3(0.0, g.y.mul(trunkTop), 0.0));
+    // shrink away past the draw distance, as the far trees
+    const fade = float(1.0).sub(smoothstep(uniforms.farEnd.mul(0.85), uniforms.farEnd, length(centre.sub(uniforms.view))));
+    return mix(P.xyz, select(isCrown, crown, trunk), fade);
+  })();
+
+  // a round crown: sphere normals over the quad, leaning skyward like the far shell's (a cylinder's on the trunk). The
+  // shell is seen through its gaps too, cards facing away included: the normals turn from the camera more than a
+  // solid ball's would (matched on the mean colour of the woods where the hand-over happens)
+  const q = varying(vec2(g.x, select(isCrown, g.y, 0.0)), 'vBillboard');
+  const sphere = vec3(q.mul(0.8), float(1.0).sub(dot(q, q).mul(0.64)).max(0.0).sqrt().mul(BILLBOARD_FACING));
+  mat.normalNode = normalize(sphere.add(cameraViewMatrix.transformDirection(vec3(0.0, 0.22, 0.0))));
+
+  const leaf = texture(leafAtlas, uv().add(farTileShift(species, farTiles))).toVar('billboardLeaf');
+  const shade = select(isCrown, smoothstep(-0.9, 0.9, q.y).mul(0.5).add(0.5), float(0.85));
+  const alpha = select(isCrown, leaf.a, float(1.0));
+  // the trunk's bark, barkColour() averaged per species (it is a fraction of a pixel wide out here)
+  const bark = select(species.lessThan(0.5), color(0x7a735e), select(species.lessThan(1.5), color(0x40352c),
+    select(species.lessThan(2.5), color(0x4a3e32), select(species.lessThan(3.5), color(0x5c5952),
+      select(species.lessThan(4.5), color(0x6e4632), color(0x7a6b55)))))).mul(0.8);
+  mat.alphaTestNode = float(0.5);
+  mat.colorNode = vec4(select(isCrown, foliageColour(aData.xyz, leaf).mul(shade), bark), alpha);
+  mat.roughnessNode = select(isCrown, float(0.72).sub(leaf.r.mul(0.1)), float(0.93));
+  mat.aoNode = shade.mul(0.7).add(0.3);
+  mat.translucencyNode = select(isCrown, aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.2)).mul(shade), vec3(0.0));
+  return mat;
 }
