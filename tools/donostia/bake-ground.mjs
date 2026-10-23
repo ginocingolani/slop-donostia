@@ -18,13 +18,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, log } from './lib.mjs';
+import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT = path.join(ROOT, 'data', 'donostia');
-const previewIdx = process.argv.indexOf('--preview');
-const PREVIEW = previewIdx > 0 ? process.argv[previewIdx + 1] : null;
+const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
 
@@ -52,24 +51,15 @@ const ORIENT_RES = 2;
 
 // --- sources -----------------------------------------------------------------------------------------------------------
 
-const osmRing = (geom) => geom.flatMap((p) => lonLatToLocal(p.lon, p.lat));
-function osmPolygons(e) {
-  if (e.type === 'way' && e.geometry && e.geometry.length >= 4) return [[osmRing(e.geometry)]];
-  if (e.type === 'relation' && e.members) {
-    const rings = e.members.filter((m) => m.geometry && m.geometry.length >= 4).map((m) => osmRing(m.geometry));
-    return rings.length ? [rings] : [];
-  }
-  return [];
-}
-
+// (osmPolygons joins multipolygon members split over several ways; an open way is a line and yields nothing, which also
+// leaves out the piers mapped as a single walkway line)
 const places = loadLayer('osm_places.json').elements;
 const osmAreas = (test) => places.filter((e) => test(e.tags || {})).flatMap(osmPolygons);
 // La Concha, Ondarreta, Zurriola & the Santa Clara cove, with OSM's tidal sections down to the low-water line
 const osmBeaches = osmAreas((t) => t.natural === 'beach');
 const osmRock = osmAreas((t) => t.natural === 'bare_rock');
 // Breakwaters & the closed piers of the port (the open ones are pontoons over the water)
-const osmQuays = osmAreas((t) => t.man_made === 'breakwater' || (t.man_made === 'pier' && t.floating !== 'yes'))
-  .filter((rings) => rings[0].length >= 8 && rings[0][0] === rings[0][rings[0].length - 2] && rings[0][1] === rings[0][rings[0].length - 1]);
+const osmQuays = osmAreas((t) => t.man_made === 'breakwater' || (t.man_made === 'pier' && t.floating !== 'yes'));
 // Paved squares outside the Parte Vieja
 const osmSquares = osmAreas((t) => t.place === 'square' || t.surface === 'sett' || (t.highway === 'pedestrian' && t.area === 'yes'));
 // The Parte Vieja between the Boulevard, the port, Urgull and the Urumea (OSM's boundary relation has no geometry)
@@ -629,9 +619,9 @@ const write = (file, buf, what) => {
   px.set(edges, W * H);
   px.set(kerbDist, 2 * W * H);
   px.set(crossingSlot, 3 * W * H);
-  write('ground-core.png', encodePNG(px, W, 4 * H, 1), `${W}x${H} @ 1 m, 4 planes`);
+  write('ground-core.png', encodePNG(px, W, 4 * H, 1, pngText('c500', 'osm', 'geoeuskadi')), `${W}x${H} @ 1 m, 4 planes`);
 }
-write('ground-orient.png', encodePNG(orient, OW, OH, 1), `${OW}x${OH} @ ${ORIENT_RES} m`);
+write('ground-orient.png', encodePNG(orient, OW, OH, 1, pngText('c500', 'osm')), `${OW}x${OH} @ ${ORIENT_RES} m`);
 {
   const cw = 3 * maxSlots, px = new Uint8Array(cw * TX * TZ * 4);
   tileSlots.forEach((slots, tile) => slots.forEach((c, s) => {
@@ -643,7 +633,7 @@ write('ground-orient.png', encodePNG(orient, OW, OH, 1), `${OW}x${OH} @ ${ORIENT
     px.set([xcm >> 16, (xcm >> 8) & 255, xcm & 255, zcm >> 16, (zcm >> 8) & 255, zcm & 255, a16 >> 8, a16 & 255,
       Math.round(c.halfLen * 10), Math.round(c.halfWid * 10), 0, 255], o);
   }));
-  write('ground-crossings.png', encodePNG(px, cw, TX * TZ, 4), `${crossings.length} crossings in ${TX}x${TZ} tiles`);
+  write('ground-crossings.png', encodePNG(px, cw, TX * TZ, 4, pngText('osm', 'c500')), `${crossings.length} crossings in ${TX}x${TZ} tiles`);
 }
 lap('done');
 

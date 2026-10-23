@@ -8,13 +8,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HERE, FRAME, loadLayer, lonLatToLocal, simplifyRing, ringArea, pointInRing, log } from './lib.mjs';
+import {
+  HERE, FRAME, OSM_EXTENT, loadLayer, lonLatToLocal, osmPolygons, simplifyRing, ringArea, pointInRing, licenceComment, log
+} from './lib.mjs';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'data-streets.js');
 const CORE = FRAME.core;
-// Streets and places beyond the core are kept for the radar's view over the edges, up to here
-const KEEP = { minX: CORE.minX - 900, maxX: CORE.maxX + 900, minZ: CORE.minZ - 900, maxZ: CORE.maxZ + 900 };
+// Streets and places beyond the core are kept for the radar's view over the edges, as far as the OSM queries reach
+const KEEP = OSM_EXTENT;
 
 // Road classes, drawn and ranked by the HUD: 0 paths & steps, 1 pedestrian streets & lanes, 2 residential streets,
 // 3 tertiary, 4 secondary, 5 primary & motorways
@@ -41,14 +43,19 @@ const PLACE_ALIAS = {
   Urgull: ['Urgull mendia', 'Monte Urgull']
 };
 
-// Auzoak: the municipal layer's upper-case Basque names -> [Basque, Spanish]
+// Auzoak: the municipal layer's upper-case Basque names -> [Basque, Spanish], all nineteen of the layer (only those
+// under the core are baked)
 const DISTRICTS = {
-  IGELDO: ['Igeldo', 'Igueldo'], IBAETA: ['Ibaeta', 'Ibaeta'], ANTIGUA: ['Antigua', 'Antiguo'], AIETE: ['Aiete', 'Ayete'],
-  ERDIALDEA: ['Erdialdea', 'Centro'], 'MIRAMON - ZORROAGA': ['Miramon-Zorroaga', 'Miramón-Zorroaga'],
+  IGELDO: ['Igeldo', 'Igueldo'], IBAETA: ['Ibaeta', 'Ibaeta'], AÑORGA: ['Añorga', 'Añorga'], ANTIGUA: ['Antigua', 'Antiguo'],
+  AIETE: ['Aiete', 'Ayete'], ERDIALDEA: ['Erdialdea', 'Centro'], 'MIRAMON - ZORROAGA': ['Miramon-Zorroaga', 'Miramón-Zorroaga'],
   AMARABERRI: ['Amara Berri', 'Amara Berri'], GROS: ['Gros', 'Gros'], EGIA: ['Egia', 'Egia'],
   'ATEGORRIETA - ULIA': ['Ategorrieta-Ulia', 'Ategorrieta-Ulía'], LOIOLA: ['Loiola', 'Loyola'],
-  MARTUTENE: ['Martutene', 'Martutene'], INTXAURRONDO: ['Intxaurrondo', 'Intxaurrondo']
+  MARTUTENE: ['Martutene', 'Martutene'], INTXAURRONDO: ['Intxaurrondo', 'Intxaurrondo'], ALTZA: ['Altza', 'Alza'],
+  'MIRAKRUZ - BIDEBIETA': ['Mirakruz-Bidebieta', 'Miracruz-Bidebieta'], ZUBIETA: ['Zubieta', 'Zubieta'],
+  OARAIN: ['Oarain', 'Oarain'], LANDERBASO: ['Landerbaso', 'Landerbaso']
 };
+// A district the table does not know yet (the core grew into it) still reads as a name, not as the map's upper case
+const titleCase = (key) => key.toLocaleLowerCase('eu').replace(/(^|[\s-])(\p{L})/gu, (m, sep, c) => sep + c.toLocaleUpperCase('eu'));
 
 // La Concha bay, drawn by hand generously over the land: only its water counts (the HUD checks the ground class).
 // The mouth runs from the Peine del Viento at the foot of Igeldo to the tip of Urgull.
@@ -228,7 +235,8 @@ function bakeDistricts() {
   const byName = new Map();
   for (const f of loadLayer('auzoak.json').features) {
     const key = f.p.IzenAuzo;
-    const [eu, es] = DISTRICTS[key] || [key, key];
+    if (!DISTRICTS[key] && !byName.has(key)) log(`district ${key} has no display name in DISTRICTS: shown as ${titleCase(key)}`);
+    const [eu, es] = DISTRICTS[key] || [titleCase(key), titleCase(key)];
     let d = byName.get(key);
     if (!d) byName.set(key, d = { name: eu, es: es !== eu ? es : null, rings: [] });
     for (const ring of f.g) {
@@ -263,9 +271,7 @@ function bakePlaces() {
   const out = [];
   for (const e of loadLayer('osm_places.json').elements) {
     const t = e.tags || {};
-    if (e.type !== 'way' || !t.name || !e.geometry || e.geometry.length < 4) continue;
-    const g = e.geometry;
-    if (g[0].lat !== g[g.length - 1].lat || g[0].lon !== g[g.length - 1].lon) continue;
+    if (!t.name) continue;
     const kind = t.place === 'square' ? 'square'
       : t.natural === 'beach' ? 'beach'
         : t.leisure === 'park' || t.leisure === 'garden' ? 'park'
@@ -275,9 +281,13 @@ function bakePlaces() {
     let [eu, es] = PLACE_ALIAS[t.name] || [t['name:eu'] || t.name, t['name:es'] || null];
     if (!t['name:eu'] && !PLACE_ALIAS[t.name] && SPANISH.test(t.name)) [eu, es] = [t.name, null];
     if (es === eu) es = null;
-    const ring = roundPoints(simplifyRing(flatLocal(g), 1.0), true);
-    if (ring.length < 6 || !inKeep(ring)) continue;
-    out.push({ name: eu, es, kind, area: round(Math.abs(ringArea(ring))), ring });
+    // closed ways, and multipolygons (a square or park split over several ways): each outer ring makes a place of the
+    // same name; holes do not matter to "where am I"
+    for (const [outer] of osmPolygons(e)) {
+      const ring = roundPoints(simplifyRing(outer, 1.0), true);
+      if (ring.length < 6 || !inKeep(ring)) continue;
+      out.push({ name: eu, es, kind, area: round(Math.abs(ringArea(ring))), ring });
+    }
   }
   out.push({ name: BAY[0], es: BAY[1], kind: 'bay', area: round(Math.abs(ringArea(BAY[2]))), ring: BAY[2] });
   // smallest first: the first place containing a point is the most specific one
@@ -289,6 +299,7 @@ function bakePlaces() {
 const STREETS = { ...bakeStreets(), districts: bakeDistricts(), places: bakePlaces(), sea: SEA };
 const js = '// js/donostia/data-streets.js — generated by tools/donostia/bake-streets.mjs; do not edit.\n' +
   '// © OpenStreetMap contributors (ODbL) · Donostiako Udala / Ayuntamiento de San Sebastián, auzoak (CC BY-SA 3.0)\n' +
+  licenceComment('osm', 'c500') +
   '// names: [Basque, Spanish?]; ways: [name index, road class 0-5, x0, z0, x1, z1, ...] in whole local metres;\n' +
   '// districts & places: rings as flat [x0, z0, x1, z1, ...]\n' +
   `export const STREETS = ${JSON.stringify(STREETS)};\n`;

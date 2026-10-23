@@ -6,11 +6,13 @@ Standard library only. Every source is ETRS89 / UTM 30N (EPSG:25830); coordinate
 frame.json (x east, z south, metres, rounded to cm). Features are kept whole when their bounds touch the core extent
 (plus clipMargin); nothing is cut. The DTM tiles are only unzipped here: tools/donostia/build.mjs parses them.
 
-Outputs (committed, like tools/data upstream):
-  data/c500_<LAYER>.json   municipal 1:500 cartography layers (CC BY-SA 3.0)
-  data/b5m_buildings.json  b5m building footprints with heights (CC BY 4.0)
-  data/bathy_isobaths.json geoEuskadi 1 m isobaths over the terrain tiles (CC BY 4.0)
-  data/auzoak.json         neighbourhood boundaries (CC BY-SA 3.0)
+Outputs committed (like tools/data upstream), in tools/donostia/data:
+  c500_<LAYER>.json        municipal 1:500 cartography layers (CC BY-SA 3.0)
+  b5m_buildings.json       b5m building footprints with heights (CC BY 4.0)
+  auzoak.json              neighbourhood boundaries (CC BY-SA 3.0)
+Bake-only inputs, kept in the gitignored raw cache for tools/donostia/build.mjs:
+  raw/bathy/isobaths.json  geoEuskadi 1 m isobaths over the terrain tiles (CC BY 4.0; tens of MB)
+  raw/dtm/*.asc            the LiDAR DTM tiles, unzipped (CC BY 4.0)
 """
 import io
 import json
@@ -75,12 +77,53 @@ def point_in_ring(e, n, pts):
     return inside
 
 
-def group_rings(rings):
-    """Shapefile/WKB rings -> polygons [outer, *holes]. The outer ring is the larger-magnitude one; holes go to the
-    outer ring that contains their first vertex (shapefiles store outers clockwise, but WKB writers vary)."""
-    if len(rings) == 1:
-        return [rings]
+def ring_inside(inner, outer):
+    """Whether ring `inner` lies inside ring `outer`: a majority of (up to 15 of) its edge midpoints do. A hole may touch
+    its outer ring at a vertex or along an edge (common in the 1:500 map), where a single vertex decides nothing."""
+    n = len(inner) // 2
+    step = max(1, n // 15)
+    hits = tests = 0
+    for a in range(0, n, step):
+        b = (a + 1) % n
+        tests += 1
+        if point_in_ring((inner[2 * a] + inner[2 * b]) / 2, (inner[2 * a + 1] + inner[2 * b + 1]) / 2, outer):
+            hits += 1
+    return 2 * hits > tests
+
+
+def bounds_within(inner, outer):
+    return (min(inner[0::2]) >= min(outer[0::2]) and max(inner[0::2]) <= max(outer[0::2]) and
+            min(inner[1::2]) >= min(outer[1::2]) and max(inner[1::2]) <= max(outer[1::2]))
+
+
+def group_rings(rings, oriented=False):
+    """Shapefile/WKB rings -> polygons [outer, *holes], larger rings first.
+
+    oriented (shapefiles): the format stores outer rings clockwise and holes counter-clockwise, so the orientation says
+    which is which; each hole goes to the smallest outer ring around it. A hole that no outer ring contains is a
+    mis-oriented polygon of its own.
+    Otherwise (WKB, whose writers vary): the largest ring is an outer, and a ring inside an earlier polygon (and not in
+    one of its holes) is a hole of it."""
+    # (fewer than three points, or no area: slivers the survey left, which no consumer can fill)
+    rings = [r for r in rings if len(r) >= 6 and ring_area(r) != 0]
+    if len(rings) <= 1:
+        return [rings] if rings else []
     by_size = sorted(rings, key=lambda r: -abs(ring_area(r)))
+    if oriented and any(ring_area(r) < 0 for r in rings):
+        outers = [[r] for r in by_size if ring_area(r) < 0]  # larger first, so the last host found is the smallest
+        strays = []
+        for r in by_size:
+            if ring_area(r) < 0:
+                continue
+            host = None
+            for poly in outers:
+                if bounds_within(r, poly[0]) and ring_inside(r, poly[0]):
+                    host = poly
+            if host is not None:
+                host.append(r)
+            else:
+                strays.append([r])
+        return outers + strays
     polys = []
     for r in by_size:
         host = None
@@ -242,7 +285,7 @@ def extract_shapefile(zip_path, ext, drop_fields=('Azalera', 'Shape_Leng', 'Shap
         props = {k: v for k, v in props.items() if v is not None and k not in drop_fields}
         if stype == 5:
             kind = 'polygon'
-            for poly in group_rings([drop_closing(p) for p in parts if len(p) >= 6]):
+            for poly in group_rings([drop_closing(p) for p in parts if len(p) >= 6], oriented=True):
                 features.append({'p': props, 'g': [to_local_flat(r, True, tol) for r in poly]})
         elif stype == 3:
             kind = 'line'
@@ -330,6 +373,26 @@ def extract_b5m(gpkg_path):
 
 # --- main ---------------------------------------------------------------------------------------------------------
 
+def unzip_dtm(dtm_dir):
+    """Unzips the DTM tiles next to their zips for build.mjs. A tile whose size does not match its zip entry (an
+    interrupted unzip) is unzipped again, through a .part file renamed into place only once complete."""
+    for name in sorted(os.listdir(dtm_dir)):
+        if not name.endswith('.zip'):
+            continue
+        with zipfile.ZipFile(os.path.join(dtm_dir, name)) as z:
+            for info in z.infolist():
+                target = os.path.join(dtm_dir, os.path.basename(info.filename))
+                if not info.filename.lower().endswith('.asc'):
+                    continue
+                if os.path.exists(target) and os.path.getsize(target) == info.file_size:
+                    continue
+                with z.open(info) as src, open(target + '.part', 'wb') as dst:
+                    while chunk := src.read(1 << 20):
+                        dst.write(chunk)
+                os.replace(target + '.part', target)
+                print(f'unzipped {os.path.basename(info.filename)}')
+
+
 def write(name, payload):
     path = name if os.path.isabs(name) else os.path.join(OUT, name)
     with open(path, 'w', encoding='utf-8') as f:
@@ -368,18 +431,7 @@ def main():
             'layer': 'CT_ISOBATAS_1m', 'kind': kind, 'note': 'CONTOUR = depth in metres (negative)',
             'source': 'Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi, isobatas 1 m (CC BY 4.0)', 'features': features})
 
-    dtm_dir = os.path.join(RAW, 'dtm')
-    for name in sorted(os.listdir(dtm_dir)):
-        if not name.endswith('.zip'):
-            continue
-        with zipfile.ZipFile(os.path.join(dtm_dir, name)) as z:
-            for member in z.namelist():
-                target = os.path.join(dtm_dir, os.path.basename(member))
-                if member.lower().endswith('.asc') and not os.path.exists(target):
-                    with z.open(member) as src, open(target, 'wb') as dst:
-                        while chunk := src.read(1 << 20):
-                            dst.write(chunk)
-                    print(f'unzipped {os.path.basename(member)}')
+    unzip_dtm(os.path.join(RAW, 'dtm'))
 
 
 if __name__ == '__main__':

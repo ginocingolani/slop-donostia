@@ -1,14 +1,24 @@
 #!/bin/bash
-# usage: tools/donostia/fetch.sh
-# Downloads the raw Donostia / San Sebastián sources into tools/donostia/raw (gitignored, ~0.6 GB).
-# Files already present are kept, so an interrupted run can simply be repeated.
+# usage: tools/donostia/fetch.sh [--refresh-osm]
+# Downloads the raw Donostia / San Sebastián sources into tools/donostia/raw (gitignored, ~0.6 GB) and the
+# OpenStreetMap snapshot into tools/donostia/data/osm_*.json (committed).
+# Raw files already present are kept, so an interrupted run can simply be repeated. An OSM query is re-run when its
+# snapshot is missing or the query changed since the snapshot was taken (tools/donostia/data/osm_queries.sha256 records
+# the hash of each query as sent); --refresh-osm re-runs them all for a fresh snapshot.
 # Sources & licences: see tools/donostia/README.md.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 RAW="$HERE/raw"
 UA="slop-donostia (https://github.com/ginocingolani/slop-donostia)"
-mkdir -p "$RAW/dtm" "$RAW/carto" "$RAW/b5m" "$RAW/bathy" "$RAW/osm"
+REFRESH_OSM=0
+for arg in "$@"; do
+  case "$arg" in
+    --refresh-osm) REFRESH_OSM=1 ;;
+    *) echo "usage: $0 [--refresh-osm]" >&2; exit 1 ;;
+  esac
+done
+mkdir -p "$RAW/dtm" "$RAW/carto" "$RAW/b5m" "$RAW/bathy"
 
 get() { # <url> <out>
   local url=$1 out=$2
@@ -41,11 +51,27 @@ done
 get https://www.donostia.eus/ide/ADMINISTRAZIO_MUGAK-LIMITES_ADMINISTRATIVOS/shp/Auzoak.zip "$RAW/carto/Auzoak.zip"
 
 # OpenStreetMap (ODbL): names, landmarks, bridges and street furniture. Committed, like tools/data/osm_*.json upstream.
+# The queries' {{bbox}} (Overpass Turbo's own placeholder, so a query file also runs there over the map view) is the
+# core plus lib.mjs's OSM_MARGIN, which bake-streets.mjs keeps for the radar.
+BBOX=$(node --input-type=module -e '
+  import { pathToFileURL } from "node:url";
+  const { osmBBox } = await import(pathToFileURL(process.argv[1]).href);
+  process.stdout.write(osmBBox());
+' "$HERE/lib.mjs")
+STAMPS="$HERE/data/osm_queries.sha256"
+touch "$STAMPS"
+QUERY=$(mktemp "${TMPDIR:-/tmp}/donostia-query.XXXXXX")
+trap 'rm -f -- "$QUERY"' EXIT
 for q in "$HERE"/queries/*.overpassql; do
   name=$(basename "$q" .overpassql)
   out="$HERE/data/osm_$name.json"
-  if [ ! -s "$out" ]; then
-    bash "$HERE/../overpass.sh" "$out" "$q"
+  sed "s/{{bbox}}/$BBOX/g" "$q" > "$QUERY"
+  sum=$(node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$QUERY")
+  if [ "$REFRESH_OSM" = 1 ] || [ ! -s "$out" ] || ! grep -qx "$sum  $name" "$STAMPS"; then
+    echo "OSM $name (bbox $BBOX)"
+    bash "$HERE/../overpass.sh" "$out" "$QUERY"
+    { grep -v "  $name\$" "$STAMPS" || true; echo "$sum  $name"; } | sort -k 2 > "$STAMPS.tmp"
+    mv -- "$STAMPS.tmp" "$STAMPS"
   fi
 done
 

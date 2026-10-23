@@ -6,19 +6,19 @@
 //   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
 //   js/donostia/geodata.js             frame, terrain metadata, buildings, landmark sites & teleports
 // --preview writes debug images (hillshade, building heights) into the given folder.
+// Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, encodeHeightPNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds,
-  pointInRing, lonLatToLocal, loadLayer, log
+  HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
+  lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
-const previewIdx = process.argv.indexOf('--preview');
-const PREVIEW = previewIdx > 0 ? process.argv[previewIdx + 1] : null;
+const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
 
@@ -33,9 +33,14 @@ const r2 = (v) => Math.round(v * 100) / 100;
 function mosaicDTM() {
   const dir = path.join(RAW, 'dtm');
   const tiles = fs.readdirSync(dir).filter((f) => f.endsWith('.asc')).sort().map((f) => readAscGrid(path.join(dir, f)));
+  if (!tiles.length) throw new Error(`no DTM tiles in ${dir} (run tools/donostia/build-all.sh --fetch)`);
   const grid = Grid.over(CONTEXT, 1);
   for (const t of tiles) {
-    const di = Math.round(t.x0 - grid.x0), dj = Math.round(t.z0 - grid.z0);
+    // the mosaic copies cells one to one: every tile must sit on the context grid's 1 m lattice
+    if (t.cell !== 1 || !Number.isInteger(t.x0 - grid.x0) || !Number.isInteger(t.z0 - grid.z0)) {
+      throw new Error(`DTM tile at (${t.x0}, ${t.z0}) with ${t.cell} m cells is not on the 1 m lattice`);
+    }
+    const di = t.x0 - grid.x0, dj = t.z0 - grid.z0;
     for (let r = 0; r < t.nrows; r++) {
       const j = dj + r;
       if (j < 0 || j >= grid.h) continue;
@@ -203,40 +208,6 @@ function carveBridges(dtm, water) {
     }
   }
   log(`bridges: ${spans} OSM bridge ways cross the water, ${carved} m² of deck kept as ground carved to the river bed`);
-}
-
-// OSM way / multipolygon relation -> [[outer, ...holes], ...] local flat rings (good enough for rasterising)
-function osmPolygons(e) {
-  const ring = (geom) => geom.flatMap((p) => lonLatToLocal(p.lon, p.lat));
-  if (e.type === 'way' && e.geometry && e.geometry.length >= 4) return [[ring(e.geometry)]];
-  if (e.type === 'relation' && e.members) {
-    // multipolygon rings are often split over several member ways: chain them end to end per role
-    const join = (role) => {
-      const parts = e.members.filter((m) => m.type === 'way' && m.role === role && m.geometry?.length >= 2).map((m) => m.geometry.slice());
-      const key = (p) => `${p.lat},${p.lon}`;
-      const rings = [];
-      while (parts.length) {
-        let chain = parts.shift();
-        for (let grown = true; grown && key(chain[0]) !== key(chain[chain.length - 1]);) {
-          grown = false;
-          for (let i = 0; i < parts.length; i++) {
-            const p = parts[i], head = key(chain[chain.length - 1]);
-            if (key(p[0]) === head) chain = chain.concat(p.slice(1));
-            else if (key(p[p.length - 1]) === head) chain = chain.concat(p.slice(0, -1).reverse());
-            else continue;
-            parts.splice(i, 1);
-            grown = true;
-            break;
-          }
-        }
-        if (chain.length >= 4) rings.push(ring(chain));
-      }
-      return rings;
-    };
-    const outers = join('outer'), inners = join('inner');
-    return outers.map((o, k) => (k === 0 ? [o, ...inners] : [o]));
-  }
-  return [];
 }
 
 // --- 3. Sea floor: isobaths + shoreline as fixed values, harmonic fill in between (coarse-to-fine Gauss-Seidel) ---------
@@ -567,7 +538,7 @@ function waterFields(ctx, file) {
     px[4 * k + 2] = u8(128 + 127 * fx[k]);
     px[4 * k + 3] = u8(128 + 127 * fz[k]);
   }
-  const out = encodePNG(px, w, h, 4);
+  const out = encodePNG(px, w, h, 4, pngText('geoeuskadi', 'osm'));
   fs.writeFileSync(file, out);
   log(`${path.relative(ROOT, file)}: ${w}x${h} @ ${res} m, ${(out.length / 1e6).toFixed(2)} MB`);
   return { exposure, river };
@@ -617,7 +588,7 @@ function groundClasses(grid, wet) {
   return cls;
 }
 
-function writeTerrainPNG(grid, blue, file) {
+function writeTerrainPNG(grid, blue, file, text) {
   const px = new Uint8Array(grid.w * grid.h * 3);
   for (let k = 0; k < grid.data.length; k++) {
     const u = Math.max(0, Math.min(65535, Math.round((grid.data[k] + HEIGHT_OFFSET) * 100)));
@@ -625,7 +596,7 @@ function writeTerrainPNG(grid, blue, file) {
     px[3 * k + 1] = u & 255;
     px[3 * k + 2] = blue[k];
   }
-  const out = encodePNG(px, grid.w, grid.h, 3);
+  const out = encodePNG(px, grid.w, grid.h, 3, text);
   fs.writeFileSync(file, out);
   log(`${path.relative(ROOT, file)}: ${grid.w}x${grid.h} @ ${grid.res} m, ${(out.length / 1e6).toFixed(2)} MB`);
 }
@@ -646,6 +617,11 @@ function bakeBuildings(dtm, districts) {
     ['c500_ERAIKINA.json', 0],
     ['c500_EraikinArinak.json', 1], ['c500_ESTALPEA.json', 1], ['c500_KIOSKOA.json', 1], ['c500_BEROTEGIA.json', 1]
   ];
+  // The light-building layers overlap: EraikinArinak repeats almost every ESTALPEA shed, BEROTEGIA greenhouse and
+  // KIOSKOA kiosk, and some ERAIKINA outlines, exactly or within a few centimetres. A 1 m raster of the outlines already
+  // emitted keeps each structure to one extrusion (two would z-fight).
+  const taken = new Uint8Array(W * H);
+  const repeats = new Map();
   let estimated = 0;
   for (const [file, kind] of sources) {
     for (const f of loadLayer(file).features) {
@@ -655,14 +631,21 @@ function bakeBuildings(dtm, districts) {
       if (b.maxX < CORE.minX || b.minX > CORE.maxX || b.maxZ < CORE.minZ || b.minZ > CORE.maxZ) continue;
       const hist = new Map();
       const ground = [];
-      let cells = 0;
+      let cells = 0, overlap = 0;
       scanRings(rings, CORE.minX, CORE.minZ, 1, W, H, (i, j) => {
         cells++;
+        if (taken[j * W + i]) overlap++;
         const id = ids[j * W + i];
         if (id >= 0) hist.set(id, (hist.get(id) || 0) + 1);
         const v = dtm.data[(oj + j) * dtm.w + oi + i];
         if (!Number.isNaN(v)) ground.push(v);
       });
+      // a light building lying (almost) wholly on one already emitted is the same structure drawn again, or a roof
+      // structure whose volume the extrusion under it already fills
+      if (kind === 1 && cells && overlap >= 0.9 * cells) {
+        repeats.set(file, (repeats.get(file) || 0) + 1);
+        continue;
+      }
       const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
       if (!ground.length) {
         const v = dtm.sample(cx, cz);
@@ -719,9 +702,12 @@ function bakeBuildings(dtm, districts) {
       if (dp && dp.street_eu && dp.number) rec.addr = `${dp.street_eu.replace(/ kalea$/, ' k.')} ${dp.number}${dp.bis || ''}`;
       if (dp && dp.built) rec.built = Number(dp.built.slice(0, 4));
       out.push(rec);
+      scanRings(rings, CORE.minX, CORE.minZ, 1, W, H, (i, j) => { taken[j * W + i] = 1; });
     }
   }
-  log(`buildings: ${out.length} (${estimated} without a b5m height)`);
+  const skipped = [...repeats].map(([file, n]) => `${n} ${file.replace(/^c500_|\.json$/g, '')}`).join(', ');
+  log(`buildings: ${out.length} (${estimated} without a b5m height); light buildings already drawn by an earlier ` +
+    `layer skipped: ${skipped || 'none'}`);
   return out;
 }
 
@@ -747,9 +733,28 @@ const LANDMARKS = [
   ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607]
 ];
 
-function bakeLandmarks(buildings) {
+// Each landmark's OSM object, looked up before anything is baked: one missing from the snapshot (a query edited without
+// re-fetching, or the object deleted or split upstream) fails the bake instead of silently dropping its model and
+// bringing the plain extrusion back
+function landmarkObjects() {
   const osm = [...loadLayer('osm_places.json').elements, ...loadLayer('osm_landmarks.json').elements];
   const byKey = new Map(osm.map((e) => [`${e.type}/${e.id}`, e]));
+  const found = [], missing = [];
+  for (const [id, type, osmId] of LANDMARKS) {
+    const e = byKey.get(`${type}/${osmId}`);
+    const ring = e && type !== 'node' ? osmPolygons(e)[0]?.[0] : null;
+    if (!e) missing.push(`${id}: OSM ${type}/${osmId} is missing`);
+    else if (type !== 'node' && !ring) missing.push(`${id}: OSM ${type}/${osmId} has no closed outline`);
+    else found.push({ id, type, osmId, e, ring });
+  }
+  if (missing.length) {
+    throw new Error(`landmarks not in tools/donostia/data/osm_*.json (re-fetch with fetch.sh --refresh-osm, or update ` +
+      `LANDMARKS):\n  ${missing.join('\n  ')}`);
+  }
+  return found;
+}
+
+function bakeLandmarks(objects, buildings) {
   const sites = [];
   // 1 m mask of each landmark footprint; a 1:500 building belongs to the landmark when half its area lies inside, or
   // when it covers half the footprint (the municipal map draws the whole Kursaal as one outline, OSM as three)
@@ -767,16 +772,12 @@ function bakeLandmarks(buildings) {
     });
     return members;
   };
-  for (const [id, type, osmId] of LANDMARKS) {
-    const e = byKey.get(`${type}/${osmId}`);
-    if (!e) { log(`landmark ${id}: OSM ${type}/${osmId} missing`); continue; }
+  for (const { id, type, osmId, e, ring } of objects) {
     const t = e.tags || {};
     const site = { id, name: t.name, name_es: t['name:es'] || null, osm: `${type}/${osmId}` };
     if (type === 'node') {
       site.at = lonLatToLocal(e.lon, e.lat);
     } else {
-      const ring = osmPolygons(e)[0]?.[0];
-      if (!ring) { log(`landmark ${id}: OSM ${type}/${osmId} has no closed outline`); continue; }
       site.footprint = ring.map(r2);
       const b = ringBounds(ring);
       site.at = [r2((b.minX + b.maxX) / 2), r2((b.minZ + b.maxZ) / 2)];
@@ -864,6 +865,7 @@ function buildingPreview(buildings, file) {
 
 // --- main --------------------------------------------------------------------------------------------------------------
 
+const landmarkObjs = landmarkObjects();
 const dtm = mosaicDTM();
 lap('DTM mosaic 1 m');
 const water = waterMask(dtm);
@@ -876,8 +878,10 @@ lap('terrain grids');
 fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
-writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'));
-writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)), path.join(OUT_DATA, 'terrain-context.png'));
+// heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
+writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
+writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
+  path.join(OUT_DATA, 'terrain-context.png'), pngText('geoeuskadi', 'osm'));
 const fields = waterFields(context, path.join(OUT_DATA, 'water.png'));
 lap('water fields');
 
@@ -889,7 +893,7 @@ const heightAt = (x, z) => {
 const districts = loadDistricts();
 const buildings = bakeBuildings(dtm, districts);
 lap('buildings');
-const landmarks = bakeLandmarks(buildings);
+const landmarks = bakeLandmarks(landmarkObjs, buildings);
 const teleports = bakeTeleports(heightAt);
 
 const terrainMeta = (g, file) => ({ url: `data/donostia/${file}`, x0: g.x0, z0: g.z0, w: g.w, h: g.h, res: g.res });
@@ -911,11 +915,13 @@ const GEO = {
 fs.mkdirSync(path.dirname(OUT_JS), { recursive: true });
 const js = `// js/donostia/geodata.js — generated by tools/donostia/build.mjs; do not edit.\n` +
   `// ${GEO.attribution.join(' · ')}\n` +
+  licenceComment('c500', 'osm', 'b5m', 'geoeuskadi') +
   `export const GEO = ${JSON.stringify(GEO)};\n`;
 fs.writeFileSync(OUT_JS, js);
 log(`${path.relative(ROOT, OUT_JS)}: ${(js.length / 1e6).toFixed(2)} MB, ${buildings.length} buildings, ${landmarks.length} landmarks, ${teleports.length} teleports`);
 
 if (PREVIEW) {
+  fs.mkdirSync(PREVIEW, { recursive: true });
   hillshade(core.grid, core.wet, path.join(PREVIEW, 'core-hillshade.png'));
   hillshade(context.grid, context.wet, path.join(PREVIEW, 'context-hillshade.png'));
   buildingPreview(buildings, path.join(PREVIEW, 'buildings.png'));
