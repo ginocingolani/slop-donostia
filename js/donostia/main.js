@@ -40,7 +40,11 @@ async function initApp() {
   };
 
   status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
-  const renderer = new THREE.WebGPURenderer({ antialias: true, powerPreference: 'high-performance', reversedDepthBuffer: true });
+  const DEBUG = new URLSearchParams(location.search).has('debug');
+  const renderer = new THREE.WebGPURenderer({
+    antialias: true, powerPreference: 'high-performance', reversedDepthBuffer: true,
+    trackTimestamp: DEBUG // GPU pass timings for slopDebug.bench
+  });
   renderer.setPixelRatio(1.0);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
@@ -132,6 +136,41 @@ async function initApp() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
+  let last = performance.now(), elapsed = 0, frames = 0, fpsTime = 0, saveAt = 0, first = true;
+  const simulate = (dt) => {
+    elapsed += dt;
+    god.update(dt);
+    terrain.update(camera.position);
+    lighting.update(camera.position);
+    for (const update of updaters) update(dt, elapsed, camera);
+  };
+
+  // ?debug: frame-by-frame access for profiling, set up before the shader compile below (which waits on animation
+  // frames, and requestAnimationFrame stops in hidden tabs; these calls don't). await slopDebug.bench(60) renders 60
+  // frames and reports the CPU time to submit them, the GPU time of their passes (timestamp queries) and the draws.
+  if (DEBUG) {
+    const device = renderer.backend.device;
+    window.slopDebug = {
+      THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO,
+      async bench(n = 60, dt = 1 / 60) {
+        let cpu = 0, gpu = 0, draws = 0, triangles = 0;
+        const t0 = performance.now();
+        for (let i = 0; i < n; i++) {
+          const c0 = performance.now();
+          simulate(dt);
+          pipeline.render();
+          cpu += performance.now() - c0;
+          draws += renderer.info.render.drawCalls;
+          triangles += renderer.info.render.triangles;
+          await device.queue.onSubmittedWorkDone();
+          gpu += (await renderer.resolveTimestampsAsync(THREE.TimestampQuery.RENDER)) || 0;
+        }
+        const f = (v) => +(v / n).toFixed(2);
+        return { frames: n, wallMs: f(performance.now() - t0), cpuMs: f(cpu), gpuMs: f(gpu), draws: Math.round(draws / n), triangles: Math.round(triangles / n) };
+      }
+    };
+  }
+
   // Compile the pipelines behind the loading screen
   status('Compiling shaders…', 0.6);
   scene.visible = false;
@@ -144,16 +183,10 @@ async function initApp() {
   renderer.setRenderTarget(null);
   markInit('compile');
 
-  let last = performance.now(), elapsed = 0, frames = 0, fpsTime = 0, saveAt = 0, first = true;
   renderer.setAnimationLoop((now) => {
     const raw = (now - last) / 1000;
     last = now;
-    const dt = Math.min(Math.max(raw, 0.001), 0.05);
-    elapsed += dt;
-    god.update(dt);
-    terrain.update(camera.position);
-    lighting.update(camera.position);
-    for (const update of updaters) update(dt, elapsed, camera);
+    simulate(Math.min(Math.max(raw, 0.001), 0.05));
     if (first) {
       // a warm-up frame with frustum culling off and every terrain level of detail shown, so pipelines and draws all
       // exist before the loading screen lifts
