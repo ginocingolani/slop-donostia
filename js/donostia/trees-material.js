@@ -2,20 +2,23 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, vec2, vec3, vec4, color, attribute, uniform, varying, uv, texture, time, sin, cos, abs, floor, fract, mix,
   step, smoothstep, clamp, max, dot, length, normalize, pow, select, frontFacing, positionLocal, positionGeometry,
-  normalLocal, normalGeometry, normalView, normalViewGeometry, positionViewDirection, cameraViewMatrix
+  normalLocal, normalGeometry, normalView, normalViewGeometry, positionViewDirection, cameraViewMatrix, instanceIndex,
+  storage, transformNormal
 } from 'three/tsl';
 
 // js/donostia/trees-material.js
 // Materials of Donostia's trees (js/donostia/vegetation.js). Adapted from createTreeMaterial, FoliageLightingModel,
 // TreeNodeMaterial, hash2D & noise2D in js/tsl-materials.js (slop-newyork, MIT), without New York's street-canyon
 // occlusion and with a bark per species.
-// - createTreeMaterial: the near & mid levels (instanced meshes, one per species / variant / level). Attributes as
+// - createTreeMaterial: the near & mid levels (one instanced draw per species / variant / level). Attributes as
 //   upstream: uv (atlas on cards, metres on bark), normal (crown-shell normals on cards), aTree (vec4: leaf flag,
-//   crown occlusion, sway weight, per-card random), aTreeData (instanced vec4: linear foliage tint, species + random).
-// - createFarTreeMaterial: one draw for every tree in the city (an InstancedBufferGeometry of the unit far tree from
+//   crown occlusion, sway weight, per-card random); per tree, from two storage buffers shared by all the meshes
+//   (vegetation.js), its matrix and its data (vec4: linear foliage tint, species + random).
+// - createFarTreeMaterial: one draw for the far trees in view (an InstancedBufferGeometry of the unit far tree from
 //   trees-species.js), shaped per instance (aFarPos: x, y, z, yaw; aFarShape: crown centre height, crown radius,
 //   crown half-height, trunk radius) and folded away where the near & mid meshes stand (within uMidEnd of uLodCenter,
 //   the camera position of the last level pass, exactly as vegetation.js chose them) or beyond uFarEnd.
+// - createBillboardTreeMaterial: the far trees beyond vegetation.js's BILLBOARD_START, one camera-facing quad each.
 
 // Fast deterministic 2D -> 1D hash
 const hash2D = Fn(([p]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)));
@@ -105,21 +108,30 @@ const foliageColour = Fn(([tint, leaf]) => {
 /**
  * Instanced near & mid level tree material: bark tubes and alpha-tested leaf cards in one draw per mesh.
  */
-export function createTreeMaterial(leafAtlas) {
+export function createTreeMaterial(leafAtlas, instances) {
   // The alpha test is given as nodes (alphaTestNode on the scene pass, maskShadowNode in the shadow maps) rather than
   // `alphaTest`, which the shadow passes copy onto a shared shadow material (see createTreeMaterial upstream)
   const mat = new DonostiaTreeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, metalness: 0.0, roughness: 0.8 });
 
+  // Instancing by hand (what three's instance() does for an InstancedMesh): every near & mid mesh reads its trees from
+  // one pair of storage buffers, starting at its own offset (a per-object uniform), so the 24 meshes share one shader
+  // and one pipeline per pass instead of compiling 24 (an InstancedMesh's buffer gets a name of its own in the code)
+  const base = uniform(0, 'uint').onObjectUpdate(({ object }) => object.userData.instanceBase);
+  const index = instanceIndex.add(base);
+  const instanceMatrix = storage(instances.matrices, 'mat4', instances.matrices.count).element(index);
+  const aData = varying(storage(instances.data, 'vec4', instances.data.count).element(index), 'vTreeData');
+
   const aTree = attribute('aTree', 'vec4');
-  const aData = attribute('aTreeData', 'vec4');
   const isLeaf = aTree.x;
   const crownAO = aTree.y;
   const rnd = fract(aData.w);
   const species = floor(aData.w);
   const leaf = texture(leafAtlas, uv());
 
-  // Wind. positionLocal is already instanced (world space); positionGeometry is the tree's own frame (metres)
+  // Wind. positionLocal is instanced first (world space); positionGeometry is the tree's own frame (metres)
   mat.positionNode = Fn(() => {
+    positionLocal.assign(instanceMatrix.mul(positionLocal).xyz);
+    normalLocal.assign(transformNormal(normalLocal, instanceMatrix));
     const p = positionLocal;
     const g = positionGeometry;
     const phase = rnd.mul(6.2832);

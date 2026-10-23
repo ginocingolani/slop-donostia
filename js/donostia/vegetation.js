@@ -72,7 +72,6 @@ export async function buildVegetation(GEO, terrain) {
   if (!N) return null;
 
   const atlas = createLeafAtlas();
-  const material = createTreeMaterial(atlas.texture);
   const far = createFarTreeMaterial(atlas.texture, SPECIES.map((sp) => sp.far));
   far.uniforms.midEnd.value = LOD_MID;
   far.uniforms.farEnd.value = FAR_END;
@@ -118,28 +117,31 @@ export async function buildVegetation(GEO, terrain) {
     capacity[meshOf[i] + 1]++;
   }
 
-  // Near & mid meshes
+  // Near & mid meshes. Their trees live in one pair of storage buffers (matrices, data) with a slice per mesh
+  // (instanceBase), read by createTreeMaterial's own instancing: one shader & pipeline per pass for all 24 meshes.
+  // rebuild() uploads just the slices in use, and only when the levels change.
+  const bases = new Uint32Array(capacity.length);
+  let slots = 0;
+  for (let m = 0; m < capacity.length; m++) { bases[m] = slots; slots += Math.max(1, capacity[m]); }
+  const instances = {
+    matrices: new THREE.StorageBufferAttribute(new Float32Array(slots * 16), 16),
+    data: new THREE.StorageBufferAttribute(new Float32Array(slots * 4), 4)
+  };
+  const material = createTreeMaterial(atlas.texture, instances);
   const meshes = [];
   for (let sp = 0; sp < SPECIES.length; sp++) {
     for (let v = 0; v < 2; v++) {
       for (let l = 0; l < 2; l++) {
         const src = kits[sp][v].geometries[l];
-        const geo = new THREE.BufferGeometry();
+        const geo = new THREE.InstancedBufferGeometry();
         for (const name of Object.keys(src.attributes)) geo.setAttribute(name, src.attributes[name]);
         geo.setIndex(src.index);
         geo.boundingSphere = src.boundingSphere;
-        const cap = Math.max(1, capacity[meshes.length]);
-        // Static usage on purpose (see createTreeField upstream): rebuild() uploads just the instances in use, and only
-        // when the levels change
-        geo.setAttribute('aTreeData', new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4));
-        const mesh = new THREE.InstancedMesh(geo, material, cap);
-        // matrices in a storage buffer: small instanced meshes otherwise keep them in a uniform buffer that is
-        // re-uploaded on every draw of every pass
-        mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
-        mesh.name = `Trees_${SPECIES[sp].name}_v${v}_${l ? 'mid' : 'near'}`;
         // one degenerate (all-zero matrix) instance until the first pick, so the shaders compile behind the loading screen
-        mesh.instanceMatrix.array.fill(0, 0, 16);
-        mesh.count = 1;
+        geo.instanceCount = 1;
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.userData.instanceBase = bases[meshes.length];
+        mesh.name = `Trees_${SPECIES[sp].name}_v${v}_${l ? 'mid' : 'near'}`;
         mesh.frustumCulled = false; // instances surround the camera: the levels do the culling
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -232,27 +234,24 @@ export async function buildVegetation(GEO, terrain) {
   // Refill the near & mid meshes with the trees in reach
   function rebuild() {
     counts.fill(0);
+    const ma = instances.matrices.array, da = instances.data.array;
     for (let a = 0; a < activeCount; a++) {
       const i = active[a];
       const m = meshOf[i] + lod[i];
-      const c = counts[m]++;
-      const mesh = meshes[m];
-      const ma = mesh.instanceMatrix.array, da = mesh.geometry.attributes.aTreeData.array;
-      for (let k = 0; k < 16; k++) ma[c * 16 + k] = mats[i * 16 + k];
-      for (let k = 0; k < 4; k++) da[c * 4 + k] = data[i * 4 + k];
+      const slot = bases[m] + counts[m]++;
+      for (let k = 0; k < 16; k++) ma[slot * 16 + k] = mats[i * 16 + k];
+      for (let k = 0; k < 4; k++) da[slot * 4 + k] = data[i * 4 + k];
     }
+    for (const attr of [instances.matrices, instances.data]) attr.clearUpdateRanges();
     for (let m = 0; m < meshes.length; m++) {
       const mesh = meshes[m], n = counts[m];
-      if (n > 0) {
-        for (const attr of [mesh.instanceMatrix, mesh.geometry.attributes.aTreeData]) {
-          attr.clearUpdateRanges();
-          attr.addUpdateRange(0, n * attr.itemSize);
-          attr.needsUpdate = true;
-        }
-      }
-      mesh.count = n;
-      mesh.visible = n > 0;
+      for (const attr of [instances.matrices, instances.data]) if (n > 0) attr.addUpdateRange(bases[m] * attr.itemSize, n * attr.itemSize);
+      mesh.geometry.instanceCount = n;
+      // (the first mesh stays in the scene with or without trees: its pipeline, which all of them share, compiles
+      // behind the loading screen wherever the camera starts)
+      mesh.visible = n > 0 || m === 0;
     }
+    instances.matrices.needsUpdate = instances.data.needsUpdate = true;
   }
 
   const lastPick = new THREE.Vector3(Infinity, Infinity, Infinity);

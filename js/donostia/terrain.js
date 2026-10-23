@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { decodePNG } from './png.js';
+import { decodePNGOffThread } from './png.js';
 
 // js/donostia/terrain.js
 // LiDAR terrain of Donostia (geoEuskadi 2017 MDT + 1 m isobaths, baked by tools/donostia/build.mjs): a 2 m core grid
@@ -15,15 +15,13 @@ const SKIRT = 6; // m
 const SUBMERGED = -3; // m: chunks whose highest sample lies below this are always under the (opaque) sea
 
 class HeightField {
-  constructor(meta, image, offset) {
+  // field: png.js's 'heightField' transform of the baked PNG: { heights (m), classes, half (the heights as half floats) }
+  constructor(meta, field) {
     Object.assign(this, { x0: meta.x0, z0: meta.z0, w: meta.w, h: meta.h, res: meta.res });
-    this.heights = new Float32Array(this.w * this.h);
-    this.classes = new Uint8Array(this.w * this.h); // GEO.terrain.classes ids (B channel)
-    const px = image.data;
-    for (let k = 0; k < this.heights.length; k++) {
-      this.heights[k] = ((px[3 * k] << 8) | px[3 * k + 1]) / 100 - offset;
-      this.classes[k] = px[3 * k + 2];
-    }
+    if (field.heights.length !== this.w * this.h) throw new Error(`${meta.url}: ${field.width}x${field.height}, expected ${this.w}x${this.h}`);
+    this.heights = field.heights;
+    this.classes = field.classes; // GEO.terrain.classes ids (B channel)
+    this._half = field.half;
   }
 
   get width() { return this.w * this.res; }
@@ -49,9 +47,7 @@ class HeightField {
 
   get heightTexture() {
     if (!this._heightTex) {
-      const half = new Uint16Array(this.heights.length);
-      for (let k = 0; k < half.length; k++) half[k] = THREE.DataUtils.toHalfFloat(this.heights[k]);
-      const t = new THREE.DataTexture(half, this.w, this.h, THREE.RedFormat, THREE.HalfFloatType);
+      const t = new THREE.DataTexture(this._half, this.w, this.h, THREE.RedFormat, THREE.HalfFloatType);
       t.magFilter = t.minFilter = THREE.LinearFilter;
       t.generateMipmaps = false;
       t.needsUpdate = true;
@@ -161,7 +157,7 @@ export class Terrain {
     const fetchField = async (m) => {
       const res = await fetch(m.url);
       if (!res.ok) throw new Error(`${m.url}: HTTP ${res.status}`);
-      return new HeightField(m, await decodePNG(await res.arrayBuffer()), meta.heightOffset);
+      return new HeightField(m, await decodePNGOffThread(await res.arrayBuffer(), 'heightField', meta.heightOffset));
     };
     const [core, context] = await Promise.all([fetchField(meta.core), fetchField(meta.context)]);
     return new Terrain(core, context);

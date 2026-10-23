@@ -3,7 +3,7 @@ import {
   Fn, If, float, vec2, vec3, vec4, texture, positionWorld, cameraPosition, cameraViewMatrix, time, mix, smoothstep,
   clamp, pow, dot, normalize, max, abs, fract, floor, sin, sqrt, exp, fwidth, select, mx_noise_float, uniform
 } from 'three/tsl';
-import { decodePNG } from './png.js';
+import { decodePNGOffThread } from './png.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -205,7 +205,7 @@ async function loadFields() {
   try {
     const res = await fetch(FIELDS_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const img = await decodePNG(await res.arrayBuffer());
+    const img = await decodePNGOffThread(await res.arrayBuffer());
     if (img.channels !== 4) throw new Error(`${img.channels} channels`);
     const tex = new THREE.DataTexture(img.data, img.width, img.height, THREE.RGBAFormat, THREE.UnsignedByteType);
     tex.magFilter = tex.minFilter = THREE.LinearFilter;

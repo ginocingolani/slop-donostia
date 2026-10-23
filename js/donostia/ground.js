@@ -5,7 +5,7 @@ import {
   normalWorldGeometry, cameraPosition, PI
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
-import { decodePNG } from './png.js';
+import { decodePNGOffThread } from './png.js';
 
 // js/donostia/ground.js
 // Ground surfaces over the LiDAR terrain, one material for every terrain chunk. In the core the baked maps of
@@ -41,10 +41,10 @@ const CROSSING_TILE = 256; // m (bake-ground.mjs TILE)
 
 // --- baked maps ------------------------------------------------------------------------------------------------------
 
-async function fetchPNG(url) {
+async function fetchPNG(url, transform = null, arg = null) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return decodePNG(await res.arrayBuffer());
+  return decodePNGOffThread(await res.arrayBuffer(), transform, arg);
 }
 
 function dataTexture(data, w, h, format) {
@@ -58,7 +58,9 @@ function dataTexture(data, w, h, format) {
 // Starts downloading & decoding the baked maps (main.js calls it before the terrain loads, so both come in together);
 // resolves to the decoded images or { error }
 export function prefetchGroundMaps() {
-  return Promise.all([fetchPNG(FILES.core), fetchPNG(FILES.orient), fetchPNG(FILES.crossings)]).catch((error) => ({ error }));
+  // the core map's four grey planes (surface, edge distance, kerb distance, crossing slot) come back as one RGBA texel
+  // per metre, interleaved in the decoding worker
+  return Promise.all([fetchPNG(FILES.core, 'planesToRGBA', 4), fetchPNG(FILES.orient), fetchPNG(FILES.crossings)]).catch((error) => ({ error }));
 }
 
 async function loadMaps(core, prefetched) {
@@ -66,17 +68,9 @@ async function loadMaps(core, prefetched) {
   const images = await (prefetched || prefetchGroundMaps());
   if (images.error) throw images.error;
   const [planes, orient, crossings] = images;
-  if (planes.channels !== 1 || planes.width !== w || planes.height !== 4 * h) throw new Error(`${FILES.core} does not match the terrain core`);
-  // four grey planes (surface, edge distance, kerb distance, crossing slot) -> one RGBA texel per metre
-  const n = w * h, src = planes.data, rgba = new Uint8Array(4 * n);
-  for (let k = 0; k < n; k++) {
-    rgba[4 * k] = src[k];
-    rgba[4 * k + 1] = src[n + k];
-    rgba[4 * k + 2] = src[2 * n + k];
-    rgba[4 * k + 3] = src[3 * n + k];
-  }
+  if (planes.channels !== 4 || planes.width !== w || planes.height !== h) throw new Error(`${FILES.core} does not match the terrain core`);
   return {
-    ground: dataTexture(rgba, w, h, THREE.RGBAFormat), w, h, res: 1,
+    ground: dataTexture(planes.data, w, h, THREE.RGBAFormat), w, h, res: 1,
     orient: dataTexture(orient.data, orient.width, orient.height, THREE.RedFormat), ow: orient.width, oh: orient.height,
     orientRes: core.width / orient.width,
     crossings: dataTexture(crossings.data, crossings.width, crossings.height, THREE.RGBAFormat),
