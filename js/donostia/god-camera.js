@@ -3,7 +3,8 @@ import * as THREE from 'three/webgpu';
 // js/donostia/god-camera.js
 // Free-flying "god mode" camera for exploring the map before the travel modes arrive: WASD moves along the view,
 // Space / E climbs, Q / C descends, Shift boosts, dragging looks around (arrow keys too) and the wheel scales the speed.
-// Speed grows with the height above the ground; the camera never goes under the terrain or the sea.
+// On touch screens one finger looks, a pinch flies along the view and hud.js feeds its virtual stick & buttons into
+// `touch`. Speed grows with the height above the ground; the camera never goes under the terrain or the sea.
 
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
@@ -18,6 +19,11 @@ export class GodCamera {
     this.pitch = -0.25;
     this.speedScale = 1;
     this.keys = new Set();
+    // virtual stick & buttons (hud.js): forward / side in -1..1, up in -1..1, boost on or off
+    this.touch = { forward: 0, side: 0, up: 0, boost: false };
+    this._pinch = 0; // pinch spread since the last frame (px)
+    this._forward = new THREE.Vector3();
+    this._right = new THREE.Vector3();
     this.flight = null;
     this.enabled = true;
     this._bind();
@@ -35,6 +41,8 @@ export class GodCamera {
 
     const pointers = new Map();
     let pinch = 0;
+    // the page must not pan or zoom under the fingers
+    this.dom.style.touchAction = 'none';
     this.dom.addEventListener('pointerdown', (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dom.setPointerCapture(e.pointerId);
@@ -53,7 +61,7 @@ export class GodCamera {
       } else if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinch) this._touchPush = (this._touchPush || 0) + (d - pinch) * 0.02;
+        if (pinch) this._pinch += d - pinch;
         pinch = d;
       }
     });
@@ -86,6 +94,11 @@ export class GodCamera {
     this.velocity.set(0, 0, 0);
   }
 
+  clearTouch() {
+    Object.assign(this.touch, { forward: 0, side: 0, up: 0, boost: false });
+    this._pinch = 0;
+  }
+
   update(dt) {
     if (this.flight) {
       const f = this.flight;
@@ -100,22 +113,26 @@ export class GodCamera {
       this._apply();
       return;
     }
-    if (!this.enabled) { this._apply(); return; }
-    const k = this.keys;
-    const fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) + (this._touchPush || 0);
-    const side = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
-    const up = (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') || k.has('KeyC') ? 1 : 0);
-    this._touchPush = 0;
+    if (!this.enabled) { this._pinch = 0; this._apply(); return; }
+    const k = this.keys, t = this.touch;
+    const fwd = THREE.MathUtils.clamp((k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) + t.forward, -1, 1);
+    const side = THREE.MathUtils.clamp((k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + t.side, -1, 1);
+    const up = THREE.MathUtils.clamp((k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') || k.has('KeyC') ? 1 : 0) + t.up, -1, 1);
     const turn = (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0);
     const tilt = (k.has('ArrowUp') ? 1 : 0) - (k.has('ArrowDown') ? 1 : 0);
     this.yaw += turn * 1.4 * dt;
     this.pitch = THREE.MathUtils.clamp(this.pitch + tilt * 1.0 * dt, -1.5, 1.5);
 
     const agl = Math.max(0, this.position.y - this.groundHeight);
-    const boost = k.has('ShiftLeft') || k.has('ShiftRight') ? 4 : 1;
+    const boost = k.has('ShiftLeft') || k.has('ShiftRight') || t.boost ? 4 : 1;
     const speed = THREE.MathUtils.clamp(5 + agl * 0.9, 5, 700) * this.speedScale * boost;
-    const forward = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
-    const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const forward = this._forward.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
+    const right = this._right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    // a pinch moves the camera itself along the view, further per pixel the higher it flies
+    if (this._pinch) {
+      this.position.addScaledVector(forward, this._pinch * THREE.MathUtils.clamp(0.2 + agl * 0.012, 0.2, 12) * this.speedScale);
+      this._pinch = 0;
+    }
     const wish = forward.multiplyScalar(fwd).addScaledVector(right, side);
     wish.y += up;
     if (wish.lengthSq() > 1) wish.normalize();
