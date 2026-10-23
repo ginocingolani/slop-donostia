@@ -181,7 +181,14 @@ export class Terrain {
     return this.core.contains(x, z) ? this.core.classAt(x, z) : this.context.classAt(x, z);
   }
 
-  build(material) {
+  // Every chunk's meshes share `material`; build() may run before it exists (main.js builds the chunks while the
+  // ground maps still decode) and setMaterial() hand it over
+  setMaterial(material) {
+    for (const chunk of this.chunks) for (const mesh of chunk.meshes) if (mesh) mesh.material = material;
+  }
+
+  build(material = null) {
+    material ||= new THREE.MeshBasicNodeMaterial();
     const lods = LOD_STRIDES.map((s) => chunkIndex(s));
     const addGrid = (field, kind) => {
       const ncx = Math.ceil((field.w - 1) / QUADS), ncz = Math.ceil((field.h - 1) / QUADS);

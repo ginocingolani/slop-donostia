@@ -55,8 +55,12 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   const terrain = await Terrain.load(GEO.terrain);
   mark('terrain data');
   status('Building the bay, the hills & the streets…');
-  add('terrain', terrain.build(await createGroundMaterial(terrain, groundMaps)));
-  add('water', await createWater(terrain));
+  // the chunks first, while the ground maps finish decoding off the main thread
+  const terrainGroup = terrain.build();
+  const [groundMaterial, water] = await Promise.all([createGroundMaterial(terrain, groundMaps), createWater(terrain)]);
+  terrain.setMaterial(groundMaterial);
+  add('terrain', terrainGroup);
+  add('water', water);
   mark('terrain mesh');
 
   status('Raising the landmarks…');
