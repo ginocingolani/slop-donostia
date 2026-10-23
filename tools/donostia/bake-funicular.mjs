@@ -1,0 +1,217 @@
+// tools/donostia/bake-funicular.mjs
+// usage: node tools/donostia/bake-funicular.mjs
+// Bakes the Igeldo data behind js/donostia/landmarks/igeldo.js into js/donostia/data-funicular.js, so the browser never
+// converts OpenStreetMap lon/lat:
+//   - the 1912 funicular from the Ondarreta station to the summit: OSM railway=funicular ways chained into the two
+//     routes the cars take (they share the line but for the passing loop halfway up), with the bridge spans flagged;
+//   - the Torreón's corner turrets and the lighthouse's round tower (OSM building:part outlines as circles);
+//   - the Montaña Suiza (1928 scenic railway) as a closed centreline: the OSM roller_coaster=track ways
+//     (tools/donostia/data/osm_landmarks.json, queries/landmarks.overpassql) chained node to node into the loop, in
+//     their own direction of travel from the station, smoothed and resampled, each point flagged as open track,
+//     station, tunnel or bridge.
+// Inputs: tools/donostia/data/osm_streets.json, osm_places.json, osm_landmarks.json (© OpenStreetMap contributors,
+// ODbL); the output is share-alike like the rest of the derived data.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { HERE, loadLayer, lonLatToLocal, licenceComment, log } from './lib.mjs';
+
+const ROOT = path.join(HERE, '..', '..');
+const OUT = path.join(ROOT, 'js', 'donostia', 'data-funicular.js');
+const r2 = (v) => Math.round(v * 100) / 100;
+// the funicular climbs Igeldo's eastern flank: anything outside this box is another funicular (Morlans, Ulía...)
+const IGELDO_BOX = { minX: -1700, maxX: -1400, minZ: 0, maxZ: 300 };
+
+// --- Funicular -----------------------------------------------------------------------------------------------------------
+
+function funicularRoutes() {
+  const ways = loadLayer('osm_streets.json').elements.filter((e) => e.tags?.railway === 'funicular' && e.geometry);
+  const nodes = new Map(); // rounded local position -> { x, z, edges: [{ to, bridge }] }
+  const key = (x, z) => `${Math.round(x * 10)},${Math.round(z * 10)}`;
+  const node = (x, z) => {
+    const k = key(x, z);
+    if (!nodes.has(k)) nodes.set(k, { k, x, z, edges: [] });
+    return nodes.get(k);
+  };
+  for (const w of ways) {
+    const pts = w.geometry.map((g) => lonLatToLocal(g.lon, g.lat));
+    if (!pts.every(([x, z]) => x > IGELDO_BOX.minX && x < IGELDO_BOX.maxX && z > IGELDO_BOX.minZ && z < IGELDO_BOX.maxZ)) continue;
+    const bridge = w.tags.bridge === 'yes';
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = node(...pts[i]), b = node(...pts[i + 1]);
+      if (a === b) continue;
+      // overlapping ways (the station's covered stub and the bridge share a segment): keep one edge, bridge wins
+      const ab = a.edges.find((e) => e.to === b);
+      if (ab) { ab.bridge ||= bridge; b.edges.find((e) => e.to === a).bridge ||= bridge; continue; }
+      a.edges.push({ to: b, bridge });
+      b.edges.push({ to: a, bridge });
+    }
+  }
+  const ends = [...nodes.values()].filter((n) => n.edges.length === 1);
+  if (ends.length !== 2) throw new Error(`funicular: expected 2 line ends, found ${ends.length}`);
+  // bottom = the lower (southern, Ondarreta) end
+  const [bottom, top] = ends.sort((p, q) => q.z - p.z);
+  // the two simple paths between the ends (the line is a single passing loop)
+  const routes = [];
+  const walk = (n, seen, path) => {
+    if (n === top) { routes.push(path.slice()); return; }
+    for (const e of n.edges) {
+      if (seen.has(e.to)) continue;
+      seen.add(e.to);
+      path.push(e);
+      walk(e.to, seen, path);
+      path.pop();
+      seen.delete(e.to);
+    }
+  };
+  walk(bottom, new Set([bottom]), []);
+  if (routes.length !== 2) throw new Error(`funicular: expected 2 routes, found ${routes.length}`);
+  return routes.map((edges) => {
+    const pts = [r2(bottom.x), r2(bottom.z)];
+    const bridges = [];
+    for (const e of edges) {
+      pts.push(r2(e.to.x), r2(e.to.z));
+      bridges.push(e.bridge ? 1 : 0);
+    }
+    return { pts, bridges };
+  });
+}
+
+// --- Building parts (circles fitted to OSM outlines) --------------------------------------------------------------------
+
+function circleOf(ring) {
+  let cx = 0, cz = 0;
+  for (const [x, z] of ring) { cx += x; cz += z; }
+  cx /= ring.length; cz /= ring.length;
+  let r = 0;
+  for (const [x, z] of ring) r += Math.hypot(x - cx, z - cz);
+  return [r2(cx), r2(cz), r2(r / ring.length)];
+}
+
+function buildingParts() {
+  const byId = new Map(loadLayer('osm_places.json').elements.map((e) => [e.id, e]));
+  const ring = (id) => {
+    const e = byId.get(id);
+    if (!e?.geometry) throw new Error(`OSM way ${id} missing`);
+    const pts = e.geometry.map((g) => lonLatToLocal(g.lon, g.lat));
+    return { pts: pts.slice(0, -1), tags: e.tags };
+  };
+  // El Torreón's four corbelled corner turrets: [x, z, radius, bottom, top] (m above the tower's ground)
+  const turrets = [1460972037, 1460972038, 1460972039, 1460972040].map((id) => {
+    const { pts, tags } = ring(id);
+    return [...circleOf(pts), Number(tags.min_height), Number(tags.height)];
+  });
+  // the Igeldo lighthouse's round tower on the seaward end of the keeper's house
+  const lighthouseTower = circleOf(ring(1460977412).pts);
+  return { turrets, lighthouseTower };
+}
+
+// --- Montaña Suiza ----------------------------------------------------------------------------------------------------
+
+// Track kinds along the loop (data-funicular.js coaster.kind)
+const OPEN = 0, STATION = 1, TUNNEL = 2, BRIDGE = 3;
+
+// The OSM ways chained into one closed loop, starting where the station way starts. Each OSM way is drawn in the
+// direction of travel (the station way runs towards the north-eastern turn), so following them end to start gives
+// the ride: out of the station round the north-eastern turn, down the long south-eastern straight, over the boating
+// pond, round the south-western hairpin, north along the coastal wall, east along the cliff and through the tunnel
+// back into the station (clockwise seen from above).
+function coasterLoop() {
+  const seen = new Set();
+  const ways = [...loadLayer('osm_landmarks.json').elements, ...loadLayer('osm_streets.json').elements]
+    .filter((e) => e.type === 'way' && e.tags?.roller_coaster === 'track' && e.geometry && !seen.has(e.id) && seen.add(e.id));
+  const byFirst = new Map(ways.map((w) => [w.nodes[0], w]));
+  const first = ways.find((w) => w.tags['roller_coaster:track'] === 'station');
+  if (!first) throw new Error('coaster: no station way');
+  const pts = [], kinds = [];
+  let w = first;
+  for (let guard = 0; guard <= ways.length; guard++) {
+    const kind = w.tags.tunnel === 'yes' ? TUNNEL : w.tags.bridge === 'yes' ? BRIDGE
+      : w.tags['roller_coaster:track'] === 'station' ? STATION : OPEN;
+    const p = w.geometry.map((g) => lonLatToLocal(g.lon, g.lat));
+    // every way but the first starts on the previous one's last node; the segment from point i takes kinds[i]
+    for (let i = pts.length ? 1 : 0; i < p.length; i++) pts.push(p[i]);
+    for (let i = 0; i + 1 < p.length; i++) kinds[pts.length - p.length + i] = kind;
+    const next = byFirst.get(w.nodes[w.nodes.length - 1]);
+    if (!next) throw new Error(`coaster: way ${w.id} leads nowhere`);
+    if (next === first) {
+      pts.pop(); // the loop's last node is its first
+      return { pts, kinds, ways: guard + 1 };
+    }
+    w = next;
+  }
+  throw new Error('coaster: the track ways do not close into a loop');
+}
+
+// Closed centripetal Catmull-Rom through `pts`, resampled every `step` metres; each sample keeps the kind of the
+// segment it lies on
+function closedSpline(pts, step, kinds) {
+  const n = pts.length;
+  const P = (i) => pts[((i % n) + n) % n];
+  const dense = [], denseKind = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    const tj = (a, b) => Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])) || 1e-4;
+    const t1 = tj(p0, p1), t2 = t1 + tj(p1, p2), t3 = t2 + tj(p2, p3);
+    for (let k = 0; k < 20; k++) {
+      const t = t1 + ((t2 - t1) * k) / 20;
+      const out = [0, 0];
+      for (let c = 0; c < 2; c++) {
+        const a1 = ((t1 - t) / t1) * p0[c] + (t / t1) * p1[c];
+        const a2 = ((t2 - t) / (t2 - t1)) * p1[c] + ((t - t1) / (t2 - t1)) * p2[c];
+        const a3 = ((t3 - t) / (t3 - t2)) * p2[c] + ((t - t2) / (t3 - t2)) * p3[c];
+        const b1 = ((t2 - t) / t2) * a1 + (t / t2) * a2;
+        const b2 = ((t3 - t) / (t3 - t1)) * a2 + ((t - t1) / (t3 - t1)) * a3;
+        out[c] = ((t2 - t) / (t2 - t1)) * b1 + ((t - t1) / (t2 - t1)) * b2;
+      }
+      dense.push(out);
+      denseKind.push(kinds[i]);
+    }
+  }
+  dense.push(dense[0]);
+  denseKind.push(denseKind[0]);
+  let total = 0;
+  const cum = [0];
+  for (let i = 1; i < dense.length; i++) cum.push((total += Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1])));
+  const count = Math.round(total / step);
+  const out = [], kind = [];
+  let j = 0;
+  for (let k = 0; k < count; k++) {
+    const s = (k * total) / count;
+    while (cum[j + 1] < s) j++;
+    const f = (s - cum[j]) / (cum[j + 1] - cum[j] || 1);
+    out.push(r2(dense[j][0] + (dense[j + 1][0] - dense[j][0]) * f), r2(dense[j][1] + (dense[j + 1][1] - dense[j][1]) * f));
+    kind.push(denseKind[j]);
+  }
+  return { pts: out, kind: kind.join(''), length: total };
+}
+
+// --- Write ------------------------------------------------------------------------------------------------------------
+
+const routes = funicularRoutes();
+const parts = buildingParts();
+const loop = coasterLoop();
+const coaster = closedSpline(loop.pts, 1.5, loop.kinds);
+const lengths = routes.map((r) => {
+  let l = 0;
+  for (let k = 2; k < r.pts.length; k += 2) l += Math.hypot(r.pts[k] - r.pts[k - 2], r.pts[k + 1] - r.pts[k - 1]);
+  return l;
+});
+
+const data = {
+  funicular: routes,
+  turrets: parts.turrets,
+  lighthouseTower: parts.lighthouseTower,
+  // the loop every ~1.5 m in the direction of travel from the station, and per point the kind of track it is on
+  // (0 open, 1 station, 2 tunnel, 3 bridge)
+  coaster: { pts: coaster.pts, kind: coaster.kind }
+};
+const js = `// js/donostia/data-funicular.js — generated by tools/donostia/bake-funicular.mjs, do not edit.
+// Igeldo: funicular routes, Torreón turrets, lighthouse tower, Montaña Suiza centreline (local frame, metres).
+// © OpenStreetMap contributors (ODbL).
+${licenceComment('osm')}export const IGELDO = ${JSON.stringify(data)};
+`;
+fs.writeFileSync(OUT, js);
+log(`${path.relative(ROOT, OUT)}: ${(js.length / 1e3).toFixed(1)} kB; funicular routes ${lengths.map((l) => l.toFixed(0)).join(' / ')} m ` +
+  `(plan), ${routes.map((r) => r.bridges.filter(Boolean).length).join(' / ')} bridge spans; coaster ${loop.ways} ways, ` +
+  `${coaster.length.toFixed(0)} m (plan)`);

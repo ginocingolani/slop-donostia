@@ -20,7 +20,7 @@ import {
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
-import { cityUniforms } from './tsl-materials.js';
+import { cityUniforms } from './city-uniforms.js';
 
 // js/lighting.js
 // Physically-Based Atmospheric Sky (Preetham SkyMesh + Beer-Powder Clouds),
@@ -136,9 +136,11 @@ const TIME_PRESETS = {
 };
 
 class LightingSystem {
-  constructor(scene, renderer = null) {
+  // presets: same shape as TIME_PRESETS (another city's sun & sky)
+  constructor(scene, renderer = null, presets = TIME_PRESETS) {
     this.scene = scene;
     this.renderer = renderer;
+    this.presets = presets;
     this.activePresetId = 'golden';
 
     // Assign SunLight its node implementation for WebGPURenderer (Light.registerNode since r187; r186 used the library)
@@ -201,7 +203,7 @@ class LightingSystem {
     // Three.js r186 SunLight with automatic 2-Cascade Shadow Map (SunLightShadow + SunShadowNode)
     // Shines from its position vector toward the origin (no .target needed)
     this.sunLight = new SunLight(0xffca92, 5.8);
-    this.sunLight.position.copy(TIME_PRESETS.golden.sunDir);
+    this.sunLight.position.copy(this.presets.golden.sunDir);
     this.sunLight.castShadow = true;
     // 3072x3072 per cascade = 6144x3072 2-cascade shadow atlas (an 8192x4096 one cost ~20% fps and caused hitches),
     // 2048 where the device allows less. The near cascade spans ~0.35-80 m of the view at street level (see update)
@@ -226,7 +228,7 @@ class LightingSystem {
     // Sky-matched aerial perspective (replaces the flat FogExp2 colour): distant surfaces fade into the baked sky
     // radiance just above the horizon in their view direction (sun glow included), through an exponential haze layer
     // so helicopter / observatory views stay clearer than the horizon.
-    this.uFogDensity = uniform(TIME_PRESETS.golden.fogDensity);
+    this.uFogDensity = uniform(this.presets.golden.fogDensity);
     this.uFogHeight = uniform(900.0);
     if (this.envRenderTarget) this.scene.fogNode = this.createAerialFogNode();
   }
@@ -264,7 +266,7 @@ class LightingSystem {
   }
 
   applyPreset(presetId, force = false) {
-    const p = TIME_PRESETS[presetId] || TIME_PRESETS.golden;
+    const p = this.presets[presetId] || this.presets.golden;
     if (!force && this.activePresetId === p.id && this.envRenderTarget !== null) {
       return;
     }
@@ -318,4 +320,4 @@ class LightingSystem {
   }
 }
 
-export { LightingSystem };
+export { LightingSystem, TIME_PRESETS };

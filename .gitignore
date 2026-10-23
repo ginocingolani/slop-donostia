@@ -1,1 +1,4 @@
 .DS_Store
+
+# Donostia raw source cache (tools/donostia/fetch.sh)
+tools/donostia/raw/
