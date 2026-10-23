@@ -617,6 +617,11 @@ function bakeBuildings(dtm, districts) {
     ['c500_ERAIKINA.json', 0],
     ['c500_EraikinArinak.json', 1], ['c500_ESTALPEA.json', 1], ['c500_KIOSKOA.json', 1], ['c500_BEROTEGIA.json', 1]
   ];
+  // The light-building layers overlap: EraikinArinak repeats almost every ESTALPEA shed, BEROTEGIA greenhouse and
+  // KIOSKOA kiosk, and some ERAIKINA outlines, exactly or within a few centimetres. A 1 m raster of the outlines already
+  // emitted keeps each structure to one extrusion (two would z-fight).
+  const taken = new Uint8Array(W * H);
+  const repeats = new Map();
   let estimated = 0;
   for (const [file, kind] of sources) {
     for (const f of loadLayer(file).features) {
@@ -626,14 +631,21 @@ function bakeBuildings(dtm, districts) {
       if (b.maxX < CORE.minX || b.minX > CORE.maxX || b.maxZ < CORE.minZ || b.minZ > CORE.maxZ) continue;
       const hist = new Map();
       const ground = [];
-      let cells = 0;
+      let cells = 0, overlap = 0;
       scanRings(rings, CORE.minX, CORE.minZ, 1, W, H, (i, j) => {
         cells++;
+        if (taken[j * W + i]) overlap++;
         const id = ids[j * W + i];
         if (id >= 0) hist.set(id, (hist.get(id) || 0) + 1);
         const v = dtm.data[(oj + j) * dtm.w + oi + i];
         if (!Number.isNaN(v)) ground.push(v);
       });
+      // a light building lying (almost) wholly on one already emitted is the same structure drawn again, or a roof
+      // structure whose volume the extrusion under it already fills
+      if (kind === 1 && cells && overlap >= 0.9 * cells) {
+        repeats.set(file, (repeats.get(file) || 0) + 1);
+        continue;
+      }
       const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
       if (!ground.length) {
         const v = dtm.sample(cx, cz);
@@ -690,9 +702,12 @@ function bakeBuildings(dtm, districts) {
       if (dp && dp.street_eu && dp.number) rec.addr = `${dp.street_eu.replace(/ kalea$/, ' k.')} ${dp.number}${dp.bis || ''}`;
       if (dp && dp.built) rec.built = Number(dp.built.slice(0, 4));
       out.push(rec);
+      scanRings(rings, CORE.minX, CORE.minZ, 1, W, H, (i, j) => { taken[j * W + i] = 1; });
     }
   }
-  log(`buildings: ${out.length} (${estimated} without a b5m height)`);
+  const skipped = [...repeats].map(([file, n]) => `${n} ${file.replace(/^c500_|\.json$/g, '')}`).join(', ');
+  log(`buildings: ${out.length} (${estimated} without a b5m height); light buildings already drawn by an earlier ` +
+    `layer skipped: ${skipped || 'none'}`);
   return out;
 }
 
