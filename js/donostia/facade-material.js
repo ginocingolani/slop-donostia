@@ -238,12 +238,20 @@ export function createFacadeMaterial() {
   const bayIdx = floor(gx);
   const cu = fract(gx);
   const inBays = step(0.0, gx).mul(step(gx, bays)).mul(step(1.1, inner));
-  const lv = v.sub(groundH).div(floorH);
+  // A ground floor taller than a storey (a shop floor) is cut into whole cells of its own, one or (a mezzanine) two:
+  // the storeys' grid carried down would leave a second, clipped row of windows at the foot of the courtyard walls
+  // and low houses that have windows there. One no taller than a storey keeps the grid, hanging from its ceiling, and
+  // so do the miradores, which start on the ground floor's ceiling (their bottom edge's pixels sample just below it).
+  const groundCellH = select(groundH.greaterThan(floorH), groundH.div(max(floor(groundH.div(floorH).add(0.5)), 1.0)), floorH);
+  const cellH = select(v.lessThan(groundH).and(kMir.lessThan(0.5)), groundCellH, floorH);
+  const lv = v.sub(groundH).div(cellH);
   const storey = floor(lv);
   const cv = fract(lv);
   // Pixel footprints: u and v are linear across each quad, so every scaled coordinate's derivative follows from theirs
   const dU = max(fwidth(u), 0.00001), dV = max(fwidth(v), 0.00001);
-  const fw = vec2(dU.div(bayW), dV.div(floorH));
+  const fw = vec2(dU.div(bayW), dV.div(cellH));
+  // (the relief fades by the bays' & storeys' footprint on every floor: the ground floor's own cells are for its windows)
+  const gridFw = max(fw.x, dV.div(floorH));
   const mpp = max(max(dU, dV), 0.0005); // metres per pixel
   const aboveGround = step(0.0, v);
   const inGround = aboveGround.mul(step(v, groundH));
@@ -279,8 +287,8 @@ export function createFacadeMaterial() {
   // Round-headed windows of the churches
   const xm = cu.sub(0.5).mul(bayW);
   const rArch = ww.mul(bayW).mul(0.5);
-  const springM = head.mul(floorH).sub(rArch);
-  const archD = length(vec2(xm, max(cv.mul(floorH).sub(springM), 0.0))).sub(rArch);
+  const springM = head.mul(cellH).sub(rArch);
+  const archD = length(vec2(xm, max(cv.mul(cellH).sub(springM), 0.0))).sub(rArch);
   const archCov = mix(clamp(float(0.5).sub(archD.div(mpp)), 0.0, 1.0), float(1.0), smoothstep(0.25, 0.6, max(fw.x, fw.y)));
   // One street door per run, in a bay picked by the run
   const doorBay = floor(hash2D(vec2(runLen.mul(0.731), seed.mul(13.1))).mul(bays));
@@ -331,7 +339,7 @@ export function createFacadeMaterial() {
   const hasBalUp = step(mix(cellHashUp, colHash, sMod), balShare).mul(step(0.5, balType)).mul(step(-0.5, storey.add(1.0))).mul(step(storey.add(1.5), nUp))
     .mul(kFront).mul(inBays);
   const runBalUp = flag(FLAG.BALCONY_RUN).mul(is(storey, -1)).mul(kFront).mul(inBays);
-  const underSlab = max(balSpan.mul(hasBalUp), runBalUp).mul(smoothstep(0.45, 0.0, float(1.0).sub(cv).mul(floorH))).mul(step(v, storeyTop)).mul(aboveGround);
+  const underSlab = max(balSpan.mul(hasBalUp), runBalUp).mul(smoothstep(0.45, 0.0, float(1.0).sub(cv).mul(cellH))).mul(step(v, storeyTop)).mul(aboveGround);
 
   // --- Trim: cornices, string courses, window surrounds, quoins
   const trimCol = min(mix(wallBase.mul(1.12), vec3(0.78, 0.74, 0.66), 0.35), vec3(1.0));
@@ -385,7 +393,7 @@ export function createFacadeMaterial() {
   // control flow) is therefore built up front, in the main flow.
   const shared = [
     u, v, runLen, seed, seed2, floorH, groundH, storeyTop, shops, plaza, modernish, kFront, kRear, kBlank, kSolid, kMir,
-    sRom, sOld, sMod, sVil, sCon, sCiv, sLight, dU, dV, mpp, fw.x, fw.y, pier, bayW, cu, cv, storey, bayIdx, inBays,
+    sRom, sOld, sMod, sVil, sCon, sCiv, sLight, dU, dV, mpp, fw.x, fw.y, pier, bayW, cellH, cu, cv, storey, bayIdx, inBays,
     inUpper, inGround, aboveGround, isTop, nUp, fromTop, opening, cellId.x, salt.x, winZone, wx0, wx1, sill, head, inWY,
     win, isDoorBay, shutStyle, hasBal, balType, balX, balcony, underSlab, xm, ym, course, trimTint.x, isBrick, jointFade,
     fineFade, mottle, fresnel, skyRefl.x, litProb, roomSeed, wallBase.x, accent.x
@@ -460,7 +468,8 @@ export function createFacadeMaterial() {
       const mullion = filteredPulse(wuv.x, 0.485, 0.515, fwW.x).mul(max(max(sRom, sOld), max(sVil, sCiv)));
       const transom = filteredPulse(wuv.y, 0.75, 0.78, fwW.y).mul(max(sRom, sCiv));
       const sash = clamp(frameRect.add(mullion).add(transom), 0.0, 1.0);
-      const room = roomInterior(u.sub(pier), v.sub(groundH), wuv, cellId, bayW, floorH, roomSeed, litProb, fw, nW, fwW.x);
+      // (rooms as tall as their cell, so a ground-floor room lines up with its window)
+      const room = roomInterior(u.sub(pier), v.sub(groundH), wuv, cellId, bayW, cellH, roomSeed, litProb, fw, nW, fwW.x);
       const glass = mix(mix(room.xyz.mul(0.85), glassTint, 0.5), skyRefl, fresnel.mul(0.6).add(0.08));
       const slats = float(1.0).sub(filteredPulse(fract(v.div(0.05)), 0.0, 0.25, dV.div(0.05)).mul(0.25));
       const blindCol = mix(mix(accent, vec3(0.62, 0.55, 0.44), max(sRom, sOld)), vec3(0.7, 0.7, 0.68), sVil).mul(slats);
@@ -563,7 +572,7 @@ export function createFacadeMaterial() {
   // pass leaves, faded out with distance before it shrinks to sparkling pixels
   mat.normalNode = Fn(() => {
     const camDist = length(positionWorld.sub(cameraPosition));
-    const fade = float(1.0).sub(smoothstep(25.0, 220.0, camDist)).mul(float(1.0).sub(smoothstep(0.06, 0.2, max(fw.x, fw.y))));
+    const fade = float(1.0).sub(smoothstep(25.0, 220.0, camDist)).mul(float(1.0).sub(smoothstep(0.06, 0.2, gridFw)));
     return bumpNormal(reliefV.mul(fade));
   })();
 
