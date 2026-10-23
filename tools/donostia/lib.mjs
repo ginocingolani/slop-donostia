@@ -42,6 +42,37 @@ export function lonLatToLocal(lon, lat) {
   const [e, n] = lonLatToUTM(lon, lat);
   return [Math.round((e - E0) * 100) / 100, Math.round((N0 - n) * 100) / 100];
 }
+
+// Local frame -> geographic, by Newton's method on lonLatToUTM (exactly its inverse; three steps reach the micrometre)
+export function localToLonLat(x, z) {
+  const e = E0 + x, n = N0 - z, d = 1e-6;
+  let lon = -2, lat = 43.3;
+  for (let it = 0; it < 5; it++) {
+    const [e0, n0] = lonLatToUTM(lon, lat), [e1, n1] = lonLatToUTM(lon + d, lat), [e2, n2] = lonLatToUTM(lon, lat + d);
+    const a = (e1 - e0) / d, b = (e2 - e0) / d, c = (n1 - n0) / d, f = (n2 - n0) / d, det = a * f - b * c;
+    lon += (f * (e - e0) - b * (n - n0)) / det;
+    lat += (a * (n - n0) - c * (e - e0)) / det;
+  }
+  return [lon, lat];
+}
+
+// OpenStreetMap is fetched (queries/*.overpassql) and its street names & places kept (bake-streets.mjs) this far around
+// the core, so the radar has streets to show over the core's edges
+export const OSM_MARGIN = 900;
+export const OSM_EXTENT = {
+  minX: FRAME.core.minX - OSM_MARGIN, maxX: FRAME.core.maxX + OSM_MARGIN,
+  minZ: FRAME.core.minZ - OSM_MARGIN, maxZ: FRAME.core.maxZ + OSM_MARGIN
+};
+// OSM_EXTENT as an Overpass bbox "south,west,north,east", rounded outwards to 1e-4° (the UTM rectangle is a slightly
+// rotated quadrilateral in lon/lat, so its corners give the extremes). fetch.sh fills the queries' {{bbox}} with it.
+export function osmBBox() {
+  const { minX, maxX, minZ, maxZ } = OSM_EXTENT;
+  const corners = [[minX, minZ], [maxX, minZ], [minX, maxZ], [maxX, maxZ]].map(([x, z]) => localToLonLat(x, z));
+  const lons = corners.map((c) => c[0]), lats = corners.map((c) => c[1]);
+  const down = (v) => (Math.floor(v * 1e4) / 1e4).toFixed(4), up = (v) => (Math.ceil(v * 1e4) / 1e4).toFixed(4);
+  return [down(Math.min(...lats)), down(Math.min(...lons)), up(Math.max(...lats)), up(Math.max(...lons))].join(',');
+}
+
 export const log = (...args) => console.log('[donostia]', ...args);
 
 // `--preview <dir>` on the command line: the folder (resolved), or null without the flag. Fails at startup when the

@@ -8,13 +8,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HERE, FRAME, loadLayer, lonLatToLocal, osmPolygons, simplifyRing, ringArea, pointInRing, log } from './lib.mjs';
+import {
+  HERE, FRAME, OSM_EXTENT, loadLayer, lonLatToLocal, osmPolygons, simplifyRing, ringArea, pointInRing, log
+} from './lib.mjs';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'data-streets.js');
 const CORE = FRAME.core;
-// Streets and places beyond the core are kept for the radar's view over the edges, up to here
-const KEEP = { minX: CORE.minX - 900, maxX: CORE.maxX + 900, minZ: CORE.minZ - 900, maxZ: CORE.maxZ + 900 };
+// Streets and places beyond the core are kept for the radar's view over the edges, as far as the OSM queries reach
+const KEEP = OSM_EXTENT;
 
 // Road classes, drawn and ranked by the HUD: 0 paths & steps, 1 pedestrian streets & lanes, 2 residential streets,
 // 3 tertiary, 4 secondary, 5 primary & motorways

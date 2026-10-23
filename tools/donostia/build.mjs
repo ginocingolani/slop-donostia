@@ -733,9 +733,28 @@ const LANDMARKS = [
   ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607]
 ];
 
-function bakeLandmarks(buildings) {
+// Each landmark's OSM object, looked up before anything is baked: one missing from the snapshot (a query edited without
+// re-fetching, or the object deleted or split upstream) fails the bake instead of silently dropping its model and
+// bringing the plain extrusion back
+function landmarkObjects() {
   const osm = [...loadLayer('osm_places.json').elements, ...loadLayer('osm_landmarks.json').elements];
   const byKey = new Map(osm.map((e) => [`${e.type}/${e.id}`, e]));
+  const found = [], missing = [];
+  for (const [id, type, osmId] of LANDMARKS) {
+    const e = byKey.get(`${type}/${osmId}`);
+    const ring = e && type !== 'node' ? osmPolygons(e)[0]?.[0] : null;
+    if (!e) missing.push(`${id}: OSM ${type}/${osmId} is missing`);
+    else if (type !== 'node' && !ring) missing.push(`${id}: OSM ${type}/${osmId} has no closed outline`);
+    else found.push({ id, type, osmId, e, ring });
+  }
+  if (missing.length) {
+    throw new Error(`landmarks not in tools/donostia/data/osm_*.json (re-fetch with fetch.sh --refresh-osm, or update ` +
+      `LANDMARKS):\n  ${missing.join('\n  ')}`);
+  }
+  return found;
+}
+
+function bakeLandmarks(objects, buildings) {
   const sites = [];
   // 1 m mask of each landmark footprint; a 1:500 building belongs to the landmark when half its area lies inside, or
   // when it covers half the footprint (the municipal map draws the whole Kursaal as one outline, OSM as three)
@@ -753,16 +772,12 @@ function bakeLandmarks(buildings) {
     });
     return members;
   };
-  for (const [id, type, osmId] of LANDMARKS) {
-    const e = byKey.get(`${type}/${osmId}`);
-    if (!e) { log(`landmark ${id}: OSM ${type}/${osmId} missing`); continue; }
+  for (const { id, type, osmId, e, ring } of objects) {
     const t = e.tags || {};
     const site = { id, name: t.name, name_es: t['name:es'] || null, osm: `${type}/${osmId}` };
     if (type === 'node') {
       site.at = lonLatToLocal(e.lon, e.lat);
     } else {
-      const ring = osmPolygons(e)[0]?.[0];
-      if (!ring) { log(`landmark ${id}: OSM ${type}/${osmId} has no closed outline`); continue; }
       site.footprint = ring.map(r2);
       const b = ringBounds(ring);
       site.at = [r2((b.minX + b.maxX) / 2), r2((b.minZ + b.maxZ) / 2)];
@@ -850,6 +865,7 @@ function buildingPreview(buildings, file) {
 
 // --- main --------------------------------------------------------------------------------------------------------------
 
+const landmarkObjs = landmarkObjects();
 const dtm = mosaicDTM();
 lap('DTM mosaic 1 m');
 const water = waterMask(dtm);
@@ -875,7 +891,7 @@ const heightAt = (x, z) => {
 const districts = loadDistricts();
 const buildings = bakeBuildings(dtm, districts);
 lap('buildings');
-const landmarks = bakeLandmarks(buildings);
+const landmarks = bakeLandmarks(landmarkObjs, buildings);
 const teleports = bakeTeleports(heightAt);
 
 const terrainMeta = (g, file) => ({ url: `data/donostia/${file}`, x0: g.x0, z0: g.z0, w: g.w, h: g.h, res: g.res });
