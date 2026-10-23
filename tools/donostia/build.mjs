@@ -3,6 +3,7 @@
 // Bakes the Donostia runtime data from tools/donostia/raw (fetch.sh) and tools/donostia/data (extract.py):
 //   data/donostia/terrain-core.png     2 m heights over the core extent (R/G = 16-bit cm above -100 m, B = water 0..255)
 //   data/donostia/terrain-context.png  8 m heights over the whole terrain-tile union (horizon hills & sea floor)
+//   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
 //   js/donostia/geodata.js             frame, terrain metadata, buildings, landmark sites & teleports
 // --preview writes debug images (hillshade, building heights) into the given folder.
 
@@ -52,29 +53,156 @@ function mosaicDTM() {
 
 // --- 2. Water: the LiDAR terrain writes the sea surface as exactly 0 m; flood it from the open (northern) edge -----------
 
+// Water mask values (1 m cells). The survey flew at low tide: the river mouth below the Zurriola bridge and the lower
+// intertidal sand came out as measured bed below 0 m rather than as a 0 m water surface, so they keep their measured
+// heights (BED). Ponds & fountains above sea level keep their own surface: their cells sink POND_SINK below it and
+// js/donostia/water.js lays the surface back on top.
+const WATER = { land: 0, sea: 1, river: 2, bed: 3, pond: 4 };
+const POND_SINK = 0.4; // m, mirrored in js/donostia/water.js
+const POND_LEVEL = 1.0; // m: OSM water whose median surveyed height is above this is a pond, not the tidal river
+
 function waterMask(dtm) {
   const { w, h, data } = dtm;
   const water = new Uint8Array(w * h);
   const stack = new Int32Array(w * h);
   let top = 0;
-  const open = (k) => water[k] === 0 && (data[k] === 0 || Number.isNaN(data[k]));
-  for (let i = 0; i < w; i++) if (open(i)) { water[i] = 1; stack[top++] = i; }
-  while (top) {
-    const k = stack[--top], i = k % w;
-    const next = [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w];
-    for (const n of next) {
-      if (n >= 0 && n < w * h && open(n)) { water[n] = 1; stack[top++] = n; }
+  const flood = (open, value) => {
+    while (top) {
+      const k = stack[--top], i = k % w;
+      const next = [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w];
+      for (const n of next) {
+        if (n >= 0 && n < w * h && open(n)) { water[n] = value; stack[top++] = n; }
+      }
     }
-  }
+  };
+  const offshore = unsurveyedSea(dtm);
+  const openSea = (k) => water[k] === WATER.land && (data[k] === 0 || (Number.isNaN(data[k]) && offshore(k)));
+  for (let i = 0; i < w; i++) if (openSea(i)) { water[i] = WATER.sea; stack[top++] = i; }
+  flood(openSea, WATER.sea);
+
   // Rivers, ponds & docks mapped in OSM (the Urumea surface is not always exactly 0 in the terrain)
   const osm = loadLayer('osm_places.json').elements;
+  let ponds = 0;
   for (const e of osm) {
     const t = e.tags || {};
     const isWater = t.natural === 'water' || t.waterway === 'riverbank' || t.water;
     if (!isWater || t.leisure === 'swimming_pool') continue;
-    for (const rings of osmPolygons(e)) scanRings(rings, dtm.x0, dtm.z0, 1, w, h, (i, j) => { water[j * w + i] = 2; });
+    for (const rings of osmPolygons(e)) {
+      const cells = [], heights = [];
+      scanRings(rings, dtm.x0, dtm.z0, 1, w, h, (i, j) => {
+        const k = j * w + i;
+        cells.push(k);
+        if (!Number.isNaN(data[k])) heights.push(data[k]);
+      });
+      heights.sort((a, b) => a - b);
+      const median = heights.length ? heights[heights.length >> 1] : 0;
+      // (a stream up a valley counts as a pond too: its surface follows the survey down the slope)
+      const pond = median > POND_LEVEL;
+      if (pond) ponds++;
+      else if (heights.length > 2000) log(`water: ${t.name || `${e.type}/${e.id}`} at sea level (median ${median.toFixed(2)} m)`);
+      for (const k of cells) if (water[k] !== WATER.sea) water[k] = pond ? WATER.pond : WATER.river;
+    }
   }
+
+  // Bed surveyed below sea level next to the sea & the river is under water at mean sea level
+  const below = (k) => water[k] === WATER.land && data[k] < -0.02;
+  for (let k = 0; k < w * h; k++) {
+    if (!below(k)) continue;
+    const i = k % w;
+    const wet = (n) => water[n] === WATER.sea || water[n] === WATER.river;
+    if ((i > 0 && wet(k - 1)) || (i < w - 1 && wet(k + 1)) || (k >= w && wet(k - w)) || (k + w < w * h && wet(k + w))) {
+      water[k] = WATER.bed;
+      stack[top++] = k;
+    }
+  }
+  flood(below, WATER.bed);
+  let bed = 0;
+  for (let k = 0; k < w * h; k++) if (water[k] === WATER.bed) bed++;
+  log(`water: ${ponds} ponds above sea level, ${(bed / 1e6).toFixed(2)} km² of bed surveyed below sea level`);
+  carveBridges(dtm, water);
   return water;
+}
+
+// Cells outside the surveyed tiles are open sea only when they lie nearer the isobaths than the surveyed land: the
+// missing land tile south-west of Igeldo touches the coast at one corner and would otherwise flood into an inland sea.
+// Returns a test on 1 m DTM cell indices, decided on an 8 m lattice.
+function unsurveyedSea(dtm) {
+  const s = 8, w = Math.round(dtm.w / s), h = Math.round(dtm.h / s);
+  const land = new Uint8Array(w * h), iso = new Uint8Array(w * h);
+  for (let j = 0; j < dtm.h; j += 2) {
+    for (let i = 0; i < dtm.w; i += 2) {
+      if (dtm.data[j * dtm.w + i] > 0.5) land[Math.min(h - 1, (j / s) | 0) * w + Math.min(w - 1, (i / s) | 0)] = 1;
+    }
+  }
+  for (const f of loadLayer(path.join(RAW, 'bathy', 'isobaths.json')).features) {
+    for (const line of f.g) {
+      for (let k = 0; k < line.length; k += 2) {
+        const i = Math.floor((line[k] - dtm.x0) / s), j = Math.floor((line[k + 1] - dtm.z0) / s);
+        if (i >= 0 && j >= 0 && i < w && j < h) iso[j * w + i] = 1;
+      }
+    }
+  }
+  const dIso = chamfer(w, h, s, (k) => iso[k] === 1), dLand = chamfer(w, h, s, (k) => land[k] === 1);
+  return (k) => {
+    const i = Math.min(w - 1, ((k % dtm.w) / s) | 0), j = Math.min(h - 1, ((k / dtm.w / s) | 0));
+    return dIso[j * w + i] < dLand[j * w + i];
+  };
+}
+
+// Deck width (m) of an OSM bridge way: width tag, else lanes, else a typical width for its kind. Mirrored in
+// tools/donostia/bake-bridges.mjs.
+function deckWidth(t) {
+  const width = Number.parseFloat(t.width);
+  if (Number.isFinite(width) && width > 0.5) return width;
+  if (t.railway) return 4.6;
+  const lanes = Number.parseInt(t.lanes, 10);
+  const lane = /^motorway/.test(t.highway) ? 3.6 : 3.2;
+  if (Number.isFinite(lanes) && lanes > 0) return lanes * lane + 0.6;
+  return {
+    motorway: 11, motorway_link: 7, trunk: 10, primary: 9, secondary: 8, tertiary: 7, residential: 6.5, unclassified: 6,
+    service: 4.5, cycleway: 2.5, footway: 3, pedestrian: 6, path: 2.5, steps: 2.5
+  }[t.highway] || 4;
+}
+
+// Bridge decks the terrain kept as ground across the water: carve the cells under each OSM bridge way's span over the
+// water down to the river bed. The first & last 2 m of the span stay, so the quay walls under the abutments survive.
+function carveBridges(dtm, water) {
+  const { w, h } = dtm;
+  const ways = loadLayer('osm_streets.json').elements.filter((e) => {
+    const t = e.tags || {};
+    return e.type === 'way' && e.geometry && e.geometry.length >= 2 && t.bridge && t.bridge !== 'no' &&
+      (t.highway || t.railway) && t.area !== 'yes';
+  });
+  const cell = (x, z) => {
+    const i = Math.floor(x - dtm.x0), j = Math.floor(z - dtm.z0);
+    return i < 0 || j < 0 || i >= w || j >= h ? -1 : j * w + i;
+  };
+  const isWet = (k) => k >= 0 && water[k] >= WATER.sea && water[k] <= WATER.bed;
+  let carved = 0, spans = 0;
+  for (const e of ways) {
+    const pts = e.geometry.map((p) => lonLatToLocal(p.lon, p.lat));
+    const samples = [];
+    for (let s = 1; s < pts.length; s++) {
+      const [ax, az] = pts[s - 1], [bx, bz] = pts[s];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-6) continue;
+      const tx = (bx - ax) / len, tz = (bz - az) / len;
+      for (let d = 0; d < len; d += 1) samples.push([ax + tx * d, az + tz * d, -tz, tx]);
+    }
+    let a = -1, b = -1;
+    samples.forEach(([x, z], q) => { if (isWet(cell(x, z))) { if (a < 0) a = q; b = q; } });
+    if (a < 0) continue;
+    spans++;
+    const half = deckWidth(e.tags) / 2;
+    for (let q = a + 2; q <= b - 2; q++) {
+      const [x, z, nx, nz] = samples[q];
+      for (let o = -half; o <= half; o += 0.5) {
+        const k = cell(x + nx * o, z + nz * o);
+        if (k >= 0 && (water[k] === WATER.land || water[k] === WATER.pond)) { water[k] = WATER.river; carved++; }
+      }
+    }
+  }
+  log(`bridges: ${spans} OSM bridge ways cross the water, ${carved} m² of deck kept as ground carved to the river bed`);
 }
 
 // OSM way / multipolygon relation -> [[outer, ...holes], ...] local flat rings (good enough for rasterising)
@@ -101,7 +229,8 @@ function bathymetry(dtm, water) {
       for (let b = 0; b < s; b++) {
         for (let a = 0; a < s; a++) {
           const k = (j * s + b) * dtm.w + i * s + a;
-          if (water[k]) sea++;
+          // the surveyed bed below sea level & the ponds' own levels count as known heights
+          if (water[k] === WATER.sea || water[k] === WATER.river) sea++;
           else if (!Number.isNaN(dtm.data[k])) { sum += dtm.data[k]; n++; }
         }
       }
@@ -185,52 +314,258 @@ function harmonicFill(grid, fixed) {
 // --- 4. Terrain grids --------------------------------------------------------------------------------------------------
 
 // Down-samples the 1 m terrain into res-metre cells over ext: land cells average their land samples, water cells take
-// the sea floor (never above -0.3 m, rivers -1.5 m), cells without any data are filled from their neighbours.
+// the sea floor (never above -0.3 m), river cells a bed 1.2 m deep at the banks and up to 3.5 m mid-stream, surveyed bed
+// & ponds keep their heights (ponds sunk by POND_SINK), cells without any data are filled from their neighbours.
+// kind: the cell's dominant WATER value (0 on land).
 function terrainGrid(dtm, water, floor, ext, res) {
   const grid = Grid.over(ext, res);
   const wet = new Uint8Array(grid.w * grid.h);
+  const kind = new Uint8Array(grid.w * grid.h);
   const oi = Math.round(ext.minX - dtm.x0), oj = Math.round(ext.minZ - dtm.z0);
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
-      let sum = 0, n = 0, sea = 0, river = 0;
+      let sum = 0, n = 0, sea = 0, river = 0, bed = 0, pond = 0;
       for (let b = 0; b < res; b++) {
         for (let a = 0; a < res; a++) {
           const k = (oj + j * res + b) * dtm.w + oi + i * res + a;
-          if (water[k] === 1) sea++;
-          else if (water[k] === 2) river++;
-          else if (!Number.isNaN(dtm.data[k])) { sum += dtm.data[k]; n++; }
+          const wk = water[k];
+          if (wk === WATER.sea) sea++;
+          else if (wk === WATER.river) river++;
+          else if (!Number.isNaN(dtm.data[k])) {
+            sum += wk === WATER.pond ? dtm.data[k] - POND_SINK : dtm.data[k];
+            n++;
+            if (wk === WATER.bed) bed++;
+            else if (wk === WATER.pond) pond++;
+          }
         }
       }
       const cell = res * res, k = j * grid.w + i;
-      wet[k] = Math.round((255 * (sea + river)) / cell);
+      wet[k] = Math.round((255 * (sea + river + bed + pond)) / cell);
+      if (wet[k] > 127) {
+        const top = Math.max(sea, river, bed, pond);
+        kind[k] = top === river ? WATER.river : top === sea ? WATER.sea : top === bed ? WATER.bed : WATER.pond;
+      }
       if (sea + river > n) {
         const x = ext.minX + (i + 0.5) * res, z = ext.minZ + (j + 0.5) * res;
         const f = floor.sample(x, z);
-        grid.data[k] = river > sea ? Math.min(-1.5, Number.isFinite(f) ? f : -1.5) : Math.min(-0.3, Number.isFinite(f) ? f : -5);
+        grid.data[k] = river > sea ? Math.min(-1.2, Number.isFinite(f) ? f : -1.2) : Math.min(-0.3, Number.isFinite(f) ? f : -5);
       } else if (n) grid.data[k] = sum / n;
     }
   }
-  // Holes (outside the downloaded tiles but not sea): grow the known heights inwards
-  for (let pass = 0; pass < 4096; pass++) {
-    let holes = 0;
-    const next = grid.data.slice();
+  // River beds deepen away from the banks (the harmonic sea floor has no isobaths up the Urumea)
+  const toBank = chamfer(grid.w, grid.h, res, (k) => kind[k] !== WATER.river);
+  for (let k = 0; k < kind.length; k++) {
+    if (kind[k] === WATER.river) grid.data[k] = Math.min(grid.data[k], -1.2 - Math.min(2.3, 0.06 * toBank[k]));
+  }
+  // Holes (outside the downloaded tiles but not sea): a smooth membrane between the known heights, roughened with
+  // rolling hills that fade in away from its edges (growing the edges inwards left long straight streaks)
+  const known = new Uint8Array(grid.data.length);
+  let holes = 0;
+  for (let k = 0; k < known.length; k++) if (Number.isNaN(grid.data[k])) holes++; else known[k] = 1;
+  if (holes) {
+    harmonicFill(grid, known);
+    const edge = chamfer(grid.w, grid.h, res, (k) => known[k] === 1);
     for (let j = 0; j < grid.h; j++) for (let i = 0; i < grid.w; i++) {
       const k = j * grid.w + i;
-      if (!Number.isNaN(grid.data[k])) continue;
-      let sum = 0, n = 0;
-      for (const [a, b] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-        const ii = i + a, jj = j + b;
-        if (ii < 0 || jj < 0 || ii >= grid.w || jj >= grid.h) continue;
-        const v = grid.data[jj * grid.w + ii];
-        if (!Number.isNaN(v)) { sum += v; n++; }
-      }
-      if (n) next[k] = sum / n;
-      else holes++;
+      if (known[k]) continue;
+      const x = ext.minX + (i + 0.5) * res, z = ext.minZ + (j + 0.5) * res;
+      const fade = Math.min(1, edge[k] / 400);
+      grid.data[k] = Math.max(grid.data[k] + fade * fade * (3 - 2 * fade) * 110 * (hills(x, z) - 0.5), 1);
     }
-    grid.data = next;
-    if (!holes) break;
   }
-  return { grid, wet };
+  return { grid, wet, kind };
+}
+
+// Deterministic fractal value noise (about 0..1, mean 0.5) for the unsurveyed hills: quintic fades and a rotation per
+// octave so the lattice does not show in the hillshade
+function hills(x, z) {
+  const hash = (i, j) => {
+    let t = Math.imul(i, 374761393) ^ Math.imul(j, 668265263);
+    t = Math.imul(t ^ (t >>> 13), 1274126177);
+    return ((t ^ (t >>> 16)) >>> 0) / 4294967296;
+  };
+  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const value = (u, v) => {
+    const i = Math.floor(u), j = Math.floor(v), su = fade(u - i), sv = fade(v - j);
+    const a = hash(i, j), b = hash(i + 1, j), c = hash(i, j + 1), d = hash(i + 1, j + 1);
+    return (a + (b - a) * su) * (1 - sv) + (c + (d - c) * su) * sv;
+  };
+  let sum = 0, amp = 0.5, f = 1 / 1300, u = x, v = z;
+  for (let o = 0; o < 5; o++) {
+    sum += amp * value(u * f + 17.3 * o, v * f - 9.1 * o);
+    [u, v] = [0.8 * u - 0.6 * v, 0.6 * u + 0.8 * v];
+    amp *= 0.5;
+    f *= 2.03;
+  }
+  return sum / 0.97;
+}
+
+// Two-pass chamfer distance (m) on a w x h grid of res-metre cells to the nearest cell where isTarget(k)
+function chamfer(w, h, res, isTarget) {
+  const d = new Float32Array(w * h);
+  for (let k = 0; k < d.length; k++) d[k] = isTarget(k) ? 0 : 1e9;
+  const a = res, b = res * Math.SQRT2;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const k = j * w + i;
+    let v = d[k];
+    if (i > 0) v = Math.min(v, d[k - 1] + a);
+    if (j > 0) {
+      v = Math.min(v, d[k - w] + a);
+      if (i > 0) v = Math.min(v, d[k - w - 1] + b);
+      if (i < w - 1) v = Math.min(v, d[k - w + 1] + b);
+    }
+    d[k] = v;
+  }
+  for (let j = h - 1; j >= 0; j--) for (let i = w - 1; i >= 0; i--) {
+    const k = j * w + i;
+    let v = d[k];
+    if (i < w - 1) v = Math.min(v, d[k + 1] + a);
+    if (j < h - 1) {
+      v = Math.min(v, d[k + w] + a);
+      if (i < w - 1) v = Math.min(v, d[k + w + 1] + b);
+      if (i > 0) v = Math.min(v, d[k + w - 1] + b);
+    }
+    d[k] = v;
+  }
+  return d;
+}
+
+// --- 4b. Water fields for js/donostia/water.js ------------------------------------------------------------------------
+
+// data/donostia/water.png on the context grid (same x0, z0, w, h, res as terrain-context.png), RGBA:
+//   R  exposure to the Biscay swell (0 sheltered harbour .. 255 open sea): the share of the W-NW-N-NE sector that is
+//      open water for 4 km through gaps wider than SWELL.gap, blurred so a little swell bends round the headlands
+//   G  river (0 sea .. 255 river or pond): grows with the distance from the open sea through the water
+//   B,A flow towards the sea (x, z), 128 = still, 127 = 1 m/s
+// Land texels take their neighbours' water values so bilinear sampling along the shore stays clean.
+// azimuths (° clockwise from north) the swell arrives from, how far a ray looks for land, the open water a ray keeps
+// clear of after its first `skip` metres before it counts in full (m)
+const SWELL = { from: 285, to: 25, reach: 4000, gap: 150, skip: 200 };
+
+function waterFields(ctx, file) {
+  const { grid, wet, kind } = ctx;
+  const { w, h, res } = grid;
+  const isWater = (k) => wet[k] > 127;
+  const land = chamfer(w, h, res, (k) => !isWater(k));
+
+  // Exposure: rays towards the swell sector, sphere-traced through the distance-to-land field. A ray that reaches the
+  // open sea only counts in full if it never squeezes between land closer than SWELL.gap: La Concha's swell has to
+  // come in past Santa Klara through gaps a few hundred metres wide and arrives much weakened.
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  const exposure = new Float32Array(w * h);
+  const ray = (i, j, dx, dz) => {
+    let t = res, narrowest = Infinity;
+    while (t < SWELL.reach) {
+      const ii = Math.floor(i + 0.5 + (dx * t) / res), jj = Math.floor(j + 0.5 + (dz * t) / res);
+      if (ii < 0 || jj < 0 || ii >= w || jj >= h) break; // beyond the grid: open sea
+      const d = land[jj * w + ii];
+      if (d === 0) return 0;
+      if (t > SWELL.skip) narrowest = Math.min(narrowest, d);
+      t += Math.max(res, Math.min(d - res, 200));
+    }
+    return smooth(0, SWELL.gap, narrowest);
+  };
+  const mid = (((SWELL.from + SWELL.to + 360) / 2) % 360) * Math.PI / 180;
+  const sector = [];
+  for (let az = SWELL.from; az <= SWELL.to + 360; az += 5) {
+    const a = ((az % 360) * Math.PI) / 180;
+    sector.push([Math.sin(a), -Math.cos(a), 0.35 + Math.cos(a - mid) ** 2]);
+  }
+  const wsum = sector.reduce((s, d) => s + d[2], 0);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const k = j * w + i;
+    if (!isWater(k)) continue;
+    let open = 0;
+    for (const [dx, dz, wt] of sector) open += wt * ray(i, j, dx, dz);
+    exposure[k] = open / wsum;
+  }
+  blurWater(exposure, w, h, isWater, 6);
+
+  // River: geodesic distance from the open sea through the water, by chamfer sweeps restricted to the water and repeated
+  // until nothing changes (each meander of the Urumea costs a pair of sweeps)
+  const fromSea = new Float32Array(w * h).fill(1e9);
+  for (let k = 0; k < fromSea.length; k++) if (kind[k] === WATER.sea && land[k] > 3 * res) fromSea[k] = 0;
+  const a = res, b = res * Math.SQRT2;
+  for (let pass = 0, changed = true; changed && pass < 64; pass++) {
+    changed = false;
+    const relax = (k, v) => { if (v < fromSea[k] - 1e-3) { fromSea[k] = v; changed = true; } };
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) {
+      const k = j * w + i;
+      if (isWater(k)) relax(k, Math.min(fromSea[k - 1] + a, fromSea[k - w] + a, fromSea[k - w - 1] + b, fromSea[k - w + 1] + b));
+    }
+    for (let j = h - 2; j > 0; j--) for (let i = w - 2; i > 0; i--) {
+      const k = j * w + i;
+      if (isWater(k)) relax(k, Math.min(fromSea[k + 1] + a, fromSea[k + w] + a, fromSea[k + w + 1] + b, fromSea[k + w - 1] + b));
+    }
+  }
+  const river = new Float32Array(w * h), fx = new Float32Array(w * h), fz = new Float32Array(w * h);
+  for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) {
+    const k = j * w + i;
+    if (!isWater(k)) continue;
+    const d = fromSea[k];
+    if (d >= 1e8) { river[k] = 1; continue; } // ponds: still water
+    river[k] = smooth(60, 320, d);
+    // downhill in distance-from-sea is seaward; one-sided where a neighbour is land
+    const at = (n) => (isWater(n) && fromSea[n] < 1e8 ? fromSea[n] : d);
+    let gx = (at(k + 1) - at(k - 1)) / (2 * res), gz = (at(k + w) - at(k - w)) / (2 * res);
+    const len = Math.hypot(gx, gz);
+    if (len > 1e-6) { gx /= len; gz /= len; }
+    const speed = 0.55 * smooth(20, 200, d); // tidal Urumea: ~0.5 m/s ebb through the city, slack in the bay
+    fx[k] = -gx * speed;
+    fz[k] = -gz * speed;
+  }
+  blurWater(river, w, h, isWater, 2);
+  blurWater(fx, w, h, isWater, 3);
+  blurWater(fz, w, h, isWater, 3);
+
+  // Shore texels borrow their water neighbours' values (a few rings deep) so bilinear sampling never pulls land zeros in
+  const fields = [exposure, river, fx, fz];
+  const known = new Uint8Array(w * h);
+  for (let k = 0; k < known.length; k++) known[k] = isWater(k) ? 1 : 0;
+  for (let ring = 0; ring < 4; ring++) {
+    const add = [];
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) {
+      const k = j * w + i;
+      if (known[k]) continue;
+      const nb = [k - 1, k + 1, k - w, k + w].filter((n) => known[n]);
+      if (nb.length) add.push([k, nb]);
+    }
+    for (const [k, nb] of add) {
+      for (const f of fields) f[k] = nb.reduce((s, n) => s + f[n], 0) / nb.length;
+      known[k] = 1;
+    }
+  }
+
+  const px = new Uint8Array(w * h * 4);
+  const u8 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  for (let k = 0; k < w * h; k++) {
+    px[4 * k] = u8(255 * exposure[k]);
+    px[4 * k + 1] = u8(255 * river[k]);
+    px[4 * k + 2] = u8(128 + 127 * fx[k]);
+    px[4 * k + 3] = u8(128 + 127 * fz[k]);
+  }
+  const out = encodePNG(px, w, h, 4);
+  fs.writeFileSync(file, out);
+  log(`${path.relative(ROOT, file)}: ${w}x${h} @ ${res} m, ${(out.length / 1e6).toFixed(2)} MB`);
+  return { exposure, river };
+}
+
+// Box blur (3x3, repeated) of a field over the water cells only
+function blurWater(f, w, h, isWater, passes) {
+  const tmp = new Float32Array(f.length);
+  for (let p = 0; p < passes; p++) {
+    tmp.set(f);
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) {
+      const k = j * w + i;
+      if (!isWater(k)) continue;
+      let s = 0, n = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) {
+        const q = k + b * w + a;
+        if (isWater(q)) { s += tmp[q]; n++; }
+      }
+      f[k] = s / n;
+    }
+  }
 }
 
 // Ground classes (B channel of the terrain images), painted in this order so later layers win
@@ -469,6 +804,20 @@ function hillshade(grid, wet, file) {
   fs.writeFileSync(file, encodePNG(px, w, h, 3));
 }
 
+// Swell exposure in red, river in green over the water (land grey)
+function waterPreview(ctx, fields, file) {
+  const { w, h } = ctx.grid;
+  const px = new Uint8Array(w * h * 3);
+  for (let k = 0; k < w * h; k++) {
+    if (ctx.wet[k] > 127) {
+      px[3 * k] = 255 * fields.exposure[k];
+      px[3 * k + 1] = 255 * fields.river[k];
+      px[3 * k + 2] = 90;
+    } else px.fill(60, 3 * k, 3 * k + 3);
+  }
+  fs.writeFileSync(file, encodePNG(px, w, h, 3));
+}
+
 function buildingPreview(buildings, file) {
   const res = 1, w = (CORE.maxX - CORE.minX) / res, h = (CORE.maxZ - CORE.minZ) / res;
   const px = new Uint8Array(w * h * 3).fill(24);
@@ -498,6 +847,8 @@ const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)), path.join(OUT_DATA, 'terrain-context.png'));
+const fields = waterFields(context, path.join(OUT_DATA, 'water.png'));
+lap('water fields');
 
 const heightAt = (x, z) => {
   const inside = x > CORE.minX && x < CORE.maxX && z > CORE.minZ && z < CORE.maxZ;
@@ -537,6 +888,7 @@ if (PREVIEW) {
   hillshade(core.grid, core.wet, path.join(PREVIEW, 'core-hillshade.png'));
   hillshade(context.grid, context.wet, path.join(PREVIEW, 'context-hillshade.png'));
   buildingPreview(buildings, path.join(PREVIEW, 'buildings.png'));
+  waterPreview(context, fields, path.join(PREVIEW, 'water-fields.png'));
   log(`previews in ${PREVIEW}`);
 }
 lap('done');
