@@ -29,6 +29,10 @@ const LOD_MID = 300; // m: cards along the branches within; the far trees beyond
 const LOD_HYSTERESIS = 6; // m, between near & mid only (the far shader can't see the history)
 const FAR_END = 3400; // m: the far trees shrink away before this
 const REPICK = 3; // m the camera moves before the levels are picked again
+// m the camera moves before the far trees are refilled: the far lists hold every tree that can turn far meanwhile
+// (from LOD_MID - RECULL out, the shader folding away those still mid), the shadow reach has SHADOW_MARGIN to spare
+// and VIEW_MARGIN covers the frustum's shift (30 m sideways is under 6 degrees at the mid level's 300 m)
+const RECULL = 30;
 const CELL = 64; // m, cells searched for trees in reach
 const BILLBOARD_START = 900; // m: beyond this a crown spans a few pixels and the far trees are billboards
 const VIEW_MARGIN = THREE.MathUtils.degToRad(10); // the far trees are culled to a frustum this much wider on every side
@@ -291,7 +295,7 @@ export async function buildVegetation(GEO, terrain) {
   // The far trees in view and those in shadow range, packed at the front of their instance buffers
   const cullCamera = new THREE.PerspectiveCamera();
   const frustum = new THREE.Frustum(), bounds = new THREE.Box3(), projScreen = new THREE.Matrix4();
-  const lastCull = { dir: new THREE.Vector3(), fov: 0, aspect: 0, reach: -1 };
+  const lastCull = { pos: new THREE.Vector3(Infinity, 0, 0), dir: new THREE.Vector3(), fov: 0, aspect: 0, reach: -1 };
   let billboardStart = BILLBOARD_START;
   // (a quality knob: the distance where far trees turn into billboards; Infinity keeps the cards; refills next frame)
   group.userData.setBillboardStart = (d) => { billboardStart = d; lastCull.reach = -Infinity; };
@@ -316,6 +320,7 @@ export async function buildVegetation(GEO, terrain) {
   };
   function cull(camera, reach) {
     const cam = camera.position;
+    lastCull.pos.copy(cam);
     lastCull.dir.copy(dir);
     lastCull.fov = camera.fov;
     lastCull.aspect = camera.aspect;
@@ -333,6 +338,7 @@ export async function buildVegetation(GEO, terrain) {
     cullCamera.updateMatrixWorld();
     frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse));
     const farEnd2 = FAR_END * FAR_END, shadow2 = (reach + SHADOW_MARGIN) ** 2, billboard2 = billboardStart * billboardStart;
+    const farStart2 = Math.max(0, LOD_MID - RECULL) ** 2;
     let nView = 0, nShadow = 0, nBillboard = 0;
     for (let c = 0; c < gw * gh; c++) {
       if (cellStart[c] === cellStart[c + 1]) continue;
@@ -344,10 +350,11 @@ export async function buildVegetation(GEO, terrain) {
       if (!inView && !inShadow) continue;
       for (let o = cellStart[c]; o < cellStart[c + 1]; o++) {
         const i = order[o];
-        if (lod[i] !== 2) continue;
         // the far shader's crown-centre distance
         const dx = farPos[i * 4] - cam.x, dy = farPos[i * 4 + 1] + farShape[i * 4] - cam.y, dz = farPos[i * 4 + 2] - cam.z;
         const d2 = dx * dx + dy * dy + dz * dz;
+        // the trees that can turn far before the next refill (the shader folds them away while they are mid)
+        if (d2 < farStart2) continue;
         if (inView && d2 < farEnd2) {
           if (d2 < billboard2) pack(farInView, nView++, i);
           else pack(billboardsInView, nBillboard++, i);
@@ -370,8 +377,8 @@ export async function buildVegetation(GEO, terrain) {
     if (moved) pick(cam);
     const reach = group.userData.shadowReach();
     camera.getWorldDirection(dir);
-    if (moved || dir.dot(lastCull.dir) < cosTurn || camera.fov !== lastCull.fov || camera.aspect !== lastCull.aspect ||
-      Math.abs(reach - lastCull.reach) > 10) cull(camera, reach);
+    if (cam.distanceToSquared(lastCull.pos) >= RECULL * RECULL || dir.dot(lastCull.dir) < cosTurn || camera.fov !== lastCull.fov ||
+      camera.aspect !== lastCull.aspect || Math.abs(reach - lastCull.reach) > 10) cull(camera, reach);
   };
 
   const triangles = kits.map((v) => v.map((k) => k.geometries.map((g) => g.userData.triangles)));
