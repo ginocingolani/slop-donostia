@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { float, vec3, smoothstep, positionWorld, mx_noise_float } from 'three/tsl';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { cityUniforms } from '../../city-uniforms.js';
 import { URGULL_PARTS } from '../data-urgull-parts.js';
+import { Parts, wound, insetRing, simplify, hipRoof, pointInRing, centroid, distToRing } from './geom.js';
 
 // js/donostia/landmarks/mota-gaztelua.js
 // Mota gaztelua / Castillo de la Mota on top of Urgull (12th-18th c.), stone fortress walls, and on its keep the chapel tower carrying the 12.5 m Sagrado Corazón (Sacred Heart) statue facing the city, arms open, visible from the whole bay.
@@ -31,43 +31,10 @@ const PLINTH_H = 19.3; // the statue's feet above the Macho's ground
 const ROOF_RISE = { 1493466698: 2.8, 1493466704: 2.6, 1493466705: 1.7 }; // tiled roofs (OSM roof:levels 1, 1, 0.6)
 const MACHO = 1493466701, PEDESTAL = 1493466700, STATUE = 1493466699, BATTERY = 1493466703, CENTRE = 1493466702;
 
-// --- small geometry kit (kept local so each landmark module stands alone) ------------------------------------------------
+// --- local helpers ----------------------------------------------------------------------------------------------------
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
-
-// Pieces collected per material and merged into one mesh each: one draw call per material
-class Parts {
-  constructor() { this.byMaterial = new Map(); }
-
-  add(material, geometry, matrix = null) {
-    const g = geometry.index ? geometry.toNonIndexed() : geometry;
-    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
-    if (!g.attributes.normal) g.computeVertexNormals();
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-    g.clearGroups();
-    if (matrix) g.applyMatrix4(matrix);
-    if (!this.byMaterial.has(material)) this.byMaterial.set(material, []);
-    this.byMaterial.get(material).push(g);
-  }
-
-  build(name) {
-    const group = new THREE.Group();
-    group.name = name;
-    for (const [material, list] of this.byMaterial) {
-      const geometry = mergeGeometries(list);
-      if (!geometry) continue;
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      group.add(mesh);
-    }
-    return group;
-  }
-}
 
 // Box of size (w, h, d) whose base centre stands at (x, y, z), turned by yaw (rotation.y)
 function box(w, h, d, x, y, z, yaw = 0) {
@@ -80,48 +47,6 @@ function box(w, h, d, x, y, z, yaw = 0) {
 function along(g, p, dir) {
   _q.setFromUnitVectors(UP, _v.copy(dir).normalize());
   return g.applyMatrix4(_m.compose(new THREE.Vector3(...p), _q, _s.set(1, 1, 1)));
-}
-
-function signedArea(r) {
-  let a = 0;
-  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) a += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
-  return a / 2;
-}
-
-// Ring with the requested winding (area > 0: edge normals (dz, -dx) point out of the solid). From js/donostia/buildings.js.
-function wound(r, positive = true) {
-  if ((signedArea(r) > 0) === positive) return r;
-  const out = [];
-  for (let k = r.length - 2; k >= 0; k -= 2) out.push(r[k], r[k + 1]);
-  return out;
-}
-
-// Miter offset of a ring by d towards its inside (negative d grows it); null when an edge flips or the ring collapses.
-// From insetRing() in js/donostia/buildings.js.
-function insetRing(r, d) {
-  const n = r.length / 2;
-  const out = new Array(r.length);
-  for (let i = 0; i < n; i++) {
-    const p = (i + n - 1) % n, q = (i + 1) % n;
-    let ax = r[2 * i] - r[2 * p], az = r[2 * i + 1] - r[2 * p + 1];
-    let bx = r[2 * q] - r[2 * i], bz = r[2 * q + 1] - r[2 * i + 1];
-    const la = Math.hypot(ax, az) || 1, lb = Math.hypot(bx, bz) || 1;
-    ax /= la; az /= la; bx /= lb; bz /= lb;
-    const n1x = -az, n1z = ax, n2x = -bz, n2z = bx;
-    const denom = 1 + (n1x * n2x + n1z * n2z);
-    if (denom < 0.25) return null;
-    out[2 * i] = r[2 * i] + (d * (n1x + n2x)) / denom;
-    out[2 * i + 1] = r[2 * i + 1] + (d * (n1z + n2z)) / denom;
-  }
-  for (let i = 0; i < n; i++) {
-    const q = (i + 1) % n;
-    const ox = r[2 * q] - r[2 * i], oz = r[2 * q + 1] - r[2 * i + 1];
-    const nx = out[2 * q] - out[2 * i], nz = out[2 * q + 1] - out[2 * i + 1];
-    if (ox * nx + oz * nz <= 0) return null;
-  }
-  const a0 = signedArea(r), a1 = signedArea(out);
-  if (Math.sign(a0) !== Math.sign(a1) || Math.abs(a1) < 0.02 * Math.abs(a0)) return null;
-  return out;
 }
 
 // Triangle soup with flat normals; up-facing triangles are wound so they face the sky
@@ -154,73 +79,6 @@ class Tris {
   }
 }
 
-// Drops vertices closer than tol to the line through their neighbours (near-collinear runs and tiny jogs), which
-// would otherwise flip under the large insets of a hip roof
-function simplify(r, tol = 0.35) {
-  const pts = [];
-  for (let k = 0; k < r.length; k += 2) pts.push([r[k], r[k + 1]]);
-  for (let changed = true; changed && pts.length > 4;) {
-    changed = false;
-    for (let i = 0; i < pts.length && pts.length > 4; i++) {
-      const a = pts[(i + pts.length - 1) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
-      const dx = c[0] - a[0], dz = c[1] - a[1];
-      if (Math.abs((b[0] - a[0]) * dz - (b[1] - a[1]) * dx) / (Math.hypot(dx, dz) || 1e-9) < tol) {
-        pts.splice(i--, 1);
-        changed = true;
-      }
-    }
-  }
-  return pts.flat();
-}
-
-// Hip roof over a ring: slopes rising `rise` from the eaves to a ridge (an inset of about half the ring's width)
-function hipRoof(ring, eave, rise, inset) {
-  const r = wound(simplify(ring));
-  const t = new Tris();
-  let inner = null;
-  for (let d = inset, k = 0; k < 8 && !inner; k++, d *= 0.8) inner = insetRing(r, d);
-  if (!inner) {
-    t.cap(r, eave + 0.08); // flat, just over the walls' top
-    return t.geometry();
-  }
-  const top = eave + rise;
-  for (let i = 0, n = r.length / 2; i < n; i++) {
-    const q = (i + 1) % n;
-    const o0 = [r[2 * i], eave, r[2 * i + 1]], o1 = [r[2 * q], eave, r[2 * q + 1]];
-    const i0 = [inner[2 * i], top, inner[2 * i + 1]], i1 = [inner[2 * q], top, inner[2 * q + 1]];
-    t.tri(o0, o1, i1);
-    t.tri(o0, i1, i0);
-  }
-  t.cap(inner, top);
-  return t.geometry();
-}
-
-function pointInRing(x, z, r) {
-  let inside = false;
-  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) {
-    const xi = r[2 * i], zi = r[2 * i + 1], xj = r[2 * j], zj = r[2 * j + 1];
-    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-function centroid(r) {
-  let x = 0, z = 0;
-  for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
-  return [x / (r.length / 2), z / (r.length / 2)];
-}
-
-function distToRing(x, z, r) {
-  let best = Infinity;
-  for (let i = 0, n = r.length / 2; i < n; i++) {
-    const q = (i + 1) % n;
-    const ax = r[2 * i], az = r[2 * i + 1], dx = r[2 * q] - ax, dz = r[2 * q + 1] - az;
-    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1e-12)));
-    best = Math.min(best, Math.hypot(x - ax - t * dx, z - az - t * dz));
-  }
-  return best;
-}
-
 // --- materials --------------------------------------------------------------------------------------------------------
 
 // The statue's pale concrete & stone, floodlit from the castle at dusk and night (brightest at the feet)
@@ -233,8 +91,6 @@ function statueMaterial(baseY) {
   mat.emissiveNode = vec3(1.0, 0.93, 0.8).mul(night.mul(flood).mul(0.62));
   return mat;
 }
-
-const darkMaterial = () => new THREE.MeshStandardNodeMaterial({ color: 0x14120f, roughness: 0.92, metalness: 0 });
 
 // --- the Sagrado Corazón -------------------------------------------------------------------------------------------------
 
@@ -300,7 +156,7 @@ export function build(sites, ctx) {
 
   const stone = kit.materials.sandstone;
   const tiles = kit.materials.terracotta;
-  const dark = darkMaterial();
+  const dark = kit.materials.dark;
   const parts = new Parts();
   const ground = (ring) => kit.lowestGround(ctx, ring);
 
@@ -420,7 +276,7 @@ export function build(sites, ctx) {
 
   const place = new THREE.Matrix4().compose(new THREE.Vector3(ped.x, baseY, ped.z),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1));
-  for (const g of sacredHeartGeometries()) parts.add(statue, g, place);
+  for (const g of sacredHeartGeometries()) parts.addAt(statue, g, place);
 
   const group = parts.build('mota-gaztelua');
   group.userData.statue = { x: ped.x, z: ped.z, y: baseY, height: STATUE_H, yaw };

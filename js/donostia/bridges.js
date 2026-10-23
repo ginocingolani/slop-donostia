@@ -934,16 +934,42 @@ function buildBridge(br, heightAt, B, index) {
   return { name: br.name, style: br.style, fr: k.fr, top: k.top, half: k.half, L: k.L };
 }
 
-// Builds every bridge into per-material buckets. heightAt(x, z): terrain height. Plain arrays, no three.js.
+// Where every bucket (and the lift towers collected so far) stands, and the way back to it
+function mark(B) {
+  const at = {};
+  for (const [key, b] of Object.entries(B)) at[key] = Object.fromEntries(Object.entries(b).map(([k, a]) => [k, a?.length]));
+  return { at, lifts: new Map(B.lifts) };
+}
+function rollback(B, m) {
+  for (const [key, b] of Object.entries(B)) for (const [k, a] of Object.entries(b)) if (a) a.length = m.at[key][k];
+  B.lifts.clear();
+  for (const [k, t] of m.lifts) B.lifts.set(k, t);
+}
+
+// Builds every bridge into per-material buckets. heightAt(x, z): terrain height. Plain arrays, no three.js. The
+// bridges come from re-fetchable OSM data: one that fails to build is rolled back out of the buckets and left out
+// (logged), rather than taking every other bridge, and the app's start, down with it.
 export function buildBridgeGeometry(bridges, heightAt) {
   const B = { deck: bucket(), masonry: bucket(true), concrete: bucket(), metal: bucket(), bronze: bucket(), lamp: bucket() };
   Object.defineProperty(B, 'lifts', { value: new Map() }); // (not a bucket: kept out of Object.entries)
   const decks = [];
   bridges.forEach((br, q) => {
-    const d = buildBridge(br, heightAt, B, q);
-    if (d) decks.push(d);
+    const m = mark(B);
+    try {
+      const d = buildBridge(br, heightAt, B, q);
+      if (d) decks.push(d);
+    } catch (e) {
+      rollback(B, m);
+      console.warn(`[bridge ${br.name || ''} ${br.osm ? `(OSM way ${[].concat(br.osm).join(', ')})` : `#${q}`}]`, e);
+    }
   });
-  buildLifts(B);
+  const m = mark(B);
+  try {
+    buildLifts(B);
+  } catch (e) {
+    rollback(B, m);
+    console.warn('[bridge lifts]', e);
+  }
   return { buckets: B, decks };
 }
 
@@ -1052,6 +1078,16 @@ function createMaterials() {
 
 export async function buildBridges(GEO, terrain) {
   if (!BRIDGES.length) return null;
+  try {
+    return bridgeGroup(terrain);
+  } catch (e) {
+    // the city stands without its bridges rather than not at all (main.js skips a null module)
+    console.warn('[bridges]', e);
+    return null;
+  }
+}
+
+function bridgeGroup(terrain) {
   const { buckets, decks } = buildBridgeGeometry(BRIDGES, (x, z) => terrain.heightAt(x, z));
   const materials = createMaterials();
   const group = new THREE.Group();

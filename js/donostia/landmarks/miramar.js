@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, Frame, westMaterials as M, rgb } from './igeldo.js';
+import { ringArea, pointInRing } from './geom.js';
 
 // js/donostia/landmarks/miramar.js
 // Miramar jauregia / Palacio de Miramar (1889-93): the royal summer palace on the hill between La Concha and Ondarreta,
@@ -106,12 +107,6 @@ function createTileMaterial() {
   return mat;
 }
 
-function signedArea(r) {
-  let a = 0;
-  for (let i = 0, n = r.length / 2, j = n - 1; i < n; j = i++) a += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
-  return a / 2;
-}
-
 // Drops the outline's centimetre jogs and collinear points; returns the ring wound so edge normals (dz, -dx) point out
 function cleanRing(ring) {
   let pts = [];
@@ -131,7 +126,7 @@ function cleanRing(ring) {
     }
   }
   const flat = pts.flat();
-  if (signedArea(flat) > 0) return flat;
+  if (ringArea(flat) > 0) return flat;
   const out = [];
   for (let k = flat.length - 2; k >= 0; k -= 2) out.push(flat[k], flat[k + 1]);
   return out;
@@ -172,17 +167,11 @@ function wings(uv, cell = 0.5, maxWings = 16) {
   }
   const W = Math.ceil((maxU - minU) / cell), H = Math.ceil((maxV - minV) / cell);
   const inside = new Uint8Array(W * H), done = new Uint8Array(W * H);
-  const n = uv.length / 2;
   for (let j = 0; j < H; j++) {
     const v = minV + (j + 0.5) * cell;
     for (let i = 0; i < W; i++) {
       const u = minU + (i + 0.5) * cell;
-      let c = false;
-      for (let a = 0, b = n - 1; a < n; b = a++) {
-        const ua = uv[2 * a], va = uv[2 * a + 1], ub = uv[2 * b], vb = uv[2 * b + 1];
-        if ((va > v) !== (vb > v) && u < ((ub - ua) * (v - va)) / (vb - va) + ua) c = !c;
-      }
-      inside[j * W + i] = c ? 1 : 0;
+      inside[j * W + i] = pointInRing(u, v, uv) ? 1 : 0;
     }
   }
   const total = inside.reduce((s, x) => s + x, 0);
@@ -372,7 +361,7 @@ export function build(sites, ctx) {
       oct.push(corner.x + Math.cos(a) * r, corner.z + Math.sin(a) * r);
     }
     const octRing = [];
-    if (signedArea(oct) > 0) octRing.push(...oct);
+    if (ringArea(oct) > 0) octRing.push(...oct);
     else for (let k = oct.length - 2; k >= 0; k -= 2) octRing.push(oct[k], oct[k + 1]);
     bin.add(brick, walls(octRing, g0 - 0.8, top, base, 0.77));
     // an 8-sided CylinderGeometry turned onto the walls' corners (its radius is the corner radius too)

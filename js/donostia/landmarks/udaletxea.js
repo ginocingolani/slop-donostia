@@ -4,6 +4,7 @@ import {
   select, fwidth, pow, normalize, positionWorld, normalWorld, cameraPosition, mx_noise_float
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
+import { ringArea, reverseRing, insetRing, newell } from './geom.js';
 
 // js/donostia/landmarks/udaletxea.js
 // Donostiako Udaletxea — the City Hall, built 1882-87 as the Gran Casino (Luis Aladrén & Adolfo Morales de los Ríos,
@@ -234,21 +235,6 @@ export function civicFacadeMaterial() {
 // Rings (flat [u0, v0, u1, v1, ...] in the landmark frame)
 // ---------------------------------------------------------------------------------------------------------------------
 
-export function ringArea(r) {
-  let a = 0;
-  for (let i = 0, n = r.length / 2; i < n; i++) {
-    const j = (i + 1) % n;
-    a += r[2 * i] * r[2 * j + 1] - r[2 * j] * r[2 * i + 1];
-  }
-  return a / 2;
-}
-
-function reverseRing(r) {
-  const out = [];
-  for (let k = r.length - 2; k >= 0; k -= 2) out.push(r[k], r[k + 1]);
-  return out;
-}
-
 // Positive area: edge (du, dv) then has its outward normal at (dv, -du)
 export function ccwRing(r) {
   return ringArea(r) >= 0 ? r : reverseRing(r);
@@ -278,50 +264,15 @@ export function arc(cu, cv, r, a0, a1, n) {
   return out;
 }
 
-// Miter offset of a ring by d towards its inside (d < 0: outwards), adapted from insetRing in js/donostia/buildings.js.
-// Returns null when the offset folds an edge over or collapses the ring.
+// Miter offset of a ring of either winding by d towards its inside (d < 0: outwards): geom.js's insetRing on the
+// counter-wound ring, null when the offset folds an edge over or collapses the ring
 export function offsetRing(ring, d) {
-  const r = ccwRing(ring);
-  const n = r.length / 2;
-  const out = new Array(r.length);
-  for (let i = 0; i < n; i++) {
-    const p = (i + n - 1) % n, q = (i + 1) % n;
-    let ax = r[2 * i] - r[2 * p], az = r[2 * i + 1] - r[2 * p + 1];
-    let bx = r[2 * q] - r[2 * i], bz = r[2 * q + 1] - r[2 * i + 1];
-    const la = Math.hypot(ax, az) || 1, lb = Math.hypot(bx, bz) || 1;
-    ax /= la; az /= la; bx /= lb; bz /= lb;
-    const n1x = -az, n1z = ax, n2x = -bz, n2z = bx; // inward normals
-    const denom = 1 + (n1x * n2x + n1z * n2z);
-    if (denom < 0.25) return null;
-    out[2 * i] = r[2 * i] + (d * (n1x + n2x)) / denom;
-    out[2 * i + 1] = r[2 * i + 1] + (d * (n1z + n2z)) / denom;
-  }
-  for (let i = 0; i < n; i++) {
-    const q = (i + 1) % n;
-    const ox = r[2 * q] - r[2 * i], oz = r[2 * q + 1] - r[2 * i + 1];
-    const nx = out[2 * q] - out[2 * i], nz = out[2 * q + 1] - out[2 * i + 1];
-    if (ox * nx + oz * nz <= 0) return null;
-  }
-  const a0 = ringArea(r), a1 = ringArea(out);
-  if (Math.sign(a0) !== Math.sign(a1) || Math.abs(a1) < 0.05 * Math.abs(a0)) return null;
-  return out;
+  return insetRing(ccwRing(ring), d);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The geometry builder
 // ---------------------------------------------------------------------------------------------------------------------
-
-function newell(pts) {
-  let nx = 0, ny = 0, nz = 0;
-  for (let i = 0, n = pts.length; i < n; i++) {
-    const p = pts[i], q = pts[(i + 1) % n];
-    nx += (p[1] - q[1]) * (p[2] + q[2]);
-    ny += (p[2] - q[2]) * (p[0] + q[0]);
-    nz += (p[0] - q[0]) * (p[1] + q[1]);
-  }
-  const l = Math.hypot(nx, ny, nz);
-  return l < 1e-12 ? null : [nx / l, ny / l, nz / l];
-}
 
 function styleCode(st) {
   return [st.bay, st.floor, st.ground, st.kind + 16 * st.tone + 128 * (st.seed % 1000)];

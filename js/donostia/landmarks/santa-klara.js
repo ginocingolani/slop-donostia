@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { PartBin, Frame, WORLD, westMaterials as M, rgb, createLighthouseLight, relayUpdate } from './igeldo.js';
+import { pointInRing } from './geom.js';
 
 // js/donostia/landmarks/santa-klara.js
 // Santa Klara island: its small white lighthouse house on the summit, the jetty on the bay side; the island itself is
@@ -21,14 +22,7 @@ function splitBulge(ring, kit) {
   const fr = new Frame(ob.x, ob.z, ob.angle);
   const uv = [];
   for (let k = 0; k < ring.length; k += 2) uv.push(...fr.local(ring[k], ring[k + 1]));
-  const inside = (u, v) => {
-    let c = false;
-    for (let i = 0, n = uv.length / 2, j = n - 1; i < n; j = i++) {
-      const ui = uv[2 * i], vi = uv[2 * i + 1], uj = uv[2 * j], vj = uv[2 * j + 1];
-      if ((vi > v) !== (vj > v) && u < ((uj - ui) * (v - vi)) / (vj - vi) + ui) c = !c;
-    }
-    return c;
-  };
+  const inside = (u, v) => pointInRing(u, v, uv);
   const cell = 0.25, hu = ob.length / 2, hv = ob.width / 2;
   const best = { score: -Infinity };
   for (const axis of ['v', 'u']) {

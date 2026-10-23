@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, abs, fract, sin, max, min, mix, step, smoothstep, fwidth, length, uv, vertexColor,
+  float, vec2, vec3, abs, fract, sin, max, min, mix, step, smoothstep, fwidth, length, uv, vertexColor,
   positionWorld, normalWorld, mx_noise_float
 } from 'three/tsl';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { cityUniforms } from '../../city-uniforms.js';
+import { gridLine } from './kit.js';
+import { Parts, grid, beam } from './geom.js';
 
 // js/donostia/landmarks/anoeta.js
 // Anoeta stadium / Reale Arena (1993, rebuilt 2017-2019 when the athletics track was removed and the stands brought to the pitch): an oval bowl wrapped in a translucent blue membrane (ETFE / PTFE panels) with REALE ARENA lettering, a roof ring over the stands, ~40,000 seats.
@@ -49,47 +50,7 @@ const PANELS = 64, SUB = 6, NV = 20, S0 = 0.42, INSET_FOOT = 4.5, INSET_TOP = 6.
 const CONCOURSE = 9; // the glazed concourse wall and the back of the upper tier stand this far inside the membrane
 const STEPS = 12;
 
-// --- small geometry kit (kept local so each landmark module stands alone) ------------------------------------------------
-
-// Pieces collected per material and merged into one mesh each: one draw call per material. From kursaal.js; a
-// vertex-coloured material keeps the pieces' own `color` attribute or gets the colour given here.
-class Parts {
-  constructor() { this.byMaterial = new Map(); }
-
-  add(material, geometry, color = [1, 1, 1]) {
-    const g = geometry.index ? geometry.toNonIndexed() : geometry;
-    const keep = material.vertexColors ? ['position', 'normal', 'uv', 'color'] : ['position', 'normal', 'uv'];
-    for (const name of Object.keys(g.attributes)) if (!keep.includes(name)) g.deleteAttribute(name);
-    const count = g.attributes.position.count;
-    if (!g.attributes.normal) g.computeVertexNormals();
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(count * 2), 2));
-    if (material.vertexColors && !g.attributes.color) {
-      const c = new Float32Array(count * 3);
-      for (let k = 0; k < count; k++) c.set(color, 3 * k);
-      g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-    }
-    g.clearGroups();
-    if (!this.byMaterial.has(material)) this.byMaterial.set(material, []);
-    this.byMaterial.get(material).push(g);
-  }
-
-  build(name) {
-    const group = new THREE.Group();
-    group.name = name;
-    for (const [material, list] of this.byMaterial) {
-      const geometry = mergeGeometries(list);
-      if (!geometry) continue;
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      group.add(mesh);
-    }
-    return group;
-  }
-}
+// --- local helpers ----------------------------------------------------------------------------------------------------
 
 // Flat-shaded faces; each face is turned so its normal agrees with the `out` hint. From kursaal.js, with colours.
 class Soup {
@@ -121,59 +82,6 @@ class Soup {
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     return g;
   }
-}
-
-// A smooth quad grid: point(i, j) -> [x, y, z] for i in 0..nu, j in 0..nv, texcoord(i, j) -> [u, v]. Normals are
-// turned to agree with out(i, j) (a direction hint); a closed loop (column nu repeating column 0) gets one normal there.
-function grid(nu, nv, point, texcoord, out, closed = true) {
-  const n = (nu + 1) * (nv + 1);
-  const pos = new Float32Array(n * 3), tex = new Float32Array(n * 2);
-  for (let j = 0, k = 0; j <= nv; j++) {
-    for (let i = 0; i <= nu; i++, k++) {
-      pos.set(point(i, j), 3 * k);
-      tex.set(texcoord(i, j), 2 * k);
-    }
-  }
-  const index = [];
-  for (let j = 0; j < nv; j++) {
-    for (let i = 0; i < nu; i++) {
-      const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
-      index.push(a, c, b, b, c, d);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(tex, 2));
-  g.setIndex(index);
-  g.computeVertexNormals();
-  const nrm = g.attributes.normal.array;
-  const im = nu >> 1, jm = nv >> 1, km = jm * (nu + 1) + im, hint = out(im, jm);
-  if (nrm[3 * km] * hint[0] + nrm[3 * km + 1] * hint[1] + nrm[3 * km + 2] * hint[2] < 0) {
-    for (let t = 0; t < index.length; t += 3) [index[t + 1], index[t + 2]] = [index[t + 2], index[t + 1]];
-    g.setIndex(index);
-    for (let k = 0; k < nrm.length; k++) nrm[k] = -nrm[k];
-  }
-  if (closed) {
-    for (let j = 0; j <= nv; j++) {
-      const a = 3 * j * (nu + 1), b = 3 * (j * (nu + 1) + nu);
-      for (let c = 0; c < 3; c++) nrm[a + c] = nrm[b + c] = (nrm[a + c] + nrm[b + c]) / 2;
-    }
-  }
-  return g;
-}
-
-// A box beam of section w x h from p0 to p1 (h measured towards `up`)
-const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
-function beam(p0, p1, w, h = w) {
-  _y.set(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
-  const len = _y.length();
-  _y.normalize();
-  _x.set(0, 1, 0).cross(_y);
-  if (_x.lengthSq() < 1e-6) _x.set(1, 0, 0).cross(_y);
-  _x.normalize();
-  _z.crossVectors(_x, _y);
-  _m.makeBasis(_x, _y, _z).setPosition((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2);
-  return new THREE.BoxGeometry(w, len, h).applyMatrix4(_m);
 }
 
 // Sets a geometry's uv to (0, code) everywhere: the part code the coded materials read from uv.y
@@ -267,18 +175,6 @@ function textTriangles(text, emit) {
 }
 
 // --- TSL helpers (from js/tsl-materials.js) --------------------------------------------------------------------------
-
-// Filter-width anti-aliased repeating grid line: gridLine() in js/tsl-materials.js
-const gridLine = Fn(([coord, period, halfWidth]) => {
-  const p = float(period).toVar();
-  const g = float(coord).div(p).toVar();
-  const d = float(0.5).sub(abs(fract(g).sub(0.5))).toVar();
-  const aa = fwidth(g).max(0.0001).toVar();
-  const hw = float(halfWidth).div(p).toVar();
-  const effHw = max(hw, aa.mul(0.5)).toVar();
-  const cov = smoothstep(effHw.add(aa), effHw.sub(aa), d);
-  return cov.mul(min(float(1.0), hw.div(effHw)));
-});
 
 // An anti-aliased line at signed distance d from its axis; thinner than a pixel it fades instead of widening (as gridLine)
 const stroke = (d, halfWidth) => {

@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { CivicModel, facadeStyle, rect, ccwRing, offsetRing } from './udaletxea.js';
+import { newell } from './geom.js';
 
 // js/donostia/landmarks/bretxa.js
 // La Bretxa market, on the corner of the Alameda del Boulevard and Bretxa plaza at the eastern edge of the Parte Vieja.
@@ -519,19 +520,6 @@ const GLYPHS = {
   9: [[[1, 0.5], [0, 0.5]], [[0, 0.5], [0, 1]], [[0, 1], [1, 1]], [[1, 1], [1, 0]], [[1, 0], [0, 0]]]
 };
 
-// Newell normal of a planar polygon [[x, y, z], ...] (as in udaletxea.js)
-function newell(pts) {
-  let nx = 0, ny = 0, nz = 0;
-  for (let i = 0, n = pts.length; i < n; i++) {
-    const p = pts[i], q = pts[(i + 1) % n];
-    nx += (p[1] - q[1]) * (p[2] + q[2]);
-    ny += (p[2] - q[2]) * (p[0] + q[0]);
-    nz += (p[0] - q[0]) * (p[1] + q[1]);
-  }
-  const l = Math.hypot(nx, ny, nz);
-  return l < 1e-12 ? null : [nx / l, ny / l, nz / l];
-}
-
 // Frame of a footprint whose main front faces `front` (a world [x, z] direction): the footprint's oriented box, turned
 // so that +u runs along that front and -v points out of it. half = [half length along u, half depth along v].
 export function frontFrame(ctx, ring, front, { groundAt = null } = {}) {
@@ -591,7 +579,8 @@ function pescaderia(m, ctx, site, zinc) {
   m.prism(F, body, 5.0, 12.0, main, { top: false });
   m.prism(F, body, 12.0, 12.75, plain, { top: false });
   m.cap(zinc, body, 12.75);
-  m.cornice(F, body, 12.0, 0.55, 0.75);
+  // a cornice whose top only covers the overhang: a full lid would lie in the zinc roof's plane and flicker with it
+  m.corniceBand(F, body, 12.0, 0.55, 0.75);
   m.prism(F, offsetOut(body, 0.1), 4.75, 5.15, plain, { bottom: true, top: false });
   for (const [a, b] of [[[-W2, -L2], [W2, -L2]], [[W2, -L2], [W2, L2]], [[W2, L2], [-W2, L2]], [[-W2, L2], [-W2, -L2]]]) {
     const inset = (q) => [q[0] - Math.sign(q[0]) * 0.3, q[1] - Math.sign(q[1]) * 0.3];

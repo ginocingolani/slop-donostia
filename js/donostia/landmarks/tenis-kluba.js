@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, float, vec3, mix, abs, floor, fract, sin, step, clamp, smoothstep, positionWorld, mx_noise_float } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, Frame, WORLD, westMaterials as M, rgb, strut } from './igeldo.js';
+import { pointInRing, centroid, distToRing, clipRing } from './geom.js';
 
 // js/donostia/landmarks/tenis-kluba.js
 // Real Club de Tenis de San Sebastián at Ondarreta, between the Paseo de Eduardo Chillida and the foot of Igeldo, a
@@ -23,7 +24,7 @@ import { PartBin, Frame, WORLD, westMaterials as M, rgb, strut } from './igeldo.
 //     carved eaves brackets, the arcade to the courts.
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['tenis-kluba', 'tenis-pistak'] and ctx = { GEO, terrain, kit }.
-// The pavilion's 1:500 building is added to the tenis-pistak site's `buildings`, so the registry hides its plain
+// No site claims the pavilion's 1:500 building, so the model names it in userData.hide and the registry hides its plain
 // extrusion along with the clubhouse's.
 
 // The courts: four corners each (two baselines of 10.97 m), from the 1:500 map
@@ -95,9 +96,99 @@ function groundOver(ctx, ring) {
     minX = Math.min(minX, ring[k]); maxX = Math.max(maxX, ring[k]); minZ = Math.min(minZ, ring[k + 1]); maxZ = Math.max(maxZ, ring[k + 1]);
   }
   const hs = [];
-  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) if (inside(ring, x, z)) hs.push(ctx.terrain.heightAt(x, z));
+  for (let x = minX; x <= maxX; x += 1) for (let z = minZ; z <= maxZ; z += 1) if (pointInRing(x, z, ring)) hs.push(ctx.terrain.heightAt(x, z));
   hs.sort((p, q) => p - q);
   return hs.length ? hs[Math.floor(hs.length / 2)] : ctx.terrain.heightAt(ring[0], ring[1]);
+}
+
+// The DTM's sample lattice (cell centres of ctx.terrain's core field, 2 m), on which the ground mesh has its vertices
+function lattice(ctx) {
+  const f = ctx.terrain.core;
+  const res = f?.res || 2;
+  return { res, ox: f ? f.x0 + 0.5 * res : 0, oz: f ? f.z0 + 0.5 * res : 0 };
+}
+
+// Highest ground on the lattice within one cell of a ring: the ground mesh never rises above it there
+function groundMax(ctx, ring) {
+  const { res, ox, oz } = lattice(ctx);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let k = 0; k < ring.length; k += 2) {
+    minX = Math.min(minX, ring[k]); maxX = Math.max(maxX, ring[k]); minZ = Math.min(minZ, ring[k + 1]); maxZ = Math.max(maxZ, ring[k + 1]);
+  }
+  let max = -Infinity;
+  for (let i = Math.floor((minX - res - ox) / res); ox + i * res <= maxX + res; i++) {
+    for (let j = Math.floor((minZ - res - oz) / res); oz + j * res <= maxZ + res; j++) {
+      const x = ox + i * res, z = oz + j * res;
+      if (pointInRing(x, z, ring) || distToRing(x, z, ring) < res) max = Math.max(max, ctx.terrain.heightAt(x, z));
+    }
+  }
+  return max;
+}
+
+// Clay over the ground inside a ring wherever the ground rises above `level` (the ramp the LiDAR keeps at the foot of
+// the terrace wall): `over` metres above the ground mesh, on its own lattice. Each lattice cell is a fan of four
+// triangles round its centre, raised to the higher of its two diagonals' midpoints, so the clay stays above the
+// ground whichever diagonal the ground mesh splits the cell along; cells cut by the ring are clipped to it, with a
+// skirt down to the ground along the cut. Cells left flat at `level` are the prism's top.
+function drape(ctx, ring, level, over = 0.05) {
+  const { res, ox, oz } = lattice(ctx);
+  const ground = (x, z) => ctx.terrain.heightAt(x, z);
+  const lift = (x, z) => Math.max(level + 0.015, ground(x, z) + over);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let k = 0; k < ring.length; k += 2) {
+    minX = Math.min(minX, ring[k]); maxX = Math.max(maxX, ring[k]); minZ = Math.min(minZ, ring[k + 1]); maxZ = Math.max(maxZ, ring[k + 1]);
+  }
+  const pos = [];
+  const tri = (a, b, c) => {
+    const ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+    if (Math.abs(ny) < 1e-9) return;
+    if (ny > 0) pos.push(...a, ...b, ...c);
+    else pos.push(...a, ...c, ...b);
+  };
+  for (let i = Math.floor((minX - ox) / res); ox + i * res < maxX; i++) {
+    for (let j = Math.floor((minZ - oz) / res); oz + j * res < maxZ; j++) {
+      const x0 = ox + i * res, z0 = oz + j * res, x1 = x0 + res, z1 = z0 + res;
+      const c = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => [x, lift(x, z), z]);
+      if (Math.max(c[0][1], c[1][1], c[2][1], c[3][1]) <= level + 0.016) continue;
+      const mid = [(x0 + x1) / 2, Math.max((c[0][1] + c[2][1]) / 2, (c[1][1] + c[3][1]) / 2), (z0 + z1) / 2];
+      for (let k = 0; k < 4; k++) {
+        const a = c[k], b = c[(k + 1) % 4];
+        // the part of the ring over this fan triangle (its sides wound counter-clockwise, so inside is to the left)
+        let piece = ring;
+        for (const [p, q] of [[a, b], [b, mid], [mid, a]]) {
+          if (!piece) break;
+          const ex = q[0] - p[0], ez = q[2] - p[2];
+          piece = clipRing(piece, -ez, ex, ez * p[0] - ex * p[2]);
+        }
+        if (!piece) continue;
+        // heights on the fan triangle's plane
+        const det = (b[0] - a[0]) * (mid[2] - a[2]) - (mid[0] - a[0]) * (b[2] - a[2]);
+        const at = (x, z) => {
+          const u = ((x - a[0]) * (mid[2] - a[2]) - (mid[0] - a[0]) * (z - a[2])) / det;
+          const v = ((b[0] - a[0]) * (z - a[2]) - (x - a[0]) * (b[2] - a[2])) / det;
+          return [x, a[1] + u * (b[1] - a[1]) + v * (mid[1] - a[1]), z];
+        };
+        const pts = [];
+        for (let m = 0; m < piece.length; m += 2) pts.push(new THREE.Vector2(piece[m], piece[m + 1]));
+        for (const [p, q, r] of THREE.ShapeUtils.triangulateShape(pts, [])) {
+          tri(at(pts[p].x, pts[p].y), at(pts[q].x, pts[q].y), at(pts[r].x, pts[r].y));
+        }
+        // the skirt along the ring's own edges
+        for (let m = 0, n = piece.length / 2; m < n; m++) {
+          const px = piece[2 * m], pz = piece[2 * m + 1], qx = piece[(2 * m + 2) % piece.length], qz = piece[(2 * m + 3) % piece.length];
+          if (distToRing((px + qx) / 2, (pz + qz) / 2, ring) > 1e-3) continue;
+          const P = at(px, pz), Q = at(qx, qz);
+          const P0 = [px, Math.min(ground(px, pz), level) - 0.3, pz], Q0 = [qx, Math.min(ground(qx, qz), level) - 0.3, qz];
+          pos.push(...P, ...P0, ...Q0, ...P, ...Q0, ...Q);
+        }
+      }
+    }
+  }
+  if (!pos.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
 }
 
 // --- Courts ------------------------------------------------------------------------------------------------------------
@@ -105,8 +196,15 @@ function groundOver(ctx, ring) {
 function buildCourts(ctx, bin, clay) {
   const { kit } = ctx;
   ENCLOSURES.forEach((ring, e) => {
-    const level = groundOver(ctx, ring) + 0.06;
+    // The clay: flat at the enclosure's median ground, or as high as the ground under its courts if that is higher
+    // (the courts stay flat; the LiDAR keeps a few centimetres of tilt and noise under them), and draped over the
+    // ground wherever that rises higher still, so the ground mesh never shows through
+    const courts = COURTS.filter((c) => pointInRing(...centroid(c), ring));
+    const median = groundOver(ctx, ring) + 0.06;
+    const level = Math.min(median + 0.3, Math.max(median, ...courts.map((c) => groundMax(ctx, c) + 0.04)));
     bin.add(clay, kit.prism(ring, level - 0.8, level));
+    const draped = drape(ctx, ring, level);
+    if (draped) bin.add(clay, draped);
     // the fence: green posts every three metres or so, a top rail, and the windbreak on the lower 2.4 m
     for (let k = 0; k < ring.length; k += 2) {
       const a = [ring[k], ring[k + 1]], b = [ring[(k + 2) % ring.length], ring[(k + 3) % ring.length]];
@@ -140,11 +238,7 @@ function buildCourts(ctx, bin, clay) {
         bin.add(M.paint, strut(foot, head, 0.75, 0.3), rgb(0x2b2f2d));
       }
     }
-    COURTS.forEach((c) => {
-      const cx = (c[0] + c[2] + c[4] + c[6]) / 4, cz = (c[1] + c[3] + c[5] + c[7]) / 4;
-      if (!inside(ring, cx, cz)) return;
-      buildCourt(c, level, bin);
-    });
+    for (const c of courts) buildCourt(c, level, bin);
   });
 }
 
@@ -370,33 +464,16 @@ export function build(sites, ctx) {
   // the club pavilion: the 1:500 building the b5m names "Tenis" on the terrace west of the courts
   const pavilion = GEO.buildings.findIndex((b) => {
     if (b.name !== 'Tenis' || !b.g?.[0]) return false;
-    const r = b.g[0];
-    let x = 0, z = 0;
-    for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
-    x /= r.length / 2; z /= r.length / 2;
+    const [x, z] = centroid(b.g[0]);
     return x > -1395 && x < -1355 && z > 225 && z < 315;
   });
-  if (pavilion >= 0) {
-    buildPavilion(ctx, bin, GEO.buildings[pavilion], glass);
-    const owner = courts || club;
-    owner.buildings ||= [];
-    if (!owner.buildings.includes(pavilion)) owner.buildings.push(pavilion);
-  }
+  if (pavilion >= 0) buildPavilion(ctx, bin, GEO.buildings[pavilion], glass);
 
   if (club) buildClubhouse(ctx, bin, club, GEO.buildings[club.buildings?.[0]], glass);
 
   const group = new THREE.Group();
   group.name = 'TenisKluba';
   bin.build(group);
+  if (pavilion >= 0) group.userData.hide = [pavilion];
   return group;
-}
-
-// point in a flat [x0, z0, ...] ring (even-odd)
-function inside(ring, x, z) {
-  let c = false;
-  for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-    const xi = ring[i], zi = ring[i + 1], xj = ring[j], zj = ring[j + 1];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-  }
-  return c;
 }

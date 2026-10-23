@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec3, abs, fract, max, min, mix, smoothstep, fwidth, uv, vertexColor, positionWorld, mx_noise_float } from 'three/tsl';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { float, vec3, abs, max, min, mix, smoothstep, uv, vertexColor, positionWorld, mx_noise_float } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
+import { gridLine } from './kit.js';
+import { Parts, grid, beam as boxBeam } from './geom.js';
 
 // js/donostia/landmarks/illunbe.js
 // Illunbe bullring (Plaza de toros de Illunbe, 1998): a round arena with a retractable dome roof (used for concerts and basketball), next to Anoeta.
@@ -39,98 +40,12 @@ const N = 144;
 const MAROON = [0.25, 0.035, 0.045], CLADDING = [0.74, 0.74, 0.72], CONCRETE = [0.56, 0.55, 0.52], DARK = [0.07, 0.08, 0.09];
 const PAVING = [0.44, 0.42, 0.4], RAIL = [0.26, 0.27, 0.28];
 
-// --- small geometry kit (kept local so each landmark module stands alone) ------------------------------------------------
+// --- local helpers ----------------------------------------------------------------------------------------------------
 
-// Pieces collected per material and merged into one mesh each (one draw call per material); from kursaal.js. A
-// vertex-coloured material gets the colour given for each piece.
-class Parts {
-  constructor() { this.byMaterial = new Map(); }
-
-  add(material, geometry, color = [1, 1, 1]) {
-    const g = geometry.index ? geometry.toNonIndexed() : geometry;
-    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
-    const count = g.attributes.position.count;
-    if (!g.attributes.normal) g.computeVertexNormals();
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(count * 2), 2));
-    if (material.vertexColors) {
-      const c = new Float32Array(count * 3);
-      for (let k = 0; k < count; k++) c.set(color, 3 * k);
-      g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-    }
-    g.clearGroups();
-    if (!this.byMaterial.has(material)) this.byMaterial.set(material, []);
-    this.byMaterial.get(material).push(g);
-  }
-
-  build(name) {
-    const group = new THREE.Group();
-    group.name = name;
-    for (const [material, list] of this.byMaterial) {
-      const geometry = mergeGeometries(list);
-      if (!geometry) continue;
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.matrixAutoUpdate = false;
-      group.add(mesh);
-    }
-    return group;
-  }
-}
-
-// A smooth quad grid: point(i, j) -> [x, y, z], texcoord(i, j) -> [u, v]; normals turned to agree with out(i, j); a
-// closed loop (column nu repeating column 0) gets one normal along its seam. As in anoeta.js.
-function grid(nu, nv, point, texcoord, out, closed = true) {
-  const n = (nu + 1) * (nv + 1);
-  const pos = new Float32Array(n * 3), tex = new Float32Array(n * 2);
-  for (let j = 0, k = 0; j <= nv; j++) {
-    for (let i = 0; i <= nu; i++, k++) {
-      pos.set(point(i, j), 3 * k);
-      tex.set(texcoord(i, j), 2 * k);
-    }
-  }
-  const index = [];
-  for (let j = 0; j < nv; j++) {
-    for (let i = 0; i < nu; i++) {
-      const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
-      index.push(a, c, b, b, c, d);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(tex, 2));
-  g.setIndex(index);
-  g.computeVertexNormals();
-  const nrm = g.attributes.normal.array;
-  const im = nu >> 1, jm = nv >> 1, km = jm * (nu + 1) + im, hint = out(im, jm);
-  if (nrm[3 * km] * hint[0] + nrm[3 * km + 1] * hint[1] + nrm[3 * km + 2] * hint[2] < 0) {
-    for (let t = 0; t < index.length; t += 3) [index[t + 1], index[t + 2]] = [index[t + 2], index[t + 1]];
-    g.setIndex(index);
-    for (let k = 0; k < nrm.length; k++) nrm[k] = -nrm[k];
-  }
-  if (closed) {
-    for (let j = 0; j <= nv; j++) {
-      const a = 3 * j * (nu + 1), b = 3 * (j * (nu + 1) + nu);
-      for (let c = 0; c < 3; c++) nrm[a + c] = nrm[b + c] = (nrm[a + c] + nrm[b + c]) / 2;
-    }
-  }
-  return g;
-}
-
-// A box beam of section w x h from p0 to p1
-const _m = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+// geom.js's box beam with zero uvs (Parts fills them in): the drum material draws its panel joints from uv, metres round
+// the drum and up it, which a beam's own 0..1 box uvs would scatter across its faces
 function beam(p0, p1, w, h = w) {
-  _y.set(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
-  const len = _y.length();
-  _y.normalize();
-  _x.set(0, 1, 0).cross(_y);
-  if (_x.lengthSq() < 1e-6) _x.set(1, 0, 0).cross(_y);
-  _x.normalize();
-  _z.crossVectors(_x, _y);
-  _m.makeBasis(_x, _y, _z).setPosition((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2);
-  const g = new THREE.BoxGeometry(w, len, h).applyMatrix4(_m);
+  const g = boxBeam(p0, p1, w, h);
   g.deleteAttribute('uv');
   return g;
 }
@@ -153,17 +68,6 @@ function fitCircle(ring) {
 
 // --- TSL helpers (from js/tsl-materials.js) --------------------------------------------------------------------------
 
-// Filter-width anti-aliased repeating grid line: gridLine() in js/tsl-materials.js
-const gridLine = Fn(([coord, period, halfWidth]) => {
-  const p = float(period).toVar();
-  const g = float(coord).div(p).toVar();
-  const d = float(0.5).sub(abs(fract(g).sub(0.5))).toVar();
-  const aa = fwidth(g).max(0.0001).toVar();
-  const hw = float(halfWidth).div(p).toVar();
-  const effHw = max(hw, aa.mul(0.5)).toVar();
-  const cov = smoothstep(effHw.add(aa), effHw.sub(aa), d);
-  return cov.mul(min(float(1.0), hw.div(effHw)));
-});
 const nightOf = () => smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
 
 // --- materials --------------------------------------------------------------------------------------------------------

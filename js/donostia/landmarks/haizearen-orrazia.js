@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, westMaterials as M, rgb, sweep } from './igeldo.js';
+import { pointInRing } from './geom.js';
 
 // js/donostia/landmarks/haizearen-orrazia.js
 // Haizearen orrazia / Peine del Viento XV (Eduardo Chillida, sculptor, and Luis Peña Ganchegui, architect, 1976-77) at
@@ -241,7 +242,7 @@ export function build(sites, ctx) {
     }
     const hs = [];
     for (let x = minX; x <= maxX; x += 1) {
-      for (let z = minZ; z <= maxZ; z += 1) if (inside(ring, x, z)) hs.push(terrain.heightAt(x, z));
+      for (let z = minZ; z <= maxZ; z += 1) if (pointInRing(x, z, ring)) hs.push(terrain.heightAt(x, z));
     }
     hs.sort((p, q) => p - q);
     return hs.length ? hs[Math.floor(hs.length * 0.9)] + 0.06 : 5.4;
@@ -253,7 +254,7 @@ export function build(sites, ctx) {
     const len = Math.hypot(x1 - x0, z1 - z0), ang = Math.atan2(z1 - z0, x1 - x0);
     // which side is the lower terrace
     const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, nx = -(z1 - z0) / len, nz = (x1 - x0) / len;
-    const down = inside(TERRACES[k + 1], mx + nx * 1.5, mz + nz * 1.5) ? 1 : -1;
+    const down = pointInRing(mx + nx * 1.5, mz + nz * 1.5, TERRACES[k + 1]) ? 1 : -1;
     const count = Math.max(1, Math.round((hi - lo) / 0.16));
     for (let j = 1; j < count; j++) {
       const top = hi - ((hi - lo) * j) / count;
@@ -323,14 +324,4 @@ export function build(sites, ctx) {
   group.name = 'HaizearenOrrazia';
   bin.build(group);
   return group;
-}
-
-// point in a flat [x0, z0, ...] ring (even-odd)
-function inside(ring, x, z) {
-  let c = false;
-  for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-    const xi = ring[i], zi = ring[i + 1], xj = ring[j], zj = ring[j + 1];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
-  }
-  return c;
 }
