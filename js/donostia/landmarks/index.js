@@ -53,5 +53,8 @@ export function buildLandmarks(GEO, terrain) {
     group.add(model);
     for (const site of sites) for (const b of site.buildings || []) hidden.add(b);
   }
+  // main.js updates the objects it adds; forward to the models that animate (funicular cars, lighthouse beams…)
+  const animated = group.children.filter((m) => typeof m.userData.update === 'function');
+  if (animated.length) group.userData.update = (dt, elapsed, camera) => { for (const m of animated) m.userData.update(dt, elapsed, camera); };
   return { group, hidden };
 }

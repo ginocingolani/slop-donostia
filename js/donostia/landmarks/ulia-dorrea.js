@@ -16,7 +16,7 @@ const RUBBLE = rgb(0xa39d90), DARK_STONE = rgb(0x847d70);
 export function build(sites, ctx) {
   const site = sites[0];
   if (!site?.footprint) return null;
-  const { kit, GEO } = ctx;
+  const { kit } = ctx;
   const ring = site.footprint;
   let cx = 0, cz = 0;
   const n = ring.length / 2;
@@ -25,19 +25,6 @@ export function build(sites, ctx) {
   let r = 0;
   for (let k = 0; k < ring.length; k += 2) r += Math.hypot(ring[k] - cx, ring[k + 1] - cz);
   r /= n;
-
-  // The tower lies outside the 1:500 core, and the bake matched nearly every building to it (its mask test passes
-  // trivially there): keep only buildings actually standing on the outline, so returning the model hides nothing else
-  if (site.buildings) {
-    site.buildings = site.buildings.filter((i) => {
-      const g = GEO.buildings[i]?.g?.[0];
-      if (!g) return false;
-      let bx = 0, bz = 0;
-      for (let k = 0; k < g.length; k += 2) { bx += g[k]; bz += g[k + 1]; }
-      bx /= g.length / 2; bz /= g.length / 2;
-      return Math.hypot(bx - cx, bz - cz) < r + 1;
-    });
-  }
 
   // the ground there is the 8 m context grid: sink the base well in
   const g = kit.lowestGround(ctx, ring) - 0.4;

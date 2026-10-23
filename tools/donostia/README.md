@@ -1,14 +1,26 @@
 # Donostia geodata pipeline
 
-Builds the data behind `index.html` (Slop Donostia) from public sources. Three steps:
+Builds the data behind `index.html` (Slop Donostia) from public sources:
 
 ```sh
-tools/donostia/fetch.sh                                         # raw sources -> tools/donostia/raw (gitignored, ~0.6 GB)
-python3 -I tools/donostia/extract.py                            # raw -> tools/donostia/data/*.json (local frame, committed)
-node --max-old-space-size=8192 tools/donostia/build.mjs         # -> data/donostia/*.png + js/donostia/geodata.js
+tools/donostia/build-all.sh --fetch   # everything: download, extract, bake (~0.6 GB of raw sources, a few minutes)
+tools/donostia/build-all.sh           # bake again from the committed tools/donostia/data (~35 s)
 ```
 
-`build.mjs --preview <dir>` also writes hillshade and building-height images for checking a rebuild.
+The steps it runs, in order:
+
+| Step | Reads | Writes |
+|---|---|---|
+| `fetch.sh` | the web | `tools/donostia/raw/` (gitignored) and `data/osm_*.json` |
+| `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed) |
+| `build.mjs` | `raw/dtm`, `raw/bathy`, `data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` |
+| `bake-ground.mjs` | `data/`, the terrain | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
+| `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
+| `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata | `js/donostia/data-streetscape.js` |
+| `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
+| `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
+
+`build.mjs --preview <dir>` and `bake-ground.mjs --preview <dir>` also write debug images for checking a rebuild.
 
 ## Frame
 

@@ -734,7 +734,8 @@ function bakeLandmarks(buildings) {
     buildings.forEach((bd, idx) => {
       let n = 0, hit = 0;
       scanRings(bd.g, CORE.minX, CORE.minZ, 1, W, H, (i, j) => { n++; if (mask[j * W + i] === siteIdx) hit++; });
-      if (n && (hit >= 0.5 * n || hit >= 0.5 * m)) members.push(idx);
+      // (m is 0 for a footprint outside the core: no building can belong to it then)
+      if (n && m && (hit >= 0.5 * n || hit >= 0.5 * m)) members.push(idx);
     });
     return members;
   };

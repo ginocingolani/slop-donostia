@@ -158,7 +158,13 @@ async function initApp() {
         for (let i = 0; i < n; i++) {
           const c0 = performance.now();
           simulate(dt);
+          // the compile below may be mid-await with the scene pass's MRT target bound: render to the canvas meanwhile
+          const target = renderer.getRenderTarget(), targetMRT = renderer.getMRT();
+          renderer.setRenderTarget(null);
+          renderer.setMRT(null);
           pipeline.render();
+          renderer.setRenderTarget(target);
+          renderer.setMRT(targetMRT);
           cpu += performance.now() - c0;
           draws += renderer.info.render.drawCalls;
           triangles += renderer.info.render.triangles;

@@ -298,27 +298,9 @@ export function placeOnTrack(object, path, s, halfBase, designAngle = 0) {
   object.rotation.set(0, Math.atan2(-dz, dx), Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) - designAngle);
 }
 
-// main.js calls update() only on the objects it adds itself, and the registry (index.js) hands it one group holding
-// every landmark: chain the model's update onto whatever group it is added to. The frame guard turns a second call in
-// the same frame (should the registry forward updates itself one day) into a no-op.
+// The registry (index.js) forwards its group's per-frame update to every landmark model's userData.update
 export function relayUpdate(model, update) {
-  let last = -1;
-  model.userData.update = (dt, elapsed, camera) => {
-    if (elapsed === last) return;
-    last = elapsed;
-    update(dt, elapsed, camera);
-  };
-  model.addEventListener('added', () => {
-    const parent = model.parent;
-    const before = parent?.userData.update;
-    if (!parent || before?.relays?.has(model)) return;
-    const chained = (dt, elapsed, camera) => {
-      if (before) before(dt, elapsed, camera);
-      model.userData.update(dt, elapsed, camera);
-    };
-    chained.relays = new Set([...(before?.relays || []), model]);
-    parent.userData.update = chained;
-  });
+  model.userData.update = update;
 }
 
 // --- Lighthouse lights ------------------------------------------------------------------------------------------------
