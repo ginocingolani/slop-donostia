@@ -18,7 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, log } from './lib.mjs';
+import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 
 const ROOT = path.join(HERE, '..', '..');
@@ -619,9 +619,9 @@ const write = (file, buf, what) => {
   px.set(edges, W * H);
   px.set(kerbDist, 2 * W * H);
   px.set(crossingSlot, 3 * W * H);
-  write('ground-core.png', encodePNG(px, W, 4 * H, 1), `${W}x${H} @ 1 m, 4 planes`);
+  write('ground-core.png', encodePNG(px, W, 4 * H, 1, pngText('c500', 'osm', 'geoeuskadi')), `${W}x${H} @ 1 m, 4 planes`);
 }
-write('ground-orient.png', encodePNG(orient, OW, OH, 1), `${OW}x${OH} @ ${ORIENT_RES} m`);
+write('ground-orient.png', encodePNG(orient, OW, OH, 1, pngText('c500', 'osm')), `${OW}x${OH} @ ${ORIENT_RES} m`);
 {
   const cw = 3 * maxSlots, px = new Uint8Array(cw * TX * TZ * 4);
   tileSlots.forEach((slots, tile) => slots.forEach((c, s) => {
@@ -633,7 +633,7 @@ write('ground-orient.png', encodePNG(orient, OW, OH, 1), `${OW}x${OH} @ ${ORIENT
     px.set([xcm >> 16, (xcm >> 8) & 255, xcm & 255, zcm >> 16, (zcm >> 8) & 255, zcm & 255, a16 >> 8, a16 & 255,
       Math.round(c.halfLen * 10), Math.round(c.halfWid * 10), 0, 255], o);
   }));
-  write('ground-crossings.png', encodePNG(px, cw, TX * TZ, 4), `${crossings.length} crossings in ${TX}x${TZ} tiles`);
+  write('ground-crossings.png', encodePNG(px, cw, TX * TZ, 4, pngText('osm', 'c500')), `${crossings.length} crossings in ${TX}x${TZ} tiles`);
 }
 lap('done');
 

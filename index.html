@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop Donostia</title>
   <link rel="icon" href="data:," />
-  <meta name="description" content="Donostia / San Sebastián from the top of Igeldo to the end of Sagüés, built with three.js WebGPURenderer and TSL on the Basque LiDAR terrain, the municipal 1:500 map and b5m building heights. A fork of mrdoob/slop-newyork." />
+  <meta name="description" content="Donostia / San Sebastián from the top of Igeldo to the end of Sagüés and south to Anoeta and the Hospital Universitario, built with three.js WebGPURenderer and TSL on the Basque LiDAR terrain, the municipal 1:500 map, b5m building heights and OpenStreetMap. A fork of mrdoob/slop-newyork." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js pinned to the r186.1 npm release (slop-newyork tracks @dev; jsDelivr cannot serve arbitrary three.js commits: the repo exceeds its 50 MB limit) -->
   <script type="importmap">
@@ -111,11 +111,12 @@
 
   <div id="credits-popover" class="popover credits" popover aria-label="Data sources">
     <div class="pop-title">Datuak · Datos</div>
-    <p>Terrain &amp; sea floor: Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi — LiDAR 2017 MDT &amp; isobaths (CC BY 4.0)</p>
-    <p>Building heights: b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa (CC BY 4.0)</p>
-    <p>Buildings, streets &amp; ground: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (CC BY-SA 3.0)</p>
-    <p>Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (CC BY-SA 3.0)</p>
-    <p>Street &amp; place names, landmarks: © OpenStreetMap contributors (ODbL)</p>
+    <p>Terrain &amp; sea floor: Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi — LiDAR 2017 MDT &amp; isobaths (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
+    <p>Building heights: b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
+    <p>Buildings, streets &amp; ground: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
+    <p>Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
+    <p>Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
+    <p>The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
     <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
   </div>
 
@@ -216,6 +217,8 @@
       <div class="panel fullmap-status">
         <span id="fullmap-hover-info">Click to fly there · Drag to pan · Scroll or pinch to zoom</span>
       </div>
+      <!-- the map draws the 1:500 ground, the LiDAR relief, b5m heights & OSM names, and hides the credits button -->
+      <small class="map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · Donostiako Udala (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>) · geoEuskadi, b5m (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>) · <a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">data licences</a></small>
     </div>
   </section>
 </body>

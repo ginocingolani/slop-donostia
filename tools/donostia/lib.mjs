@@ -75,6 +75,29 @@ export function osmBBox() {
 
 export const log = (...args) => console.log('[donostia]', ...args);
 
+// The sources of the baked data, for the attribution & licence lines every generated file carries (the licences ask for
+// the credit, a link to the licence and a note that the data was modified; tools/donostia/README.md has the details)
+export const SOURCES = {
+  geoeuskadi: ['Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'],
+  b5m: ['b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'],
+  c500: ['Donostiako Udala / Ayuntamiento de San Sebastián', 'CC BY-SA 3.0', 'https://creativecommons.org/licenses/by-sa/3.0/'],
+  osm: ['© OpenStreetMap contributors', 'ODbL 1.0', 'https://opendatacommons.org/licenses/odbl/1-0/']
+};
+const MODIFIED = 'derived data (reprojected, resampled, simplified and combined by tools/donostia; see its README.md)';
+
+// Comment lines for a generated JS file built from the given SOURCES keys
+export function licenceComment(...keys) {
+  return `// Licence: ${MODIFIED}, under\n` + keys.map((k) => `//   ${SOURCES[k][0]}: ${SOURCES[k][1]} ${SOURCES[k][2]}\n`).join('');
+}
+
+// PNG text chunks (tEXt, Latin-1) with the same, for a baked image built from the given SOURCES keys
+export function pngText(...keys) {
+  return {
+    Copyright: keys.map((k) => `${SOURCES[k][0]} (${SOURCES[k][1]}, ${SOURCES[k][2]})`).join(' · '),
+    Comment: `Slop Donostia ${MODIFIED}; licences as in Copyright`
+  };
+}
+
 // `--preview <dir>` on the command line: the folder (resolved), or null without the flag. Fails at startup when the
 // folder is missing, rather than skipping the previews after a long bake.
 export function previewDir() {
@@ -330,8 +353,9 @@ function chunk(type, data) {
 }
 
 // pixels: Uint8Array of w * h * channels (1 = gray, 3 = RGB, 4 = RGBA). Each row picks the filter (None/Sub/Up/Paeth)
-// with the smallest sum of absolute residuals, which is what keeps smooth height fields small.
-export function encodePNG(pixels, w, h, channels) {
+// with the smallest sum of absolute residuals, which is what keeps smooth height fields small. text: optional
+// { keyword: value } written as tEXt chunks (pngText(); decoders, js/donostia/png.js included, skip them).
+export function encodePNG(pixels, w, h, channels, text = null) {
   const colorType = { 1: 0, 3: 2, 4: 6 }[channels];
   const stride = w * channels;
   const out = Buffer.alloc((stride + 1) * h);
@@ -372,6 +396,7 @@ export function encodePNG(pixels, w, h, channels) {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
+    ...Object.entries(text || {}).map(([key, value]) => chunk('tEXt', Buffer.from(`${key}\0${value}`, 'latin1'))),
     chunk('IDAT', zlib.deflateSync(out, { level: 9 })),
     chunk('IEND', Buffer.alloc(0))
   ]);
