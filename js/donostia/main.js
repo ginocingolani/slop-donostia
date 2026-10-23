@@ -5,11 +5,11 @@ import { createPostProcessing } from '../post-processing.js';
 import { LightingSystem } from '../lighting.js';
 import { GEO } from './geodata.js';
 import { Terrain } from './terrain.js';
-import { createGroundMaterial } from './ground.js';
+import { createGroundMaterial, prefetchGroundMaps } from './ground.js';
 import { createWater } from './water.js';
 import { buildDonostiaBuildings } from './buildings.js';
 import { buildLandmarks } from './landmarks/index.js';
-import { buildVegetation } from './vegetation.js';
+import { buildVegetation, SHADOW_ONLY_LAYER } from './vegetation.js';
 import { buildStreetscape } from './streetscape.js';
 import { buildBridges } from './bridges.js';
 import { GodCamera } from './god-camera.js';
@@ -23,8 +23,194 @@ import { DONOSTIA_PRESETS } from './presets.js';
 //
 // Every builder returns an Object3D (or null); one whose userData.update is a function gets
 // update(dt, elapsed, camera) every frame.
+//
+// buildWorld() and createView() hold everything but the page (DOM, HUD, god camera), so a headless benchmark can run
+// the very same scene and render pipeline; initApp() wires them to index.html.
 
 const STORAGE_KEY = 'donostia-god-camera';
+
+// --- the world -----------------------------------------------------------------------------------------------------------
+
+/**
+ * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges.
+ * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
+ * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
+ */
+export async function buildWorld(renderer, { status = () => {}, mark = () => {} } = {}) {
+  const scene = new THREE.Scene();
+  const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS);
+  mark('lighting');
+
+  const modules = {}, updaters = [];
+  const add = (name, object) => {
+    if (!object) return;
+    modules[name] = object;
+    scene.add(object);
+    if (typeof object.userData.update === 'function') updaters.push(object.userData.update);
+  };
+
+  status('Loading LiDAR terrain & sea floor…');
+  // the ground maps download & decode while the terrain does
+  const groundMaps = prefetchGroundMaps();
+  const terrain = await Terrain.load(GEO.terrain);
+  mark('terrain data');
+  status('Building the bay, the hills & the streets…');
+  add('terrain', terrain.build(await createGroundMaterial(terrain, groundMaps)));
+  add('water', await createWater(terrain));
+  mark('terrain mesh');
+
+  status('Raising the landmarks…');
+  const landmarks = buildLandmarks(GEO, terrain);
+  add('landmarks', landmarks.group);
+  mark('landmarks');
+  status(`Raising ${GEO.buildings.length.toLocaleString('en-US')} buildings…`);
+  add('buildings', buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
+  mark('buildings');
+  status('Planting trees & dressing the streets…');
+  const [vegetation, streetscape, bridges] = await Promise.all([
+    buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain)
+  ]);
+  add('vegetation', vegetation);
+  add('streetscape', streetscape);
+  add('bridges', bridges);
+  modules.sky = lighting.sky;
+  mark('details');
+
+  // Shadow-only stand-ins (the far trees' casters, vegetation.js) live on a layer only the sun's cascade cameras see.
+  // The far trees cast within reach of the cascades: lighting.update() sets their view depth (shadow.camera.far), the
+  // frustum's corners lie up to ~1.5 times that away, and a tree further out still throws its shadow in, as far as a
+  // 25 m crown's shadow runs at the sun's elevation
+  for (let i = 0; i < 2; i++) lighting.sunLight.shadow.getCamera(i).layers.enable(SHADOW_ONLY_LAYER);
+  if (vegetation) {
+    vegetation.userData.shadowReach = () => {
+      const sun = lighting.sunLight.position;
+      const elevation = Math.asin(THREE.MathUtils.clamp(sun.y / Math.max(sun.length(), 1e-6), -1, 1));
+      return lighting.sunLight.shadow.camera.far * 1.6 + Math.min(300, 25 / Math.tan(Math.max(elevation, 0.05)));
+    };
+  }
+
+  // Draw order. Opaque objects already go front to back (three sorts them by depth); the sea plane and the sky dome,
+  // which lie behind nearly everything they overlap, go last so the fragments the land or the city cover are
+  // rejected by the depth test before their shaders run
+  modules.water?.traverse((o) => { o.renderOrder = 1; });
+  lighting.sky.renderOrder = 2;
+
+  return { scene, lighting, terrain, modules, updaters };
+}
+
+// --- the view: render pipeline, shader compilation, frame ------------------------------------------------------------------
+
+// compileAsync() builds the node graphs in slices and has the GPU process compile the pipelines in parallel, but it
+// takes one object at a time and yields between them; several calls side by side keep both busy (as js/main.js)
+const COMPILE_POOL = 16;
+const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
+
+/**
+ * The render pipeline of `world` seen through `camera`, as in js/main.js: an MRT scene pass, half-resolution SSR on
+ * glossy surfaces, bloom & colour grading. Returns { pipeline, grade, scenePass, sceneMRT, ssrPass, simulate(dt),
+ * render(), compile(onProgress), warmUp() }.
+ */
+export function createView(renderer, world, camera) {
+  const { scene, lighting, terrain, updaters } = world;
+
+  const scenePass = pass(scene, camera);
+  scenePass.renderTarget.storeMultisampledColorBuffer = false;
+  const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+  const maxSSRRoughness = 0.75;
+  const sceneMRT = mrt({
+    output,
+    normal: normalView,
+    metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+  });
+  sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+  sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
+  scenePass.setMRT(sceneMRT);
+  const color = scenePass.getTextureNode('output');
+  const metalRough = scenePass.getTextureNode('metalRough');
+  const ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
+    metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
+  });
+  ssrPass.resolutionScale = 0.5;
+  ssrPass.blurQuality = 1;
+  ssrPass.maxDistance.value = 60;
+  ssrPass.thickness.value = 0.85;
+  ssrPass.quality.value = 0.25;
+  ssrPass.binaryRefine = true;
+  ssrPass.intensity.value = 0.5;
+  ssrPass.screenEdgeFadeBlack = true;
+  const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
+  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask));
+  const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
+
+  let elapsed = 0;
+  const simulate = (dt) => {
+    elapsed += dt;
+    terrain.update(camera.position);
+    lighting.update(camera.position);
+    for (const update of updaters) update(dt, elapsed, camera);
+  };
+
+  // Every visible object with frustum culling off, one compileAsync per object, COMPILE_POOL at a time. Plain meshes
+  // that share a material share its shader, so one job compiles them in turn (the first build serves the rest); each
+  // instanced mesh gets a job of its own. The shadow-map variants are left to the warm-up frame.
+  async function compile(onProgress = () => {}) {
+    // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
+    // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
+    scene.visible = false;
+    pipeline.render();
+    scene.visible = true;
+    simulate(0); // pick the terrain's levels of detail & the trees in reach for this camera
+    const culled = [], jobs = [], jobByMaterial = new Map();
+    scene.traverseVisible((o) => {
+      if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+      if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
+      if (!o.layers.test(camera.layers)) return; // shadow-only stand-ins
+      if (o.isInstancedMesh || o.geometry.isInstancedBufferGeometry || Array.isArray(o.material)) { jobs.push([o]); return; }
+      let job = jobByMaterial.get(o.material);
+      if (!job) { job = []; jobByMaterial.set(o.material, job); jobs.push(job); }
+      job.push(o);
+    });
+    renderer.setRenderTarget(scenePass.renderTarget);
+    renderer.setMRT(sceneMRT);
+    const compileOne = async (object) => {
+      // each compile starts in a task of its own: compileAsync() keeps one precompilation state on the renderer, which
+      // must not be mid-step for two of them in the same microtask checkpoint
+      await nextTask();
+      try {
+        await renderer.compileAsync(object, camera, scene);
+      } catch (e) {
+        console.warn('[compile]', e); // the warm-up frame compiles it instead
+      }
+    };
+    let next = 0, done = 0;
+    const worker = async () => {
+      while (next < jobs.length) {
+        const job = jobs[next++];
+        for (const object of job) await compileOne(object);
+        onProgress(++done / jobs.length);
+      }
+    };
+    await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
+    renderer.setMRT(null);
+    renderer.setRenderTarget(null);
+    for (const o of culled) o.frustumCulled = true;
+  }
+
+  // A frame with frustum culling off, so the pipelines compile() can't reach (the shadow maps, objects out of view)
+  // exist before the loading screen lifts. Terrain chunks of every level share one pipeline: the current levels do.
+  function warmUp() {
+    const culled = [];
+    scene.traverse((o) => {
+      if (o.frustumCulled && !o.userData.sharesPipelineWith) { culled.push(o); o.frustumCulled = false; }
+    });
+    pipeline.render();
+    for (const o of culled) o.frustumCulled = true;
+  }
+
+  return { pipeline, grade, scenePass, sceneMRT, ssrPass, simulate, render: () => pipeline.render(), compile, warmUp };
+}
+
+// --- the page --------------------------------------------------------------------------------------------------------------
 
 async function initApp() {
   const container = document.getElementById('canvas-container');
@@ -55,40 +241,8 @@ async function initApp() {
   let mark = performance.now();
   const markInit = (label) => { const now = performance.now(); timings.push(`${label} ${Math.round(now - mark)}ms`); mark = now; };
 
-  const scene = new THREE.Scene();
-  const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS);
-  markInit('lighting');
-
-  const updaters = [];
-  const add = (object) => {
-    if (!object) return;
-    scene.add(object);
-    if (typeof object.userData.update === 'function') updaters.push(object.userData.update);
-  };
-
-  status('Loading LiDAR terrain & sea floor…');
-  const terrain = await Terrain.load(GEO.terrain);
-  markInit('terrain data');
-  status('Building the bay, the hills & the streets…');
-  add(terrain.build(await createGroundMaterial(terrain)));
-  add(await createWater(terrain));
-  markInit('terrain mesh');
-
-  status('Raising the landmarks…');
-  const landmarks = buildLandmarks(GEO, terrain);
-  add(landmarks.group);
-  markInit('landmarks');
-  status(`Raising ${GEO.buildings.length.toLocaleString('en-US')} buildings…`);
-  add(buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
-  markInit('buildings');
-  status('Planting trees & dressing the streets…');
-  const [vegetation, streetscape, bridges] = await Promise.all([
-    buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain)
-  ]);
-  add(vegetation);
-  add(streetscape);
-  add(bridges);
-  markInit('details');
+  const world = await buildWorld(renderer, { status, mark: markInit });
+  const { scene, lighting, terrain, updaters } = world;
 
   const god = new GodCamera(renderer.domElement, terrain);
   const camera = god.camera;
@@ -97,38 +251,12 @@ async function initApp() {
     if (saved) god.state = saved;
     else god.flyTo(GEO.teleports.find((t) => t.id === 'urgull'), 0.001);
   } catch { god.flyTo(GEO.teleports[0], 0.001); }
+  god.update(0.001);
   const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(god.state)); } catch { /* storage unavailable */ } };
   window.addEventListener('pagehide', save);
 
-  // Render pipeline (as in js/main.js): MRT scene pass, half-resolution SSR on glossy metals, bloom & colour grading
-  const scenePass = pass(scene, camera);
-  scenePass.renderTarget.storeMultisampledColorBuffer = false;
-  const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
-  const maxSSRRoughness = 0.75;
-  const sceneMRT = mrt({
-    output,
-    normal: normalView,
-    metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
-  });
-  sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
-  sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
-  scenePass.setMRT(sceneMRT);
-  const color = scenePass.getTextureNode('output');
-  const metalRough = scenePass.getTextureNode('metalRough');
-  const ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
-    metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
-  });
-  ssrPass.resolutionScale = 0.5;
-  ssrPass.blurQuality = 1;
-  ssrPass.maxDistance.value = 60;
-  ssrPass.thickness.value = 0.85;
-  ssrPass.quality.value = 0.25;
-  ssrPass.binaryRefine = true;
-  ssrPass.intensity.value = 0.5;
-  ssrPass.screenEdgeFadeBlack = true;
-  const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
-  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask));
-  const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
+  const view = createView(renderer, world, camera);
+  const { pipeline, grade } = view;
 
   const hud = initHud({ GEO, god, terrain, lighting, grade, renderer });
   window.addEventListener('resize', () => {
@@ -136,13 +264,10 @@ async function initApp() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  let last = performance.now(), elapsed = 0, frames = 0, fpsTime = 0, saveAt = 0, first = true;
+  let last = performance.now(), frames = 0, fpsTime = 0, saveAt = 0, first = true;
   const simulate = (dt) => {
-    elapsed += dt;
     god.update(dt);
-    terrain.update(camera.position);
-    lighting.update(camera.position);
-    for (const update of updaters) update(dt, elapsed, camera);
+    view.simulate(dt);
   };
 
   // ?debug: frame-by-frame access for profiling, set up before the shader compile below (which waits on animation
@@ -151,7 +276,7 @@ async function initApp() {
   if (DEBUG) {
     const device = renderer.backend.device;
     window.slopDebug = {
-      THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO,
+      THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
       async bench(n = 60, dt = 1 / 60) {
         let cpu = 0, gpu = 0, draws = 0, triangles = 0;
         const t0 = performance.now();
@@ -179,14 +304,7 @@ async function initApp() {
 
   // Compile the pipelines behind the loading screen
   status('Compiling shaders…', 0.6);
-  scene.visible = false;
-  pipeline.render();
-  scene.visible = true;
-  renderer.setRenderTarget(scenePass.renderTarget);
-  renderer.setMRT(sceneMRT);
-  try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('[compile]', e); }
-  renderer.setMRT(null);
-  renderer.setRenderTarget(null);
+  await view.compile((p) => status(`Compiling shaders… ${Math.round(p * 100)}%`, 0.6 + 0.35 * p));
   markInit('compile');
 
   renderer.setAnimationLoop((now) => {
@@ -194,14 +312,7 @@ async function initApp() {
     last = now;
     simulate(Math.min(Math.max(raw, 0.001), 0.05));
     if (first) {
-      // a warm-up frame with frustum culling off and every terrain level of detail shown, so pipelines and draws all
-      // exist before the loading screen lifts
-      const culled = [];
-      scene.traverse((o) => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
-      terrain.setAllVisible(true);
-      pipeline.render();
-      terrain.setAllVisible(false);
-      culled.forEach((o) => { o.frustumCulled = true; });
+      view.warmUp();
       markInit('warm-up');
     }
     pipeline.render();
@@ -211,6 +322,7 @@ async function initApp() {
       Promise.resolve(device && device.queue.onSubmittedWorkDone()).catch(() => {}).then(() => {
         markInit('gpu');
         console.log(`[init] ${timings.join(', ')}`);
+        status('', 1);
         loadingOverlay?.classList.add('hidden');
       });
     }
@@ -225,8 +337,11 @@ async function initApp() {
   });
 }
 
-initApp().catch((e) => {
-  console.error(e);
-  const s = document.getElementById('loading-status');
-  if (s) s.textContent = `Could not start: ${e.message}`;
-});
+// (imported headless by the benchmark: no page to run)
+if (typeof window !== 'undefined') {
+  initApp().catch((e) => {
+    console.error(e);
+    const s = document.getElementById('loading-status');
+    if (s) s.textContent = `Could not start: ${e.message}`;
+  });
+}

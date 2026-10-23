@@ -12,6 +12,7 @@ import { decodePNG } from './png.js';
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];
 const SKIRT = 6; // m
+const SUBMERGED = -3; // m: chunks whose highest sample lies below this are always under the (opaque) sea
 
 class HeightField {
   constructor(meta, image, offset) {
@@ -151,6 +152,7 @@ function chunkGeometry(field, ci, cj, sink = null) {
   const x1 = field.sampleX(Math.min(i0 + QUADS, field.w - 1)), z1 = field.sampleZ(Math.min(j0 + QUADS, field.h - 1));
   geo.boundingBox = new THREE.Box3(new THREE.Vector3(x0, minY - SKIRT, z0), new THREE.Vector3(x1, maxY, z1));
   geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
+  geo.userData.maxY = maxY;
   return geo;
 }
 
@@ -171,6 +173,7 @@ export class Terrain {
     this.group = new THREE.Group();
     this.group.name = 'DonostiaTerrain';
     this.chunks = [];
+    this.lodScale = 1; // distance multiplier of every level's reach (smaller: coarser levels sooner)
   }
 
   // Ground height (m) at a local (x, z): the 2 m core where it exists, the 8 m context elsewhere
@@ -206,7 +209,7 @@ export class Terrain {
             if (!all) indices = LOD_STRIDES.map((s) => chunkIndex(s, keep));
           }
           const base = chunkGeometry(field, ci, cj, kind === 'context' ? insideCore : null);
-          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [] };
+          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [], maxY: base.userData.maxY };
           indices.forEach((index) => {
             if (!index) { chunk.meshes.push(null); return; }
             const geo = new THREE.BufferGeometry();
@@ -239,19 +242,23 @@ export class Terrain {
     }
   }
 
-  // Pick each chunk's level of detail from its distance to the camera (about one pixel per sample for a 1080p, 55°
-  // view), with a little hysteresis so chunks don't flicker between two levels at a boundary
+  // Pick each chunk's level of detail from its distance to the camera (triangles of 4-8 px for a 1080p, 55° view),
+  // with a little hysteresis so chunks don't flicker between two levels at a boundary. Chunks wholly under the sea are
+  // never seen through the opaque water (the god camera stays above it; the tide's low water is 1.6 m down): hidden.
   update(cameraPosition) {
     for (const chunk of this.chunks) {
       const d = chunk.box.distanceToPoint(cameraPosition);
-      const reach = (lod) => 200 * LOD_STRIDES[lod] * chunk.res / 2;
-      let lod = 0;
-      while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
-      if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
-        const edge = reach(Math.max(lod, chunk.lod));
-        if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
+      let lod = -1;
+      if (chunk.maxY >= SUBMERGED) {
+        const reach = (l) => 200 * LOD_STRIDES[l] * chunk.res / 2 * this.lodScale;
+        lod = 0;
+        while (lod < LOD_STRIDES.length - 1 && d > reach(lod + 1)) lod++;
+        if (chunk.lod >= 0 && Math.abs(lod - chunk.lod) === 1) {
+          const edge = reach(Math.max(lod, chunk.lod));
+          if (Math.abs(d - edge) < 0.08 * edge) lod = chunk.lod;
+        }
+        while (lod > 0 && !chunk.meshes[lod]) lod--;
       }
-      while (lod > 0 && !chunk.meshes[lod]) lod--;
       if (lod === chunk.lod) continue;
       if (chunk.lod >= 0 && chunk.meshes[chunk.lod]) chunk.meshes[chunk.lod].visible = false;
       if (chunk.meshes[lod]) chunk.meshes[lod].visible = true;

@@ -14,9 +14,15 @@ import { createTreeMaterial, createFarTreeMaterial } from './trees-material.js';
 // Levels of detail, picked per tree from the camera (3D distance to mid-crown) whenever it has moved a few metres:
 // - near (every twig) & mid (cards along the branches): one instanced mesh per species / variant / level, refilled
 //   with the trees in reach (found by searching only the 64 m cells within LOD_MID of the camera)
-// - far: one draw for all the trees of the city (a parametric crown & trunk shaped per instance in the shader), which
-//   folds away the trees the near & mid meshes drew, measured from the same point (uLodCenter) with the same distance,
-//   so the hand-over needs no per-tree upload and the city's ~27,000 trees cost one static buffer
+// - far: one draw for the trees beyond the mid level (a parametric crown & trunk shaped per instance in the shader).
+//   Its instance buffers hold only the far trees in (a widened) view, refilled from the 64 m cells that meet the view
+//   frustum whenever the camera has moved a few metres or turned past the margin, so the city's ~50,000 trees cost
+//   what the few thousand on screen do. The shader still folds away the trees the near & mid meshes draw, measured
+//   from the same point (uLodCenter) with the same distance, and shrinks them away towards FAR_END.
+// - far shadows: the far trees within the sun's shadow range (lighting.js widens it with the camera's altitude; at
+//   street level the mid level covers all of it) on a second instance list: a shadow-only stand-in on
+//   SHADOW_ONLY_LAYER, which only the cascade cameras see (main.js), instead of every tree of the city drawn into
+//   both cascades
 
 const LOD_NEAR = 85; // m: full detail within
 const LOD_MID = 300; // m: cards along the branches within; the far trees beyond
@@ -24,6 +30,11 @@ const LOD_HYSTERESIS = 6; // m, between near & mid only (the far shader can't se
 const FAR_END = 3400; // m: the far trees shrink away before this
 const REPICK = 3; // m the camera moves before the levels are picked again
 const CELL = 64; // m, cells searched for trees in reach
+const VIEW_MARGIN = THREE.MathUtils.degToRad(10); // the far trees are culled to a frustum this much wider on every side
+const SHADOW_MARGIN = 30; // m beyond the shadow range whose far trees still cast
+
+// Layer of the shadow-only stand-ins: main.js enables it on the sun's cascade cameras; the view camera never sees it
+export const SHADOW_ONLY_LAYER = 3;
 
 // hashPos of js/trees.js (slop-newyork)
 function hashPos(x, y, z) {
@@ -138,19 +149,38 @@ export async function buildVegetation(GEO, terrain) {
     }
   }
 
-  // Far trees: every tree, one draw
+  // Far trees: one draw of the far trees in view, refilled by cull() below. The per-tree data stays in farPos,
+  // farShape & data; the instance buffers get the trees to draw packed at their front.
+  const farAttributes = (geo) => ['aFarPos', 'aFarShape', 'aTreeData'].map((name) => {
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4);
+    a.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute(name, a);
+    return a;
+  });
   const farGeo = buildFarGeometry();
-  farGeo.setAttribute('aFarPos', new THREE.InstancedBufferAttribute(farPos, 4));
-  farGeo.setAttribute('aFarShape', new THREE.InstancedBufferAttribute(farShape, 4));
-  farGeo.setAttribute('aTreeData', new THREE.InstancedBufferAttribute(data, 4));
-  farGeo.instanceCount = N;
+  const farInView = farAttributes(farGeo);
+  farGeo.instanceCount = 1; // one degenerate (all-zero) tree until the first cull, so the pipelines compile
   const farMesh = new THREE.Mesh(farGeo, far.material);
   farMesh.name = 'Trees_far';
-  farMesh.frustumCulled = false;
-  farMesh.castShadow = true;
+  farMesh.frustumCulled = false; // the instances are culled on the CPU
+  farMesh.castShadow = false; // the stand-in below casts
   farMesh.receiveShadow = true;
   farMesh.matrixAutoUpdate = false;
   group.add(farMesh);
+  // the far trees within shadow range, seen only by the sun's cascade cameras
+  const shadowGeo = new THREE.InstancedBufferGeometry();
+  for (const name of ['position', 'normal', 'uv', 'aFarPart']) shadowGeo.setAttribute(name, farGeo.attributes[name]);
+  shadowGeo.setIndex(farGeo.index);
+  const farInShadow = farAttributes(shadowGeo);
+  shadowGeo.instanceCount = 1;
+  const shadowMesh = new THREE.Mesh(shadowGeo, far.material);
+  shadowMesh.name = 'Trees_far_shadow';
+  shadowMesh.layers.set(SHADOW_ONLY_LAYER);
+  shadowMesh.frustumCulled = false;
+  shadowMesh.castShadow = true;
+  shadowMesh.receiveShadow = false;
+  shadowMesh.matrixAutoUpdate = false;
+  group.add(shadowMesh);
 
   // Cells of trees (counting sort), so a pick only looks at the trees that can be in reach
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
@@ -166,6 +196,20 @@ export async function buildVegetation(GEO, terrain) {
   const order = new Uint32Array(N);
   const fill = cellStart.slice(0, gw * gh);
   for (let i = 0; i < N; i++) order[fill[cellOf(i)]++] = i;
+
+  // Bounds of every cell's trees, crowns included, for the frustum test: min x, y, z, max x, y, z
+  const cellBox = new Float32Array(gw * gh * 6);
+  for (let c = 0; c < gw * gh; c++) cellBox.set([Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], c * 6);
+  for (let i = 0; i < N; i++) {
+    const b = cellOf(i) * 6, r = farShape[i * 4 + 1];
+    const x = farPos[i * 4], y0 = farPos[i * 4 + 1], z = farPos[i * 4 + 2], y1 = y0 + farShape[i * 4] + farShape[i * 4 + 2];
+    cellBox[b] = Math.min(cellBox[b], x - r);
+    cellBox[b + 1] = Math.min(cellBox[b + 1], y0);
+    cellBox[b + 2] = Math.min(cellBox[b + 2], z - r);
+    cellBox[b + 3] = Math.max(cellBox[b + 3], x + r);
+    cellBox[b + 4] = Math.max(cellBox[b + 4], y1);
+    cellBox[b + 5] = Math.max(cellBox[b + 5], z + r);
+  }
 
   const lod = new Uint8Array(N).fill(2); // 0 near, 1 mid, 2 far
   const seen = new Uint32Array(N);
@@ -232,13 +276,87 @@ export async function buildVegetation(GEO, terrain) {
     if (changed || stamp === 1) rebuild();
   }
 
+  // The far trees in view and those in shadow range, packed at the front of their instance buffers
+  const cullCamera = new THREE.PerspectiveCamera();
+  const frustum = new THREE.Frustum(), bounds = new THREE.Box3(), projScreen = new THREE.Matrix4();
+  const lastCull = { dir: new THREE.Vector3(), fov: 0, aspect: 0, reach: -1 };
+  const dir = new THREE.Vector3();
+  const pack = ([p, s, d], n, i) => {
+    for (let k = 0; k < 4; k++) {
+      p.array[n * 4 + k] = farPos[i * 4 + k];
+      s.array[n * 4 + k] = farShape[i * 4 + k];
+      d.array[n * 4 + k] = data[i * 4 + k];
+    }
+  };
+  // (both meshes stay visible: with no instances three skips the draw but keeps the pipeline, so the precompile & the
+  // warm-up frame always reach it)
+  const upload = (attrs, geo, n) => {
+    geo.instanceCount = n;
+    if (!n) return;
+    for (const a of attrs) {
+      a.clearUpdateRanges();
+      a.addUpdateRange(0, n * 4);
+      a.needsUpdate = true;
+    }
+  };
+  function cull(camera, reach) {
+    const cam = camera.position;
+    lastCull.dir.copy(dir);
+    lastCull.fov = camera.fov;
+    lastCull.aspect = camera.aspect;
+    lastCull.reach = reach;
+    // the view frustum widened by VIEW_MARGIN on every side and reaching FAR_END, so a small turn needs no refill
+    const halfV = THREE.MathUtils.degToRad(camera.fov / 2), halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+    const wideV = Math.min(halfV + VIEW_MARGIN, 1.5), wideH = Math.min(halfH + VIEW_MARGIN, 1.5);
+    cullCamera.fov = THREE.MathUtils.radToDeg(2 * wideV);
+    cullCamera.aspect = Math.tan(wideH) / Math.tan(wideV);
+    cullCamera.near = 0.5;
+    cullCamera.far = FAR_END;
+    cullCamera.updateProjectionMatrix();
+    cullCamera.position.copy(cam);
+    cullCamera.quaternion.copy(camera.quaternion);
+    cullCamera.updateMatrixWorld();
+    frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse));
+    const farEnd2 = FAR_END * FAR_END, shadow2 = (reach + SHADOW_MARGIN) ** 2;
+    let nView = 0, nShadow = 0;
+    for (let c = 0; c < gw * gh; c++) {
+      if (cellStart[c] === cellStart[c + 1]) continue;
+      bounds.min.fromArray(cellBox, c * 6);
+      bounds.max.fromArray(cellBox, c * 6 + 3);
+      const near2 = bounds.distanceToPoint(cam) ** 2;
+      const inShadow = near2 < shadow2;
+      const inView = near2 < farEnd2 && frustum.intersectsBox(bounds);
+      if (!inView && !inShadow) continue;
+      for (let o = cellStart[c]; o < cellStart[c + 1]; o++) {
+        const i = order[o];
+        if (lod[i] !== 2) continue;
+        // the far shader's crown-centre distance
+        const dx = farPos[i * 4] - cam.x, dy = farPos[i * 4 + 1] + farShape[i * 4] - cam.y, dz = farPos[i * 4 + 2] - cam.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (inView && d2 < farEnd2) pack(farInView, nView++, i);
+        if (inShadow && d2 < shadow2) pack(farInShadow, nShadow++, i);
+      }
+    }
+    upload(farInView, farGeo, nView);
+    upload(farInShadow, shadowGeo, nShadow);
+  }
+
+  // the sun's shadow range (main.js points it at lighting.js); without one, no far tree casts
+  group.userData.shadowReach = () => LOD_MID - SHADOW_MARGIN;
+  const cosTurn = Math.cos(VIEW_MARGIN * 0.8);
   group.userData.update = (dt, elapsed, camera) => {
     const cam = camera.position;
     far.uniforms.view.value.copy(cam);
-    if (cam.distanceToSquared(lastPick) >= REPICK * REPICK) pick(cam);
+    const moved = cam.distanceToSquared(lastPick) >= REPICK * REPICK;
+    if (moved) pick(cam);
+    const reach = group.userData.shadowReach();
+    camera.getWorldDirection(dir);
+    if (moved || dir.dot(lastCull.dir) < cosTurn || camera.fov !== lastCull.fov || camera.aspect !== lastCull.aspect ||
+      Math.abs(reach - lastCull.reach) > 10) cull(camera, reach);
   };
 
   const triangles = kits.map((v) => v.map((k) => k.geometries.map((g) => g.userData.triangles)));
-  group.userData.stats = { trees: N, triangles, meshes: meshes.length + 1 };
+  group.userData.stats = { trees: N, triangles, meshes: meshes.length + 2 };
+  group.userData.farCounts = () => ({ view: farGeo.instanceCount, shadow: shadowGeo.instanceCount });
   return group;
 }
