@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, float, vec3, mix, abs, floor, fract, sin, step, clamp, smoothstep, positionWorld, mx_noise_float } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, Frame, WORLD, westMaterials as M, rgb, strut } from './igeldo.js';
-import { pointInRing } from './geom.js';
+import { pointInRing, centroid } from './geom.js';
 
 // js/donostia/landmarks/tenis-kluba.js
 // Real Club de Tenis de San Sebastián at Ondarreta, between the Paseo de Eduardo Chillida and the foot of Igeldo, a
@@ -24,7 +24,7 @@ import { pointInRing } from './geom.js';
 //     carved eaves brackets, the arcade to the courts.
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['tenis-kluba', 'tenis-pistak'] and ctx = { GEO, terrain, kit }.
-// The pavilion's 1:500 building is added to the tenis-pistak site's `buildings`, so the registry hides its plain
+// No site claims the pavilion's 1:500 building, so the model names it in userData.hide and the registry hides its plain
 // extrusion along with the clubhouse's.
 
 // The courts: four corners each (two baselines of 10.97 m), from the 1:500 map
@@ -371,23 +371,16 @@ export function build(sites, ctx) {
   // the club pavilion: the 1:500 building the b5m names "Tenis" on the terrace west of the courts
   const pavilion = GEO.buildings.findIndex((b) => {
     if (b.name !== 'Tenis' || !b.g?.[0]) return false;
-    const r = b.g[0];
-    let x = 0, z = 0;
-    for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
-    x /= r.length / 2; z /= r.length / 2;
+    const [x, z] = centroid(b.g[0]);
     return x > -1395 && x < -1355 && z > 225 && z < 315;
   });
-  if (pavilion >= 0) {
-    buildPavilion(ctx, bin, GEO.buildings[pavilion], glass);
-    const owner = courts || club;
-    owner.buildings ||= [];
-    if (!owner.buildings.includes(pavilion)) owner.buildings.push(pavilion);
-  }
+  if (pavilion >= 0) buildPavilion(ctx, bin, GEO.buildings[pavilion], glass);
 
   if (club) buildClubhouse(ctx, bin, club, GEO.buildings[club.buildings?.[0]], glass);
 
   const group = new THREE.Group();
   group.name = 'TenisKluba';
   bin.build(group);
+  if (pavilion >= 0) group.userData.hide = [pavilion];
   return group;
 }

@@ -23,7 +23,10 @@ import * as illunbe from './illunbe.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
-// buildings under a built landmark are hidden from the plain extrusions (js/donostia/buildings.js).
+// buildings under a built landmark are hidden from the plain extrusions (js/donostia/buildings.js). Those are the sites'
+// `buildings` (tools/donostia/build.mjs), less those of any site a model lists in userData.skipped (site ids it could
+// not build), plus the GEO.buildings indices it lists in userData.hide (buildings it replaces that no site claims, found
+// by position: the Aquarium's, the tennis pavilion, the funicular's stations). Modules never edit GEO.
 
 const MODELS = [
   [udaletxea, ['udaletxea']],
@@ -65,10 +68,25 @@ export function buildLandmarks(GEO, terrain) {
     if (!model) continue;
     model.name ||= ids[0];
     group.add(model);
-    for (const site of sites) for (const b of site.buildings || []) hidden.add(b);
+    const skipped = new Set(model.userData.skipped || []);
+    for (const site of sites) if (!skipped.has(site.id)) for (const b of site.buildings || []) hidden.add(b);
+    for (const b of model.userData.hide || []) hidden.add(b);
   }
-  // main.js updates the objects it adds; forward to the models that animate (funicular cars, lighthouse beams…)
+  // main.js updates the objects it adds; forward to the models that animate (funicular cars, lighthouse beams…). As
+  // with build(), one landmark's failure stays its own: an update that throws is logged once and dropped, leaving that
+  // model still, instead of stopping the later updaters and the frame's render on every frame.
   const animated = group.children.filter((m) => typeof m.userData.update === 'function');
-  if (animated.length) group.userData.update = (dt, elapsed, camera) => { for (const m of animated) m.userData.update(dt, elapsed, camera); };
+  if (animated.length) {
+    group.userData.update = (dt, elapsed, camera) => {
+      for (let k = 0; k < animated.length; k++) {
+        try {
+          animated[k].userData.update(dt, elapsed, camera);
+        } catch (e) {
+          console.warn(`[landmark ${animated[k].name} update]`, e);
+          animated.splice(k--, 1);
+        }
+      }
+    };
+  }
   return { group, hidden };
 }

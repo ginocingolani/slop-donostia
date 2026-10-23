@@ -10,7 +10,8 @@ import { Parts, wound, cleanRing, insetRing, simplify, hipRoof, pointInRing, dis
 // build(sites, ctx) receives the GEO.landmarks entries ['itsas-museoa', 'aquariuma'] (footprint ring,
 // at [x, z], buildings, height — see tools/donostia/build.mjs) and ctx = { GEO, terrain, kit }. Return an Object3D in
 // world (local-frame) coordinates, or null to keep the plain extruded buildings. Returning a model hides the 1:500
-// buildings listed in the sites' `buildings`.
+// buildings listed in the sites' `buildings` (and in the model's userData.hide), except those of the sites it lists in
+// userData.skipped.
 //
 // The museum follows OpenStreetMap's building parts (js/donostia/data-urgull-parts.js): the long white block on the
 // quay with its tiled roof (14.5 m to the ridge), six dormers on the slope over the port, the square tower at the east
@@ -171,10 +172,11 @@ function aquariumBuilding(GEO, at) {
   return best;
 }
 
+// Returns the index of the 1:500 building the Aquarium replaces, or -1
 function buildAquarium(parts, mats, ctx, site) {
   const { GEO, kit } = ctx;
   const idx = aquariumBuilding(GEO, site.at);
-  if (idx < 0) return false;
+  if (idx < 0) return -1;
   const b = GEO.buildings[idx];
   const ring = cleanRing(b.g[0]);
   const low = lowestAlong(ctx, ring);
@@ -223,10 +225,9 @@ function buildAquarium(parts, mats, ctx, site) {
     parts.add(mats.window, door);
     parts.add(mats.stone, box(3.0, 3.8, 0.12, cx + ox * 0.82, foot - 0.1, cz + oz * 0.82, ux, uz));
   }
-  // The site is an OSM point, so build.mjs found no 1:500 building under it: name the one replaced here, as
-  // landmarks/index.js hides each site's `buildings` once build() returns
-  site.buildings = [idx];
-  return true;
+  // (the site is an OSM point, so build.mjs found no 1:500 building under it: build() names this one in
+  // userData.hide)
+  return idx;
 }
 
 // --- build --------------------------------------------------------------------------------------------------------------
@@ -237,19 +238,30 @@ export function build(sites, ctx) {
     render: kit.materials.whiteRender, stone: kit.materials.sandstone, tiles: kit.materials.terracotta, window: windowMaterial()
   };
   const parts = new Parts();
-  let any = false;
+  const hide = [], skipped = [];
   for (const site of sites) {
+    // one failing building shouldn't take the other down with it: its pieces are dropped and its plain extrusion stays
+    const mark = parts.mark();
     let ok = false;
     try {
       if (site.id === 'itsas-museoa') ok = buildMuseum(parts, mats, ctx);
-      else if (site.id === 'aquariuma' && site.at) ok = buildAquarium(parts, mats, ctx, site);
+      else if (site.id === 'aquariuma' && site.at) {
+        const idx = buildAquarium(parts, mats, ctx, site);
+        if (idx >= 0) {
+          hide.push(idx);
+          ok = true;
+        }
+      }
     } catch (e) {
-      // one failing building shouldn't take the other down with it
       console.warn(`[landmark ${site.id}]`, e);
     }
-    // keep the plain extrusion of a building that wasn't modelled
-    if (!ok) site.buildings = [];
-    any ||= ok;
+    if (!ok) {
+      parts.rollback(mark);
+      skipped.push(site.id);
+    }
   }
-  return any ? parts.build('itsas-museoa') : null;
+  if (skipped.length === sites.length) return null;
+  const model = parts.build('itsas-museoa');
+  Object.assign(model.userData, { hide, skipped });
+  return model;
 }

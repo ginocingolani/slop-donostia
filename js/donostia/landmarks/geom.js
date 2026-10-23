@@ -41,6 +41,20 @@ export class Parts {
     this.add(material, geometry).applyMatrix4(matrix);
   }
 
+  // What has been added so far, and the way back to it: a module building several sites into one Parts drops the
+  // pieces of a site that fails halfway, so a half-built landmark never stands over the plain extrusion kept for it
+  mark() {
+    return new Map([...this.byMaterial].map(([material, list]) => [material, list.length]));
+  }
+
+  rollback(mark) {
+    for (const [material, list] of this.byMaterial) {
+      const n = mark.get(material) || 0;
+      if (n) list.length = n;
+      else this.byMaterial.delete(material);
+    }
+  }
+
   build(name) {
     const group = new THREE.Group();
     group.name = name;
