@@ -100,6 +100,31 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
 
 // --- the view: render pipeline, shader compilation, frame ------------------------------------------------------------------
 
+// The shadow maps draw every caster with one override material, into which three r186.1 copies each caster's colour
+// graph (for its alpha) unless it has none: so every material in the city got a shadow pipeline of its own, each
+// compiling a whole facade or ground shader (synchronously, in the first frame) to write depth alone. Without an alpha
+// test, mask or custom shadow node that alpha changes nothing in the shadow map (no blending, no discard), so opaque
+// casters get the plain shadow program instead and share one pipeline; the vertex displacement, if any, is kept.
+function shareOpaqueShadowPrograms(renderer) {
+  if (renderer._donostiaShadowPrograms) return;
+  renderer._donostiaShadowPrograms = true;
+  const shadowNodes = renderer._getShadowNodes;
+  const plain = new WeakMap();
+  renderer._getShadowNodes = function (material) {
+    if (material.transparent || material.alphaTest > 0 || material.alphaTestNode || material.maskNode || material.maskShadowNode ||
+      material.castShadowNode || material.depthNode || material.map || material.alphaMap || material.alphaToCoverage) {
+      return shadowNodes.call(this, material);
+    }
+    let nodes = plain.get(material);
+    if (!nodes || nodes.version !== material.version) {
+      const positionNode = material.castShadowPositionNode?.isNode ? material.castShadowPositionNode : material.positionNode?.isNode ? material.positionNode : null;
+      nodes = { version: material.version, colorNode: null, depthNode: null, positionNode };
+      plain.set(material, nodes);
+    }
+    return nodes;
+  };
+}
+
 // compileAsync() builds the node graphs in slices and has the GPU process compile the pipelines in parallel, but it
 // takes one object at a time and yields between them; several calls side by side keep both busy (as js/main.js)
 const COMPILE_POOL = 16;
@@ -112,6 +137,7 @@ const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield
  */
 export function createView(renderer, world, camera) {
   const { scene, lighting, terrain, updaters } = world;
+  shareOpaqueShadowPrograms(renderer);
 
   const scenePass = pass(scene, camera);
   scenePass.renderTarget.storeMultisampledColorBuffer = false;
@@ -172,6 +198,12 @@ export function createView(renderer, world, camera) {
     });
     renderer.setRenderTarget(scenePass.renderTarget);
     renderer.setMRT(sceneMRT);
+    // compileAsync() files its work under the render context of a top-level render, but the scene pass renders nested
+    // in the post-processing chain (call depth 1): everything compiled here would be built again by the first frame,
+    // and the instanced meshes, whose instance buffers get fresh names in every build, compiled again. Point it at
+    // the scene pass's own context meanwhile (three r186.1 internals).
+    const contexts = renderer._renderContexts, getContext = contexts.get;
+    contexts.get = (target = null, m = null, depth = 0) => getContext.call(contexts, target, m, target === scenePass.renderTarget ? 1 : depth);
     const compileOne = async (object) => {
       // each compile starts in a task of its own: compileAsync() keeps one precompilation state on the renderer, which
       // must not be mid-step for two of them in the same microtask checkpoint
@@ -191,6 +223,7 @@ export function createView(renderer, world, camera) {
       }
     };
     await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
+    contexts.get = getContext;
     renderer.setMRT(null);
     renderer.setRenderTarget(null);
     for (const o of culled) o.frustumCulled = true;

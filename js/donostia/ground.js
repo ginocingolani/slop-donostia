@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, int, vec2, vec3, vec4, ivec2, color, floor, fract, abs, min, max, clamp, mix, step, smoothstep, dot,
-  sin, cos, pow, length, normalize, fwidth, textureLoad, uniformArray, positionWorld, positionView, normalView,
+  sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionView, normalView,
   normalWorldGeometry, cameraPosition, PI
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
@@ -198,25 +198,32 @@ const GROUP = { natural: 0, asphalt: 1, paved: 2, beach: 3, flowers: 4, plain: 5
 const groupOf = (k) => k === S.natural ? GROUP.natural : k === S.road || k === S.bike ? GROUP.asphalt :
   PAVED.includes(k) ? GROUP.paved : k === S.beach ? GROUP.beach : k === S.flowers ? GROUP.flowers : GROUP.plain;
 
-// The per-surface constants as uniform arrays indexed by surface id:
+// The per-surface constants, one texel per surface id and row (a small float texture read with textureLoad: shared by
+// every chunk and never re-uploaded, where uniform arrays would be copied into each mesh's bindings every frame):
 // - surface: base albedo (linear rgb), roughness
 // - flags: hard, holds puddles, branch group
 // - paveA: unit along, across, running-bond shift, joint width; paveB: dark rgb, odd share; paveC: light rgb, dome
+const TABLE_ROWS = { surface: 0, flags: 1, paveA: 2, paveB: 3, paveC: 4 };
 function surfaceTables() {
   const lin = (hex) => new THREE.Color(hex);
-  const surface = [], flags = [], paveA = [], paveB = [], paveC = [];
+  const data = new Float32Array(SURFACES * 5 * 4);
+  const put = (row, k, v) => data.set(v, (row * SURFACES + k) * 4);
   for (let k = 0; k < SURFACES; k++) {
     const c = lin(BASE[k] ?? 0x000000);
-    surface.push(new THREE.Vector4(c.r, c.g, c.b, ROUGH[k] ?? 0.93));
-    flags.push(new THREE.Vector4(HARD.includes(k) ? 1 : 0, POOLING.includes(k) ? 1 : 0, groupOf(k), 0));
+    put(TABLE_ROWS.surface, k, [c.r, c.g, c.b, ROUGH[k] ?? 0.93]);
+    put(TABLE_ROWS.flags, k, [HARD.includes(k) ? 1 : 0, POOLING.includes(k) ? 1 : 0, groupOf(k), 0]);
     const row = PAVING.find((r) => r[0] === k) || PAVING[0];
     const dark = lin(row[5]), light = lin(row[6]);
-    paveA.push(new THREE.Vector4(row[1], row[2], row[3], row[4]));
-    paveB.push(new THREE.Vector4(dark.r, dark.g, dark.b, row[7]));
-    paveC.push(new THREE.Vector4(light.r, light.g, light.b, row[8]));
+    put(TABLE_ROWS.paveA, k, [row[1], row[2], row[3], row[4]]);
+    put(TABLE_ROWS.paveB, k, [dark.r, dark.g, dark.b, row[7]]);
+    put(TABLE_ROWS.paveC, k, [light.r, light.g, light.b, row[8]]);
   }
-  const array = (values) => uniformArray(values, 'vec4');
-  return { surface: array(surface), flags: array(flags), paveA: array(paveA), paveB: array(paveB), paveC: array(paveC) };
+  const tex = new THREE.DataTexture(data, SURFACES, 5, THREE.RGBAFormat, THREE.FloatType);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  const read = (row) => (id) => textureLoad(tex, ivec2(int(id), row));
+  return Object.fromEntries(Object.entries(TABLE_ROWS).map(([name, row]) => [name, read(row)]));
 }
 
 // --- material ----------------------------------------------------------------------------------------------------------
@@ -233,7 +240,7 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   const { w, h, res } = maps;
   const x0 = core.x0, z0 = core.z0, x1 = core.x0 + core.width, z1 = core.z0 + core.depth;
   const T = surfaceTables();
-  const surfaceOf = (id) => T.surface.element(int(id));
+  const surfaceOf = T.surface;
 
   // (no .assign() out here: outside Fn() there is no stack to hold it, so every step is a new node)
   const p = positionWorld;
@@ -288,7 +295,7 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   sid = sid.toVar();
   const margin = mix(float(9), best.sub(second).mul(0.5), step(-8, second));
   const edgeMix = clamp(float(0.5).sub(margin.div(fw)), 0, 0.5).mul(inCore).toVar(); // share of the runner-up
-  const surfW = surfaceOf(wid).toVar(), flagsW = T.flags.element(int(wid)).toVar();
+  const surfW = surfaceOf(wid).toVar(), flagsW = T.flags(wid).toVar();
   const group = flagsW.z.toVar();
 
   // Signed distance to the nearest kerb (+ on the carriageway), meaningful where `kerbed` > 0
@@ -404,7 +411,7 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       });
     }).ElseIf(group.lessThan(2.5), () => {
       // unit paving (sidewalk tiles, slabs, setts, quay stones, concrete, stairs) with the surface's parameters
-      const A = T.paveA.element(int(wid)), B = T.paveB.element(int(wid)), Cc = T.paveC.element(int(wid));
+      const A = T.paveA(wid), B = T.paveB(wid), Cc = T.paveC(wid);
       const unit = A.xy.toVar();
       const row = floor(q.y.div(unit.y));
       const pq = vec2(q.x.div(unit.x).add(row.mul(A.z)), q.y.div(unit.y)).toVar();

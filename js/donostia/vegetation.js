@@ -151,9 +151,10 @@ export async function buildVegetation(GEO, terrain) {
 
   // Far trees: one draw of the far trees in view, refilled by cull() below. The per-tree data stays in farPos,
   // farShape & data; the instance buffers get the trees to draw packed at their front.
+  // (static usage on purpose: three's WebGPU backend re-uploads a DynamicDrawUsage attribute whole on every draw;
+  // cull() uploads just the trees in use, and only when it refills)
   const farAttributes = (geo) => ['aFarPos', 'aFarShape', 'aTreeData'].map((name) => {
     const a = new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4);
-    a.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute(name, a);
     return a;
   });
