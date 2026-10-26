@@ -23,6 +23,7 @@ import * as illunbe from './illunbe.js';
 import * as alderdiEder from './alderdi-eder.js';
 import * as klubNautikoa from './klub-nautikoa.js';
 import * as laPerla from './la-perla.js';
+import * as dabadaba from './dabadaba.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
@@ -54,7 +55,8 @@ const MODELS = [
   [illunbe, ['illunbe']],
   [alderdiEder, []],
   [klubNautikoa, []],
-  [laPerla, []]
+  [laPerla, []],
+  [dabadaba, []]
 ];
 
 export function buildLandmarks(GEO, terrain) {
