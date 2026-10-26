@@ -5,7 +5,9 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { PartBin, Frame, westMaterials as M, rgb } from './igeldo.js';
-import { cleanRing, simplify, wound, ringArea, insetRing, pointInRing, distToRing, clipRing, hipRoof } from './geom.js';
+import {
+  cleanRing, simplify, wound, ringArea, insetRing, pointInRing, distToRing, clipRing, hipRoof, centroid
+} from './geom.js';
 
 // js/donostia/landmarks/la-perla.js
 // La Perla (La Perla del Océano), the bathing establishment on the sand of La Concha at the foot of the promenade, now
@@ -25,12 +27,13 @@ import { cleanRing, simplify, wound, ringArea, insetRing, pointInRing, distToRin
 //  - two small pavilions on the terraces by the promenade (the Bataplan's entrance and its twin, Kontxa 14).
 // From the photographs (Wikimedia Commons, "La Perla (Donostia-San Sebastián)" & "Eguzki Etxea": the beach front from
 // the bay and the sand, 1990s-2023; the pavilions and terraces from the promenade): pale cream render, white glazing
-// bars, blue-grey limestone cornices, copings and railing posts, white cast-iron railings of rings. The Real Caseta de
-// Baños (1911) is not part of it: it stands on its own some 40 m further south-west.
+// bars, blue-grey limestone cornices, copings and railing posts, white cast-iron railings of rings.
+// The Real Caseta de Baños (1911), the royal bathing pavilion, is a separate building some 40 m further south-west,
+// modelled here too (see caseta() below): white marble over a rusticated base, its own stairs to the sand.
 //
-// Plan: the beach edge of the municipal 1:500 map (embedded below) for the storey on the sand; the 1:500 outlines of
+// Plan: the beach edge of the municipal 1:500 map (embedded below) for the storeys on the sand; the 1:500 outlines of
 // the pavilions, found by position in GEO.buildings (and hidden as plain extrusions through userData.hide). Heights:
-// the terraces follow the LiDAR promenade, the eaves b5m's measured heights. No GEO.landmarks site claims the building.
+// the terraces follow the LiDAR promenade, the eaves b5m's measured heights. No GEO.landmarks site claims them.
 //
 // Interface with the promenade wall and its railing: the storey on the sand stands from 1.6 m under the beach level
 // (the sand 6 m out to sea) up to the terraces, so it stands right whether the sand before it is the LiDAR's smoothed
@@ -78,8 +81,45 @@ const PAVILIONS = {
   perla: [-35.6, 661.3], // La Perla, Kontxa 12
   eguzki: [-86.8, 683.6], // Eguzki, Kontxa 16
   bataplan: [-3.4, 656.0], // the Bataplan's entrance, Kontxa 10
-  kontxa14: [-56.4, 686.8] // its twin, Kontxa 14
+  kontxa14: [-56.4, 686.8], // its twin, Kontxa 14
+  caseta: [-132.8, 710.5] // the Caseta Real's pavilion on the promenade, Kontxa 18
 };
+
+// The Caseta Real (Bainuetako Errege Etxola, 1911), from the municipal 1:500 map (CC BY-SA 3.0): its storey on the sand
+// along the beach's edge, west to east (the sea on the right): the west wing with its bowed end, the landing at the
+// foot of the pavilion and the east wing with its bowed end; the landing (the bastion's half round and the strip
+// before the pavilion's lower storey, where the stairs arrive); the two curved flights of stairs (foot to top, the
+// bastion's side and the outer side); their parapets (the beach's edge round them, from the wings down to the sand).
+const CASETA = {
+  west: [
+    -145.48, 713.45, -145.65, 712.80, -144.99, 712.70, -141.84, 711.77, -141.87, 710.93, -141.85, 710.23, -141.67, 709.59,
+    -141.37, 709.06, -140.93, 708.59, -140.42, 708.26, -139.74, 707.94, -138.75, 707.68
+  ],
+  front: [-138.75, 707.68, -138.56, 706.83, -130.19, 704.62, -128.68, 705.04], // the pavilion's lower storey between
+  east: [
+    -128.68, 705.04, -127.59, 704.75, -126.33, 704.82, -125.52, 705.03, -125.11, 705.27, -124.75, 705.63, -124.43, 706.15,
+    -124.02, 707.09, -123.91, 707.14, -120.76, 706.21, -120.11, 706.05, -120.02, 706.71, -119.23, 709.58, -119.01, 710.05
+  ],
+  back: [-118.94, 710.56, -144.40, 717.29], // along the promenade (b5m's outline of the whole, CC BY 4.0)
+  landing: [
+    -130.19, 704.62, -130.00, 703.06, -131.44, 703.44, -131.73, 702.55, -132.19, 701.69, -132.76, 701.07, -133.26, 700.76,
+    -134.12, 700.59, -135.35, 700.64, -136.20, 701.03, -136.83, 701.62, -137.20, 702.26, -137.37, 702.91, -137.36, 703.69,
+    -137.15, 704.92, -138.60, 705.30, -138.56, 706.83
+  ],
+  stairs: [
+    { inner: [-133.26, 700.76, -132.76, 701.07, -132.19, 701.69, -131.73, 702.55, -131.44, 703.44],
+      outer: [-132.25, 698.90, -130.79, 699.97, -130.15, 700.83, -129.95, 701.80, -130.00, 703.06] },
+    { inner: [-136.83, 701.62, -137.20, 702.26, -137.37, 702.91, -137.36, 703.69, -137.15, 704.92],
+      outer: [-138.50, 700.60, -138.93, 702.15, -139.09, 703.15, -138.88, 704.73, -138.60, 705.30] }
+  ],
+  parapets: [
+    [-128.68, 705.04, -129.68, 701.79, -130.15, 700.83, -130.79, 699.97, -132.05, 699.01, -132.38, 698.82],
+    [-138.75, 707.68, -139.51, 704.77, -139.66, 703.32, -139.53, 702.33, -139.30, 701.71, -138.81, 700.83, -138.58, 700.49]
+  ]
+};
+const MARBLE = rgb(0xb4b7b5); // the Caseta's grey-veined white marble (posts, copings)
+const RUSTIC = rgb(0x45494c); // its rusticated dark limestone base
+const SLATE = rgb(0x2b3036);
 
 const CREAM = 0xeee2c2; // the render (sRGB)
 const GREY_STONE = rgb(0x8b9194); // the blue-grey limestone of cornices, copings and posts
@@ -91,18 +131,20 @@ const BLOOMS = { perla: rgb(0xd0237f), cafe: rgb(0xd8242d) }; // the petunias at
 
 const BAY = 4.0; // m, the arcade's rhythm on the sand (the 1:500 pilasters along the galleries)
 
-// Façade codes (fstyle.x), drawn by perlaFacadeMaterial()
-const F = { plain: 0, arcade: 1, upper: 2, glassRoof: 3, shop: 4, sign: 5, door: 6 };
+// Façade codes (fstyle.x), drawn by perlaFacadeMaterial(); fstyle.w picks the finish (0 La Perla's cream render, 1 the
+// Caseta Real's white marble)
+const F = { plain: 0, arcade: 1, upper: 2, glassRoof: 3, shop: 4, sign: 5, door: 6, colonnade: 7, arch: 8 };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Materials
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Cream render with its openings, from two attributes: facade = (u along the bay, v up from the storey's floor, bay
-// width, seed) and fstyle = (code, storey height, flags, -). Arcade bays on the sand: a plinth with a round vent, a tall
-// arched window with white glazing bars behind a cast-iron balustrade of rings; upper bays: a big window, a balcony
-// balustrade before it (flags 1), a frieze set with small cobalt tiles; shop and door bays; the pools' glazed roof;
-// the restaurant's sign. Windows light up at dusk, the pools glow aqua.
+// Cream render (or the Caseta's marble) with its openings, from two attributes: facade = (u along the bay, v up from the
+// storey's floor, bay width, seed) and fstyle = (code, storey height, flags, finish). Arcade bays on the sand: a plinth
+// with a round vent, a tall arched window with white glazing bars behind a cast-iron balustrade of rings; upper bays: a
+// big window, a balcony balustrade before it (flags 1), a frieze set with small cobalt tiles; shop and door bays; the
+// pools' glazed roof; the restaurant's sign; the Caseta's colonnade bays over their rusticated base and its great
+// arched window. Windows light up at dusk, the pools glow aqua.
 function perlaFacadeMaterial() {
   const mat = new THREE.MeshStandardNodeMaterial();
   mat.userData.attributes = { facade: 4, fstyle: 4 };
@@ -117,10 +159,16 @@ function perlaFacadeMaterial() {
 
   const tone = float(0.96).add(mx_noise_float(positionWorld.mul(0.35)).mul(0.035))
     .add(mx_noise_float(positionWorld.mul(3.1)).mul(0.015));
-  const cream = vec3(...rgb(CREAM)).mul(tone);
+  // the finish: cream render, or white marble with soft grey veins
+  const vein = abs(mx_noise_float(positionWorld.mul(vec3(0.55, 0.3, 0.55)).add(mx_noise_float(positionWorld.mul(1.7)).mul(0.7))));
+  const cloud = mx_noise_float(positionWorld.mul(0.8)).mul(0.5).add(0.5);
+  const marble = mix(vec3(0.7, 0.71, 0.7), vec3(0.5, 0.52, 0.53), smoothstep(0.16, 0.0, vein).mul(0.35).add(cloud.mul(0.25))).mul(tone);
+  const isMarble = step(0.5, fs.w);
+  const cream = mix(vec3(...rgb(CREAM)).mul(tone), marble, isMarble);
   const white = vec3(0.86, 0.86, 0.83);
   const cu = u.sub(len.mul(0.5)); // from the bay's centre
   const wA = is(F.arcade), wU = is(F.upper), wG = is(F.glassRoof), wS = is(F.shop), wSg = is(F.sign), wD = is(F.door);
+  const wC = is(F.colonnade), wR = is(F.arch);
 
   // --- arcade bay on the sand
   const aHalf = max(len.mul(0.5).sub(0.55), 0.35);
@@ -181,14 +229,43 @@ function perlaFacadeMaterial() {
   // --- the sign: dark panel, gilt rules and "La Perla" in gilt strokes
   const sign = signFace(u, v, len, h);
 
+  // --- the Caseta's colonnade bays on the sand: rusticated dark limestone to 2.4 m (bossed blocks 0.6 m high, 1.2 m
+  // long, courses staggered), a marble apron, then a tall window with a transom between the columns
+  const rustic = step(v, 2.4).mul(wC);
+  const course = floor(v.div(0.6));
+  const dBedJ = float(0.3).sub(abs(fract(v.div(0.6)).sub(0.5)).mul(0.6));
+  const dHeadJ = float(0.6).sub(abs(fract(u.div(1.2).add(course.mul(0.5))).sub(0.5)).mul(1.2));
+  const rJoint = max(line(dBedJ, 0.025), line(dHeadJ, 0.025)).mul(fine);
+  const block = fract(sin(dot(vec2(floor(u.div(1.2).add(course.mul(0.5))), course), vec2(41.3, 17.9))).mul(9631.7));
+  const rusticCol = vec3(0.2, 0.215, 0.225).mul(float(0.86).add(block.mul(0.16))).mul(float(1).sub(rJoint.mul(0.45)));
+  const cHalf = max(len.mul(0.5).sub(0.42), 0.3);
+  const dC = max(abs(cu).sub(cHalf), max(float(2.95).sub(v), v.sub(h.sub(1.15))));
+  const cWin = inside(dC).mul(wC);
+  const cFrame = cWin.mul(float(1).sub(inside(dC.add(0.07))));
+  const cBars = max(line(abs(cu), 0.025), line(abs(v.sub(h.sub(1.75))), 0.025)).mul(cWin).mul(fine);
+  const apron = line(abs(max(abs(cu).sub(cHalf.sub(0.1)), abs(v.sub(2.67)).sub(0.16))), 0.02).mul(wC).mul(fine);
+
+  // --- the Caseta's great arched window: three lights (mullions, a transom at the springing) under a round head
+  const rHalf = max(len.mul(0.5).sub(0.3), 0.4);
+  const rCrown = h.sub(0.3), rSpring = rCrown.sub(rHalf);
+  const dRr = max(abs(cu).sub(rHalf), max(float(0.95).sub(v), v.sub(rSpring)));
+  const dRa = max(length(vec2(cu, v.sub(rSpring))).sub(rHalf), rSpring.sub(v));
+  const dR = min(dRr, dRa);
+  const rWin = inside(dR).mul(wR);
+  const rFrame = rWin.mul(float(1).sub(inside(dR.add(0.1))));
+  const rBars = max(max(line(abs(abs(cu).sub(rHalf.div(3))), 0.035), line(abs(v.sub(rSpring)), 0.035)),
+    line(abs(length(vec2(cu, v.sub(rSpring))).sub(rHalf.mul(0.62))), 0.03).mul(step(rSpring, v))).mul(rWin).mul(fine);
+
   const glassA = aWin.mul(float(1).sub(aFrame)).mul(float(1).sub(aBars)).mul(float(1).sub(balust)).mul(wA);
   const glassU = uWin.mul(float(1).sub(uFrame)).mul(float(1).sub(uBars)).mul(float(1).sub(balust2)).mul(wU);
   const glassS = sWin.mul(float(1).sub(sFrame)).mul(wS).add(dWin.mul(float(1).sub(dFrame)).mul(wD));
+  const glassC = cWin.mul(float(1).sub(cFrame)).mul(float(1).sub(cBars)).add(rWin.mul(float(1).sub(rFrame)).mul(float(1).sub(rBars)));
   const glassR = float(1).sub(gBars).mul(wG);
-  const glass = clamp(glassA.add(glassU).add(glassS), 0.0, 1.0);
+  const glass = clamp(glassA.add(glassU).add(glassS).add(glassC), 0.0, 1.0);
   const whiteMask = clamp(aFrame.add(aBars).add(balust).mul(wA)
     .add(uFrame.add(uBars).add(balust2).mul(wU))
-    .add(sFrame.mul(wS)).add(dFrame.mul(wD)).add(gBars.mul(wG)), 0.0, 1.0);
+    .add(sFrame.mul(wS)).add(dFrame.mul(wD)).add(gBars.mul(wG))
+    .add(cFrame).add(cBars).add(rFrame).add(rBars), 0.0, 1.0);
 
   const glassCol = mix(vec3(0.05, 0.075, 0.085), vec3(0.11, 0.14, 0.16), smoothstep(-0.3, 0.6, normalWorld.y));
   const roofGlass = vec3(0.36, 0.52, 0.6);
@@ -196,7 +273,9 @@ function perlaFacadeMaterial() {
   col = col.mul(float(1).sub(archivolt.mul(wA).mul(0.05))).add(key.mul(wA).mul(0.03));
   col = mix(col, vec3(0.05, 0.05, 0.05), vent);
   col = mix(col, cream.mul(0.84), ventRim.mul(float(1).sub(vent)));
-  col = mix(col, vec3(0.04, 0.12, 0.42), tile.mul(wU));
+  col = mix(col, vec3(0.04, 0.12, 0.42), tile.mul(wU).mul(float(1).sub(isMarble)));
+  col = mix(col, cream.mul(0.8), apron);
+  col = mix(col, rusticCol, rustic);
   col = mix(col, white, whiteMask);
   col = mix(col, glassCol, glass);
   col = mix(col, roofGlass, glassR);
@@ -342,24 +421,26 @@ class Quads {
 }
 
 // A wall along a polyline (outwards = right of travel), cut into bays: each bay a quad from yBot(x, z) to yTop(x, z)
-// with facade = (u in its bay, y - floor, bay width, seed) and fstyle = (code, storey height, flags, 0); bays(len)
-// counts an edge's bays, style(edge, bay, bays, len) gives the bay's { code, flags }
-function wallRun(q, pts, { yBot, yTop, floor, height, bays, style, seed = 0 }) {
+// with facade = (u in its bay, y - floor, bay width, seed) and fstyle = (code, storey height, flags, finish); bays(len)
+// counts an edge's equal bays (or cuts(len) gives their boundaries as fractions of it), style(edge, bay, bays, len)
+// gives the bay's { code, flags }
+function wallRun(q, pts, { yBot, yTop, floor, height, bays, cuts = null, style, seed = 0, finish = 0 }) {
   for (let e = 0; e + 1 < pts.length; e++) {
     const [ax, az] = pts[e], [bx, bz] = pts[e + 1];
     const L = Math.hypot(bx - ax, bz - az);
     if (L < 0.05) continue;
     const [nx, nz] = normalOf(pts[e], pts[e + 1]);
-    const n = Math.max(1, bays(L));
-    const bw = L / n;
+    const nb = cuts ? 0 : Math.max(1, bays(L));
+    const ts = cuts ? cuts(L) : Array.from({ length: nb + 1 }, (_, k) => k / nb);
+    const n = ts.length - 1;
     for (let k = 0; k < n; k++) {
-      const t0 = k / n, t1 = (k + 1) / n;
+      const t0 = ts[k], t1 = ts[k + 1], bw = L * (t1 - t0);
       const p0 = [ax + (bx - ax) * t0, az + (bz - az) * t0], p1 = [ax + (bx - ax) * t1, az + (bz - az) * t1];
       const { code, flags = 0 } = style(e, k, n, L);
       const s = seed + e * 0.0173 + k * 0.0031;
       const y00 = yBot(...p0), y01 = yBot(...p1), y10 = yTop(...p0), y11 = yTop(...p1);
       const fac = (uu, y) => [uu, y - floor, bw, s];
-      const sty = [code, height, flags, 0];
+      const sty = [code, height, flags, finish];
       q.quad([p0[0], y00, p0[1]], [p1[0], y01, p1[1]], [p1[0], y11, p1[1]], [p0[0], y10, p0[1]], [nx, 0, nz], {
         facade: [fac(0, y00), fac(bw, y01), fac(bw, y11), fac(0, y10)],
         fstyle: [sty, sty, sty, sty]
@@ -403,6 +484,73 @@ function post(sx, sz, x, z, y0, y1, yaw = 0) {
   g.rotateY(-yaw);
   g.translate(x, (y0 + y1) / 2, z);
   return g;
+}
+
+// The walls of a positively wound ring between y0 and y1
+function prismWalls(ring, y0, y1) {
+  const q = new Quads([]);
+  const pts = pairs(ring);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const [nx, nz] = normalOf(a, b);
+    q.quad([a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]], [nx, 0, nz], {});
+  }
+  return q.geometry();
+}
+
+// A flat cap over a ring at height y, facing up
+function cap(ring, y) {
+  const pts = pairs(ring).map(([x, z]) => new THREE.Vector2(x, z));
+  const pos = [];
+  for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, [])) {
+    const [a, b, c] = [pts[i], pts[j], pts[k]];
+    const up = (b.y - a.y) * (c.x - a.x) - (b.x - a.x) * (c.y - a.y) >= 0;
+    for (const p of up ? [a, b, c] : [a, c, b]) pos.push(p.x, y, p.y);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
+  return g;
+}
+
+// A wall `thick` thick along a polyline, its outer face on it (outwards = side x right of travel), standing from y0 to
+// tops[i] at each point: outer and inner faces, the top and both ends
+function slab(pts, y0, tops, thick, side = 1) {
+  const q = new Quads([]);
+  const n = pts.length;
+  const nrm = (i) => {
+    const a = normalOf(pts[Math.max(0, i - 1)], pts[Math.max(1, i)]), b = normalOf(pts[Math.min(n - 2, i)], pts[Math.min(n - 1, i + 1)]);
+    const l = Math.hypot(a[0] + b[0], a[1] + b[1]) || 1;
+    return [(side * (a[0] + b[0])) / l, (side * (a[1] + b[1])) / l];
+  };
+  const inner = pts.map((p, i) => { const [nx, nz] = nrm(i); return [p[0] - nx * thick, p[1] - nz * thick]; });
+  for (let i = 0; i + 1 < n; i++) {
+    const [nx, nz] = normalOf(pts[i], pts[i + 1]).map((c) => c * side);
+    const a = pts[i], b = pts[i + 1], c = inner[i + 1], d = inner[i];
+    q.quad([a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], tops[i + 1], b[1]], [a[0], tops[i], a[1]], [nx, 0, nz], {});
+    q.quad([d[0], y0, d[1]], [c[0], y0, c[1]], [c[0], tops[i + 1], c[1]], [d[0], tops[i], d[1]], [-nx, 0, -nz], {});
+    q.quad([a[0], tops[i], a[1]], [b[0], tops[i + 1], b[1]], [c[0], tops[i + 1], c[1]], [d[0], tops[i], d[1]], [0, 1, 0], {});
+  }
+  for (const [i, j] of [[0, 1], [n - 1, n - 2]]) {
+    const tx = pts[i][0] - pts[j][0], tz = pts[i][1] - pts[j][1], tl = Math.hypot(tx, tz) || 1;
+    const a = pts[i], d = inner[i];
+    q.quad([a[0], y0, a[1]], [d[0], y0, d[1]], [d[0], tops[i], d[1]], [a[0], tops[i], a[1]], [tx / tl, 0, tz / tl], {});
+  }
+  return q.geometry();
+}
+
+// n + 1 points at equal arc length along a polyline
+function resampleBy(pts, n) {
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const L = cum[cum.length - 1];
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const s = (L * i) / n;
+    let k = 1;
+    while (k < cum.length - 1 && cum[k] < s) k++;
+    const f = (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
+    return [pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * f, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * f];
+  });
 }
 
 // The longest run of consecutive ring points (cyclically) that pass `keep`
@@ -647,7 +795,7 @@ export function build(sites, ctx) {
     const b = GEO.buildings[found[key]];
     const eave = THREE.MathUtils.clamp(b.eave, DECK + 3.4, DECK + 4.6);
     const rise = THREE.MathUtils.clamp(b.top - b.eave - 0.2, 1.4, 2.6);
-    pavilion(ring, { eave, rise, blooms: BLOOMS.cafe });
+    pavilion(ring, { eave, rise, blooms: key === 'cafe' ? BLOOMS.cafe : null }); // (Eguzki's offices have none)
     // pinnacle piers at the seaward corners: the ends of the run of the outline's points along the front
     const pts = pairs(ring);
     const run = longestRun(pts.map((p, i) => ({ p, i })), ({ p }) => frontDist(...p).d < 1.2);
@@ -836,27 +984,28 @@ export function build(sites, ctx) {
     paint(post(0.24, 0.24, x, z, y1 + 2.32, y1 + 2.5, yaw), CREAM_PAINT);
   }
 
-  // --- railings: white cast iron between blue-grey limestone posts, two rails and a ring every 0.45 m
-  function railing(pts) {
+  // --- railings: white cast iron between limestone posts (blue-grey at La Perla, marble at the Caseta), two rails and
+  // a ring every 0.45 m, standing on yAt(x, z)
+  function railing(pts, yAt = terraceAt, postColour = GREY_STONE) {
     for (let e = 0; e + 1 < pts.length; e++) {
       const a = pts[e], c = pts[e + 1];
       const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
       if (L < 0.4) continue;
       const yaw = Math.atan2(c[1] - a[1], c[0] - a[0]);
-      const ya = terraceAt(...a), yc = terraceAt(...c);
+      const ya = yAt(...a), yc = yAt(...c);
       const posts = Math.max(1, Math.round(L / 2.4));
       for (let k = 0; k <= posts; k++) {
         const t = k / posts;
         const x = a[0] + (c[0] - a[0]) * t, z = a[1] + (c[1] - a[1]) * t, y = ya + (yc - ya) * t;
-        stone(post(0.34, 0.34, x, z, y - 0.05, y + 1.05, yaw));
-        stone(post(0.42, 0.42, x, z, y + 1.05, y + 1.16, yaw));
+        stone(post(0.34, 0.34, x, z, y - 0.05, y + 1.05, yaw), postColour);
+        stone(post(0.42, 0.42, x, z, y + 1.05, y + 1.16, yaw), postColour);
       }
       const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2, my = (ya + yc) / 2;
       for (const [y0, y1] of [[0.06, 0.12], [0.97, 1.04]]) paint(post(L, 0.06, mx, mz, my + y0, my + y1, yaw), WHITE_IRON);
       const rings = Math.floor(L / 0.45);
       for (let k = 0; k < rings; k++) {
         const t = (k + 0.5) / rings;
-        const tor = new THREE.TorusGeometry(0.16, 0.022, 3, 10);
+        const tor = new THREE.TorusGeometry(0.16, 0.022, 3, 8);
         tor.rotateY(-yaw);
         tor.translate(a[0] + (c[0] - a[0]) * t, ya + (yc - ya) * t + 0.54, a[1] + (c[1] - a[1]) * t);
         paint(tor, WHITE_IRON);
@@ -866,6 +1015,229 @@ export function build(sites, ctx) {
   // between the Café's terrace and the promenade, from the top of the beach stairs; beside the small pavilions
   railing(cafeRail);
   for (const r of TERRACE_RAILS) railing(pairs(r));
+
+  if (found.caseta !== undefined) caseta(GEO.buildings[found.caseta], ringOf('caseta', 0.25));
+
+  // The Caseta Real de Baños, 40 m south-west: Queen Maria Cristina's bathing pavilion, rebuilt in stone by Ramón
+  // Cortázar in 1911 (b5m). White marble with grey veins over a rusticated dark limestone base (Wikimedia Commons:
+  // "Kontxa-Kaseta" and "Eguzki-etxea" photographs, 2023; postcards of 1911-1920): two wings on the sand with bowed
+  // ends, columns between tall windows and terraces at promenade level; in the middle, a half-round bastion between
+  // two curved flights of stairs, its top the landing before the pavilion's lower storey; above it, on the promenade,
+  // the pavilion: a great round-headed window over a balcony, between piers carrying obelisks, under a curved pediment
+  // with the royal arms, a crown and two lions, and a dark slate dome with a lantern.
+  function caseta(b, upper) {
+    const west = pairs(CASETA.west), east = pairs(CASETA.east), front = pairs(CASETA.front);
+    const chain = [...west, ...front.slice(1, -1), ...east];
+    // the beach 6 m out; the promenade 2.5 m in from the back line; the landing three metres over the sand
+    const sand = [];
+    for (let e = 0; e + 1 < chain.length; e++) {
+      const [nx, nz] = normalOf(chain[e], chain[e + 1]);
+      sand.push(heightAt((chain[e][0] + chain[e + 1][0]) / 2 + nx * 6, (chain[e][1] + chain[e + 1][1]) / 2 + nz * 6));
+    }
+    sand.sort((p, q) => p - q);
+    const beach = THREE.MathUtils.clamp(sand[sand.length >> 1] + 0.25, 1.8, 3.2), foot = beach - 1.6;
+    const [b0, b1] = pairs(CASETA.back);
+    const [inX, inZ] = normalOf(b0, b1); // into the promenade
+    const prom = [0.15, 0.4, 0.65, 0.9].map((t) => heightAt(b0[0] + (b1[0] - b0[0]) * t + inX * 2.5, b0[1] + (b1[1] - b0[1]) * t + inZ * 2.5));
+    prom.sort((p, q) => p - q);
+    const PROM = THREE.MathUtils.clamp((prom[1] + prom[2]) / 2, 8, 10.5) + 0.05;
+    const LAND = beach + 3.0;
+    const EAVE = THREE.MathUtils.clamp(b.eave, PROM + 3.6, PROM + 4.6);
+    const marble = (geo) => bin.add(facade, geo, null, { facade: [0, 99, 1, 0], fstyle: [F.plain, 99, 0, 1] });
+    const rustic = (geo) => stone(geo, RUSTIC);
+
+    // the wings on the sand: bays about 2.3 m measured round their bows, a column before each pier
+    const wingPath = (pts) => {
+      let L = 0;
+      for (let k = 1; k < pts.length; k++) L += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+      return resampleBy(pts, Math.max(1, Math.round(L / 2.3)));
+    };
+    for (const pts of [wingPath(west.slice(1)), wingPath(east.slice(0, -3))]) {
+      wallRun(walls, pts, {
+        yBot: () => foot, yTop: () => PROM, floor: beach, height: PROM - beach, bays: () => 1,
+        style: () => ({ code: F.colonnade }), seed: 0.61, finish: 1
+      });
+      for (let k = 1; k + 1 < pts.length; k++) {
+        const [ax, az] = normalOf(pts[k - 1], pts[k]), [bx, bz] = normalOf(pts[k], pts[k + 1]);
+        const nl = Math.hypot(ax + bx, az + bz) || 1;
+        const cx = pts[k][0] + ((ax + bx) / nl) * 0.22, cz = pts[k][1] + ((az + bz) / nl) * 0.22;
+        const shaft = new THREE.CylinderGeometry(0.15, 0.17, PROM - 1.05 - (beach + 2.55), 10);
+        shaft.translate(cx, (PROM - 1.05 + beach + 2.55) / 2, cz);
+        marble(shaft);
+        marble(post(0.42, 0.42, cx, cz, beach + 2.4, beach + 2.58, 0));
+        marble(post(0.46, 0.46, cx, cz, PROM - 1.1, PROM - 0.95, 0));
+      }
+    }
+    // the wings' plain ends, and the lower storey's sides beside the landing
+    wallRun(walls, west.slice(0, 2), { yBot: () => foot, yTop: () => PROM, floor: beach, height: PROM - beach, bays: () => 1,
+      style: () => ({ code: F.plain }), finish: 1 });
+    wallRun(walls, east.slice(-4), { yBot: () => foot, yTop: () => PROM, floor: beach, height: PROM - beach, bays: () => 1,
+      style: () => ({ code: F.colonnade }), seed: 0.37, finish: 1 });
+    wallRun(walls, [front[0], front[1]], { yBot: () => foot, yTop: () => PROM, floor: beach, height: PROM - beach,
+      bays: () => 1, style: () => ({ code: F.plain }), finish: 1 });
+    wallRun(walls, [front[2], front[3]], { yBot: () => foot, yTop: () => PROM, floor: beach, height: PROM - beach,
+      bays: () => 1, style: () => ({ code: F.plain }), finish: 1 });
+    // the lower storey behind the landing: doors at the ends, windows between
+    wallRun(walls, [front[1], front[2]], {
+      yBot: () => LAND, yTop: () => PROM, floor: LAND, height: PROM - LAND, bays: () => 4,
+      style: (e, k, n) => ({ code: k === 0 || k === n - 1 ? F.door : F.shop }), seed: 0.83, finish: 1
+    });
+    // the frieze and cornice round the wings and over the lower storey, at the terraces' level
+    marble(band(chain, () => PROM, { out: 0.2, y0: -0.95, y1: -0.45 }));
+    marble(band(chain, () => PROM, { out: 0.42, y0: -0.45, y1: -0.05 }));
+    marble(band(chain, () => beach + 2.4, { out: 0.12, y0: 0, y1: 0.18 }));
+
+    // the terraces over the wings, level with the promenade (not where the pavilion stands)
+    const terraceRing = wound([...west, ...front.slice(1, -1), ...east, ...pairs(CASETA.back)].flat(), true);
+    const under = upper && insetRing(upper, 0.3);
+    stone(deck(terraceRing, () => PROM, under ? [under] : []), PAVING);
+
+    // the landing: the bastion and the strip before the lower storey, rusticated from the sand, a marble coping
+    const landing = wound(CASETA.landing, true);
+    rustic(prismWalls(landing, foot, LAND - 0.25));
+    marble(prismWalls(landing, LAND - 0.25, LAND));
+    stone(cap(landing, LAND), MARBLE);
+    // (the railing round the bastion's half round, between the stairs' tops)
+    railing(pairs(landing).filter(([x, z]) => x < -131.0 && z < 704.5), () => LAND, MARBLE);
+
+    // the stairs: steps 17 cm high between the bastion and the parapets
+    for (const s of CASETA.stairs) {
+      const n = Math.max(8, Math.round((LAND - beach) / 0.17));
+      const rise = (LAND - beach) / n;
+      const inner = resampleBy(pairs(s.inner), n), outer = resampleBy(pairs(s.outer), n);
+      const q = new Quads([]);
+      for (let k = 0; k < n; k++) {
+        const y = beach + (k + 1) * rise, y0 = k ? y - rise : foot;
+        const A = inner[k], B = outer[k], C = outer[k + 1], D = inner[k + 1];
+        q.quad([A[0], y, A[1]], [B[0], y, B[1]], [C[0], y, C[1]], [D[0], y, D[1]], [0, 1, 0], {});
+        const dx = (A[0] + B[0] - C[0] - D[0]) / 2, dz = (A[1] + B[1] - C[1] - D[1]) / 2, dl = Math.hypot(dx, dz) || 1;
+        q.quad([A[0], y0, A[1]], [B[0], y0, B[1]], [B[0], y, B[1]], [A[0], y, A[1]], [dx / dl, 0, dz / dl], {});
+      }
+      stone(q.geometry(), MARBLE);
+    }
+    // the parapets: rusticated, from the wings' cornice down with the stairs to the sand
+    const [lcx, lcz] = centroid(landing);
+    for (const p of CASETA.parapets) {
+      const pts = pairs(p);
+      const cum = [0];
+      for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+      const L = cum[cum.length - 1];
+      const tops = cum.map((s) => (s < 2.4 ? LAND + 0.95 : LAND + 0.95 - ((LAND - beach) * (s - 2.4)) / (L - 2.4)));
+      // outwards: away from the landing
+      const [nx, nz] = normalOf(pts[1], pts[2]);
+      const side = nx * (pts[1][0] - lcx) + nz * (pts[1][1] - lcz) > 0 ? 1 : -1;
+      rustic(slab(pts, foot, tops, 0.5, side));
+    }
+
+    // the pavilion on the promenade: walls to the eaves, the front a pier, the great window and a pier
+    if (!upper) return;
+    const up = pairs(upper);
+    up.push(up[0]);
+    let frontEdge = 0, frontD = Infinity;
+    for (let e = 0; e + 1 < up.length; e++) {
+      const mx = (up[e][0] + up[e + 1][0]) / 2, mz = (up[e][1] + up[e + 1][1]) / 2;
+      const d = Math.hypot(mx - (front[1][0] + front[2][0]) / 2, mz - (front[1][1] + front[2][1]) / 2);
+      if (d < frontD) { frontD = d; frontEdge = e; }
+    }
+    const h = EAVE - PROM;
+    for (let e = 0; e + 1 < up.length; e++) {
+      const L = Math.hypot(up[e + 1][0] - up[e][0], up[e + 1][1] - up[e][1]);
+      const isFront = e === frontEdge;
+      wallRun(walls, [up[e], up[e + 1]], {
+        yBot: () => PROM - 0.2, yTop: () => EAVE, floor: PROM, height: h, finish: 1, seed: 0.29 + e * 0.07,
+        cuts: isFront ? () => [0, 0.22, 0.78, 1] : null, bays: (len) => (len < 1.8 ? 1 : Math.max(1, Math.round(len / 2.6))),
+        style: (_, k, n) => (isFront ? { code: k === 1 ? F.arch : F.plain } : L < 1.8 ? { code: F.plain } : { code: F.upper })
+      });
+    }
+    const closed = up.slice(0, -1);
+    marble(band(closed, () => EAVE - 0.35, { out: 0.25, y0: 0, y1: 0.35, closed: true }));
+    marble(band(closed, () => EAVE, { out: 0.45, y0: 0, y1: 0.14, closed: true }));
+    bin.add(M.paint, hipRoof(insetRing(upper, -0.3) || upper, EAVE + 0.14, 0.9, 1.5), SLATE);
+
+    // the front's frame: u along it (west to east), v into the pavilion
+    const fa = up[frontEdge], fb = up[frontEdge + 1];
+    const FL = Math.hypot(fb[0] - fa[0], fb[1] - fa[1]);
+    const ux = (fb[0] - fa[0]) / FL, uz = (fb[1] - fa[1]) / FL, vx = uz, vz = -ux; // (normalOf points out: v = -normal)
+    const at = (u, v) => [fa[0] + ux * u - vx * v, fa[1] + uz * u - vz * v];
+    const yaw = Math.atan2(uz, ux);
+    // the balcony before the window, over the landing
+    {
+      const [cx, cz] = at(FL / 2, -0.45);
+      marble(post(FL * 0.56 + 0.3, 0.9, cx, cz, PROM - 0.3, PROM, yaw));
+      const c0 = at(FL * 0.22 - 0.15, -0.9), c1 = at(FL * 0.78 + 0.15, -0.9);
+      railing([at(FL * 0.22 - 0.15, 0), c0, c1, at(FL * 0.78 + 0.15, 0)], () => PROM, MARBLE);
+    }
+    // piers at the front corners carrying obelisks
+    for (const u of [0.35, FL - 0.35]) {
+      const [x, z] = at(u, 0.3);
+      marble(post(0.8, 0.8, x, z, PROM - 0.2, EAVE + 0.6, yaw));
+      marble(post(0.95, 0.95, x, z, EAVE + 0.6, EAVE + 0.8, yaw));
+      const ob = new THREE.CylinderGeometry(0.1, 0.27, 1.9, 4);
+      ob.rotateY(Math.PI / 4 - yaw);
+      ob.translate(x, EAVE + 1.75, z);
+      marble(ob);
+      const ball = new THREE.SphereGeometry(0.13, 8, 6);
+      ball.translate(x, EAVE + 2.8, z);
+      marble(ball);
+    }
+    // the curved pediment over the window, with the royal arms, the crown and two lions
+    {
+      const w = FL * 0.62, rise = 1.25;
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2, 0);
+      shape.lineTo(w / 2, 0);
+      shape.lineTo(w / 2, 0.35);
+      shape.quadraticCurveTo(0, rise * 2 - 0.35, -w / 2, 0.35);
+      shape.closePath();
+      const ped = new THREE.ExtrudeGeometry(shape, { depth: 0.45, bevelEnabled: false, curveSegments: 10 });
+      ped.translate(0, 0, -0.2);
+      ped.rotateY(-yaw);
+      const [px, pz] = at(FL / 2, 0);
+      ped.translate(px, EAVE - 0.05, pz);
+      marble(ped);
+      const [ax, az] = at(FL / 2, -0.15);
+      marble(post(1.1, 0.4, ax, az, EAVE + rise - 0.5, EAVE + rise + 0.45, yaw));
+      const crown = new THREE.CylinderGeometry(0.34, 0.26, 0.4, 8);
+      crown.translate(ax, EAVE + rise + 0.65, az);
+      marble(crown);
+      // the lions couchant on the pediment's shoulders, facing the arms
+      for (const s of [-1, 1]) {
+        const [lx, lz] = at(FL / 2 + s * 1.0, 0.05);
+        marble(post(0.9, 0.45, lx, lz, EAVE + 0.9, EAVE + 1.25, yaw));
+        marble(post(0.34, 0.42, lx - s * ux * 0.35, lz - s * uz * 0.35, EAVE + 1.25, EAVE + 1.6, yaw));
+      }
+    }
+    // the dome over the front room: a bell of dark slate rising from the cornice, a glazed lantern with a finial
+    {
+      const depth = Math.min(6.2, FL + 0.4);
+      const rect = (d) => [at(-0.25 + d, -0.25 + d), at(FL + 0.25 - d, -0.25 + d), at(FL + 0.25 - d, depth - d), at(-0.25 + d, depth - d)];
+      const levels = [[0, 0.14], [0.7, 1.05], [1.4, 1.75], [2.05, 2.1]];
+      const q = new Quads([]);
+      for (let l = 0; l + 1 < levels.length; l++) {
+        const r0 = rect(levels[l][0]), r1 = rect(levels[l + 1][0]);
+        const y0 = EAVE + levels[l][1], y1 = EAVE + levels[l + 1][1];
+        for (let k = 0; k < 4; k++) {
+          const j = (k + 1) % 4;
+          const [nx, nz] = normalOf(r0[k], r0[j]);
+          const run = levels[l + 1][0] - levels[l][0], climb = y1 - y0, nl = Math.hypot(run, climb);
+          q.quad([r0[k][0], y0, r0[k][1]], [r0[j][0], y0, r0[j][1]], [r1[j][0], y1, r1[j][1]], [r1[k][0], y1, r1[k][1]],
+            [(nx * climb) / nl, run / nl, (nz * climb) / nl], {});
+        }
+      }
+      bin.add(M.paint, q.geometry(), SLATE);
+      const top = rect(levels[levels.length - 1][0]);
+      bin.add(M.paint, cap(top.flat(), EAVE + 2.1), SLATE);
+      const [lx, lz] = at(FL / 2, depth / 2 - 0.25);
+      marble(post(1.3, 1.3, lx, lz, EAVE + 2.1, EAVE + 2.75, yaw));
+      const roof = new THREE.CylinderGeometry(0.12, 0.95, 0.5, 4);
+      roof.rotateY(Math.PI / 4 - yaw);
+      roof.translate(lx, EAVE + 3.0, lz);
+      bin.add(M.paint, roof, SLATE);
+      const fin = new THREE.SphereGeometry(0.14, 8, 6);
+      fin.translate(lx, EAVE + 3.35, lz);
+      bin.add(M.paint, fin, rgb(0x6f6a55));
+    }
+  }
 
   bin.add(facade, walls.geometry());
   const group = new THREE.Group();
