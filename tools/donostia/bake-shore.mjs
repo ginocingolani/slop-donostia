@@ -206,7 +206,7 @@ zones.push({
 });
 // the Urumea's quay walls: a riprap toe where the bed at the wall's foot dries at low tide
 zones.push({
-  name: 'Urumea toe', seed: 37, coverage: 0.08,
+  name: 'Urumea toe', seed: 37, coverage: 0.16,
   cell: (k, x, z) => {
     if (!free(k)) return null;
     const q = wallAt(x, z, 5);
@@ -215,10 +215,11 @@ zones.push({
   },
   make: (rnd, q, x, z, y) => {
     // boulders sunk into the bed with their tops round the level the LiDAR found
-    const s = 0.6 + rnd() * rnd() * 1.4;
+    // (wide enough that what shows above the water reads as a stone, not a post)
     const top = q.foot - 0.1 + rnd() * 0.45 - Math.max(0, q.d - 1.5) * 0.15;
-    const sy = Math.max(s * 0.7, top - y + 0.4);
-    const kind = s < 1 ? KIND.pebble : [KIND.boulder, KIND.boulder2, KIND.boulder3][Math.floor(rnd() * 3)];
+    const sy = Math.max(0.8, top - y + 0.4);
+    const s = Math.max(1.1 + rnd() * 1.2, 0.75 * sy);
+    const kind = [KIND.boulder, KIND.boulder2, KIND.boulder3][Math.floor(rnd() * 3)];
     return { kind, sx: s * (1 + rnd() * 0.4), sy, sz: s, top, tilt: 0.25 };
   }
 });
