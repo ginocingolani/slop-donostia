@@ -27,17 +27,19 @@ const smooth = (e0, e1, x) => {
 // length as a share of the parent or in metres), bending per metre (up: toward the sky, out: away from the trunk,
 // droop: down, growing toward the tips), leaf cards per twig (scale, droop), per-tree foliage tints (sRGB), the bark
 // (0 furrowed, 1 plane camouflage, 2 tamarisk, 3 smooth grey, 4 pine plates, 5 palm leaf bases) and the far tile.
-// Scale 1 is a mature park tree; street trees are planted smaller.
+// Scale 1 is a mature park tree; street trees are planted smaller. The trees are in spring leaf: the deciduous ones
+// full and fresh light green, twigged densely enough that their near crowns read as full as the far ones; the
+// evergreens & pines darker.
 // =====================================================================================================================
 export const SPECIES = [
   { // 0: London plane (Boulevard, Libertad, Easo, the ensanche): tall clear trunk, heavy ascending limbs, broad crown
     name: 'plane', tile: 0, bark: 1, far: TILE_FAR.broadleaf,
     trunk: { r: 0.3, top: 8.6, lean: 0.04, segs: 8 },
     limbs: { n: 6, y: [3.4, 7.4], tilt: [1.0, 0.36], len: [4.6, 2.8], r: 0.62, up: 0.07, out: 0, droop: 0, jitter: 0.07, segs: 6 },
-    branches: { n: 4, t: [0.3, 0.98], angle: [0.55, 0.95], len: [0.62, 0.42], up: 0.06, out: 0.02, droop: 0, jitter: 0.1, segs: 4 },
-    twigs: { n: 3, t: [0.3, 1.0], angle: [0.6, 1.05], len: [1.15, 0.75], up: 0.02, out: 0, droop: 0.04, jitter: 0.12, segs: 2 },
+    branches: { n: 6, t: [0.3, 0.98], angle: [0.55, 0.95], len: [0.62, 0.42], up: 0.06, out: 0.02, droop: 0, jitter: 0.1, segs: 4 },
+    twigs: { n: 4, t: [0.3, 1.0], angle: [0.6, 1.05], len: [1.15, 0.75], up: 0.02, out: 0, droop: 0.04, jitter: 0.12, segs: 2 },
     cards: { perTwig: 2, scale: [0.85, 1.1], droop: 0.05 },
-    tints: [0x4b6a29, 0x5a7a2f, 0x3f5e25]
+    tints: [0x5c862b, 0x699331, 0x507827]
   },
   { // 1: Tamarisk (La Concha, Ondarreta, Alderdi Eder): a short, leaning, knotted trunk forking low into twisting limbs
     // that spread into a low umbrella of weeping, feathery grey-green plumes
@@ -47,16 +49,16 @@ export const SPECIES = [
     branches: { n: 5, t: [0.25, 1.0], angle: [0.45, 0.95], len: [0.5, 0.36], up: 0.05, out: 0.02, droop: 0.05, jitter: 0.26, segs: 4 },
     twigs: { n: 4, t: [0.25, 1.0], angle: [0.45, 0.95], len: [0.95, 0.65], up: 0, out: 0, droop: 0.12, jitter: 0.16, segs: 2 },
     cards: { perTwig: 3, scale: [1.05, 1.35], droop: 0.28 },
-    tints: [0x6f7d55, 0x7c885c, 0x62704b]
+    tints: [0x6e8852, 0x7b965b, 0x627b4a]
   },
   { // 2: Lime & broadleaf (side streets, gardens, the hill woods' oaks, chestnuts & ashes): an ovoid crown
     name: 'broadleaf', tile: 2, bark: 0, far: TILE_FAR.broadleaf,
     trunk: { r: 0.27, top: 6.8, lean: 0.03, segs: 7 },
     limbs: { n: 7, y: [2.8, 6.4], tilt: [1.0, 0.32], len: [4.0, 2.2], r: 0.6, up: 0.08, out: 0, droop: 0, jitter: 0.09, segs: 6 },
-    branches: { n: 4, t: [0.3, 0.98], angle: [0.5, 0.9], len: [0.6, 0.42], up: 0.05, out: 0.02, droop: 0.01, jitter: 0.1, segs: 4 },
-    twigs: { n: 3, t: [0.3, 1.0], angle: [0.55, 1.0], len: [1.1, 0.75], up: 0.01, out: 0, droop: 0.06, jitter: 0.12, segs: 2 },
+    branches: { n: 5, t: [0.3, 0.98], angle: [0.5, 0.9], len: [0.6, 0.42], up: 0.05, out: 0.02, droop: 0.01, jitter: 0.1, segs: 4 },
+    twigs: { n: 4, t: [0.3, 1.0], angle: [0.55, 1.0], len: [1.1, 0.75], up: 0.01, out: 0, droop: 0.06, jitter: 0.12, segs: 2 },
     cards: { perTwig: 2, scale: [0.85, 1.1], droop: 0.12 },
-    tints: [0x47672a, 0x56752f, 0x3c5a25]
+    tints: [0x537d2b, 0x608c31, 0x486f27]
   },
   { // 3: Magnolia & holm oak (gardens, Urgull): a short trunk under a dense, rounded, dark evergreen crown
     name: 'evergreen', tile: 3, bark: 3, far: TILE_FAR.broadleaf,
@@ -71,8 +73,8 @@ export const SPECIES = [
     name: 'pine', tile: 4, bark: 4, far: TILE_FAR.conifer,
     trunk: { r: 0.3, top: 15, lean: 0.07, segs: 9, wander: 0.05 },
     limbs: { n: 9, y: [9.0, 14.2], tilt: [1.3, 0.55], len: [4.4, 1.8], r: 0.42, up: 0.12, out: 0, droop: 0, jitter: 0.12, segs: 5 },
-    branches: { n: 3, t: [0.35, 1.0], angle: [0.6, 1.1], len: [0.55, 0.38], up: 0.1, out: 0.02, droop: 0, jitter: 0.14, segs: 3 },
-    twigs: { n: 2, t: [0.4, 1.0], angle: [0.5, 0.9], len: [0.9, 0.6], up: 0.08, out: 0, droop: 0, jitter: 0.12, segs: 2 },
+    branches: { n: 4, t: [0.35, 1.0], angle: [0.6, 1.1], len: [0.55, 0.38], up: 0.1, out: 0.02, droop: 0, jitter: 0.14, segs: 3 },
+    twigs: { n: 3, t: [0.4, 1.0], angle: [0.5, 0.9], len: [0.9, 0.6], up: 0.08, out: 0, droop: 0, jitter: 0.12, segs: 2 },
     cards: { perTwig: 2, scale: [0.9, 1.15], droop: -0.15 },
     tints: [0x3a5030, 0x435a37, 0x32482a]
   },
@@ -367,6 +369,10 @@ function swayWeight(b, t) {
   }
 }
 
+// Share of the near level's card area the mid level's cards carry (see buildTreeGeometries): measured to give both
+// levels the same leaf coverage seen from round the crown
+const MID_CARD_AREA = 0.7;
+
 // Leaf cards of one tree: near level on every twig, mid level fewer & larger along the branches
 function placeCards(sp, branches, lod, tileMeters, rng, crown) {
   const R = (a, b) => a + (b - a) * rng();
@@ -466,12 +472,16 @@ function buildPalm(sp, variant, lod, tileMeters) {
   return { geometry: g, crown };
 }
 
-// One species / variant: { geometries: [near, mid], crown } (the crown of the near level's foliage)
+// One species / variant: { geometries: [near, mid], crown, far } (the crown of the near level's foliage, the far crown
+// fitted to its leaf)
 export function buildTreeGeometries(speciesIndex, variant, tileMeters) {
   const sp = SPECIES[speciesIndex];
   if (sp.palm) {
     const near = buildPalm(sp, variant, 0, tileMeters);
-    return { geometries: [near.geometry, buildPalm(sp, variant, 1, tileMeters).geometry], crown: near.crown };
+    const { C, R } = near.crown;
+    // (the fronds' ball, as before: a palm's far crown is its bounding box's)
+    const far = { y: C.y, r: ((R.x + R.z) / 2) * 0.92, h: R.y };
+    return { geometries: [near.geometry, buildPalm(sp, variant, 1, tileMeters).geometry], crown: near.crown, far };
   }
   const seed = 7919 * (speciesIndex + 1) + 104729 * (variant + 1);
   const branches = growTree(sp, seed);
@@ -493,18 +503,49 @@ export function buildTreeGeometries(speciesIndex, variant, tileMeters) {
     const gb = new TreeGeometryBuilder();
     const rng = mulberry32(seed + lod * 31337);
     const aoAt = (p) => crown.barkAO(p);
-    // Bark: near everything, mid trunk + limbs + branches (coarser)
+    // Bark: near everything, mid trunk + limbs (coarser; from 85 m the branches are under a pixel thick, and hidden
+    // in the spring leaf)
     for (const b of branches) {
       if (lod === 0) addTube(gb, b, [9, 6, 4, 3][b.level], 1, aoAt, swayWeight);
-      else if (b.level <= 2) addTube(gb, b, [6, 5, 3][b.level], 2, aoAt, swayWeight);
+      else if (b.level <= 1) addTube(gb, b, [6, 5][b.level], 2, aoAt, swayWeight);
     }
     const cards = lod === 0 ? cards0 : placeCards(sp, branches, lod, tileMeters, rng, crown);
+    if (lod === 1) {
+      // The mid cards, fewer & larger, are sized to carry MID_CARD_AREA of the near level's card area (spread wider,
+      // they overlap less), so the crown keeps its density when it changes level whatever the species' twigs
+      const area = (list) => list.reduce((a, c) => a + c.size * c.size, 0);
+      const k = Math.sqrt(MID_CARD_AREA * area(cards0) / area(cards));
+      for (const c of cards) c.size *= k;
+    }
     for (const c of cards) addCard(gb, c.at, c.up, c.face, c.size, sp.tile, rng() < 0.5, rng(), crown);
     const g = gb.build();
     g.userData = { species: sp.name, variant, lod, cards: cards.length, triangles: gb.idx.length / 3 };
     return g;
   });
-  return { geometries, crown };
+  return { geometries, crown, far: leafCrown(cards0) };
+}
+
+// The far crown of a tree (the far shell & billboard's spheroid, trees-material.js): centred on the near level's leaf
+// (the cards' middles, weighted by their area), FAR_SPREAD standard deviations of it out round the trunk and up & down.
+// (The bounding box of the cards, which a long limb or a drooping card stretches, made the far crowns of some species a
+// third fuller than their near ones.) The spreads are measured to give the far shell the leaf the near crown shows,
+// within ~10% seen from the street as from the air, for every species.
+// Returns { y: centre height, r: radius, h: half-height } in the tree's frame.
+const FAR_SPREAD = { r: 2.15, h: 2.45 };
+function leafCrown(cards) {
+  let w = 0, y = 0, rr = 0, yy = 0;
+  const m = new V3();
+  for (const c of cards) {
+    const a = c.size * c.size;
+    m.copy(c.at).addScaledVector(c.up, c.size * 0.5);
+    w += a;
+    y += a * m.y;
+    rr += a * (m.x * m.x + m.z * m.z);
+    yy += a * m.y * m.y;
+  }
+  y /= w;
+  // round the trunk's axis, not the leaf's own middle (a leaning crown spreads wider round the trunk)
+  return { y, r: FAR_SPREAD.r * Math.sqrt(rr / w / 2), h: FAR_SPREAD.h * Math.sqrt(Math.max(1e-4, yy / w - y * y)) };
 }
 
 // The far tree, in unit space, shaped per instance by js/donostia/trees-material.js: a five-sided prism trunk (y 0..1,
@@ -540,7 +581,8 @@ export function buildFarGeometry() {
     up.normalize().applyAxisAngle(face, (rng() - 0.5) * 1.0);
     const side = new V3().crossVectors(up, face).normalize();
     const centre = dir.clone().multiplyScalar(0.5);
-    const size = 1.3;
+    // (large enough for the clumps, gappy in spring leaf, to reach the crown's rim: the near crowns' leaf does)
+    const size = 1.45;
     const mirror = rng() < 0.5;
     const base = pos.length / 3;
     for (const [sx, sy] of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
@@ -577,6 +619,9 @@ export function buildBillboardGeometry() {
   ], 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(8).fill([0, 0, 1]).flat(), 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute([u0, vBot, u1, vBot, u1, vTop, u0, vTop, 0, 0, 1, 0, 1, 1, 0, 1], 2));
+  // the tile turned half round, read as a second layer (the far shell's crown is its cards seen through one another;
+  // mirrored, the clump's gaps met on its middle line)
+  g.setAttribute('uv1', new THREE.Float32BufferAttribute([u1, vTop, u0, vTop, u0, vBot, u1, vBot, 0, 0, 1, 0, 1, 1, 0, 1], 2));
   g.setAttribute('aFarPart', new THREE.Float32BufferAttribute([1, 1, 1, 1, 0, 0, 0, 0], 1));
   // the trunk first: the crown, drawn after, hides its top
   g.setIndex([4, 5, 6, 4, 6, 7, 0, 1, 2, 0, 2, 3]);

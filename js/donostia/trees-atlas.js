@@ -31,9 +31,12 @@ export function mulberry32(seed) {
 const lerp = (a, b, t) => a + (b - a) * t;
 
 // Spray primitives in metres (x right, y up from the card's attachment point): twigs, stalks & needles (polylines),
-// leaves (ovals & palmate blades)
-function buildSprays(rng) {
+// leaves (ovals & palmate blades). Every spray draws from a generator of its own (seed + its tile), so reshaping one
+// leaves the others as they are.
+function buildSprays(seed) {
+  let rng = null;
   const R = (a, b) => a + (b - a) * rng();
+  const begin = (k) => { rng = mulberry32(seed + 101 * k); };
 
   // Curving twig from (x, y) at angle a off vertical, len m long, curling by `curl` rad over its length
   const twig = (x, y, a, len, curl, segs = 12) => {
@@ -70,117 +73,126 @@ function buildSprays(rng) {
 
   const sprays = [];
 
-  // 0. London plane: four or five twigs fanning out, big palmate leaves on long stalks, alternating along them
+  // The sprays are in spring leaf: crowded with leaves and about as tall as wide, each covers a quarter to a third of
+  // its tile (half again to twice the bare sprays they replace), so a crown of them reads as full as the far crowns
+  // that stand in for it
+
+  // 0. London plane: six twigs fanning out, crowded with big palmate leaves on long stalks, alternating along them
+  begin(0);
   {
     const prims = [];
-    const n = 5;
+    const n = 6;
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n - 0.5;
-      const pts = twig(f * 0.08, 0, f * 1.55 + R(-0.1, 0.1), R(0.62, 0.8) * (1 - Math.abs(f) * 0.32), f * 0.6);
+      const pts = twig(f * 0.08, 0, f * 1.1 + R(-0.1, 0.1), R(0.74, 0.9) * (1 - Math.abs(f) * 0.25), f * 0.5);
       prims.push({ type: 'twig', pts, w0: 0.016, w1: 0.006 });
       let side = rng() < 0.5 ? 1 : -1;
-      for (let t = R(0.18, 0.26); t < 0.97; t += R(0.15, 0.19)) {
+      for (let t = R(0.1, 0.16); t < 0.97; t += R(0.085, 0.11)) {
         const { p, a } = at(pts, t);
         side = -side;
-        const la = a + side * R(0.55, 1.05);
-        const len = R(0.17, 0.23) * (1 - t * 0.25);
-        const stalk = len * 0.32;
+        const la = a + side * R(0.55, 1.15);
+        const len = R(0.19, 0.25) * (1 - t * 0.2);
+        const stalk = len * 0.3;
         const q = [p[0] + Math.sin(la) * stalk, p[1] + Math.cos(la) * stalk];
         prims.push({ type: 'stalk', a: p, b: q, w: 0.006 });
         prims.push({ type: 'palmate', p: q, a: la + R(-0.25, 0.25), len, t });
       }
       const tip = at(pts, 1);
-      prims.push({ type: 'palmate', p: tip.p, a: tip.a + R(-0.2, 0.2), len: R(0.15, 0.19), t: 1 });
+      prims.push({ type: 'palmate', p: tip.p, a: tip.a + R(-0.2, 0.2), len: R(0.17, 0.21), t: 1 });
     }
     sprays.push(prims);
   }
 
-  // 1. Tamarisk: weeping plumes of slender branchlets clothed in tiny scale leaves (feathery, grey-green, see-through)
-  {
-    const prims = [];
-    const n = 4;
-    for (let i = 0; i < n; i++) {
-      const f = (i + 0.5) / n - 0.5;
-      const pts = twig(f * 0.05, 0, f * 1.4 + R(-0.12, 0.12), R(0.6, 0.75), f * 0.9 + R(-0.2, 0.2), 14);
-      prims.push({ type: 'twig', pts, w0: 0.01, w1: 0.004 });
-      let side = rng() < 0.5 ? 1 : -1;
-      for (let t = R(0.08, 0.14); t < 0.98; t += R(0.055, 0.075)) {
-        const { p, a } = at(pts, t);
-        side = -side;
-        const b = twig(p[0], p[1], a + side * R(0.45, 0.8), R(0.12, 0.2) * (1 - t * 0.3), side * R(0.2, 0.6), 6);
-        prims.push({ type: 'stalk', pts: b, w: 0.0035 });
-        for (let s = 0.08; s <= 1.0; s += 0.075) {
-          const q = at(b, s);
-          for (const sd of [-1, 1]) prims.push({ type: 'oval', p: q.p, a: q.a + sd * R(0.25, 0.55), len: R(0.016, 0.024), wid: 0.34, t: Math.min(1, t + s * 0.2) });
-        }
-      }
-      // the plume's tip: a dense tassel
-      const tip = at(pts, 1);
-      for (let k = 0; k < 14; k++) prims.push({ type: 'oval', p: tip.p, a: tip.a + R(-0.9, 0.9), len: R(0.02, 0.03), wid: 0.34, t: 1 });
-    }
-    sprays.push(prims);
-  }
-
-  // 2. Lime & broadleaf: zigzag twigs, drooping a little, with two ranks of oval, pointed, lopsided leaves
+  // 1. Tamarisk: weeping plumes of slender branchlets thickly clothed in tiny scale leaves (feathery, grey-green)
+  begin(1);
   {
     const prims = [];
     const n = 5;
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n - 0.5;
-      const pts = twig(f * 0.06, 0, f * 1.6 + R(-0.1, 0.1), R(0.5, 0.66) * (1 - Math.abs(f) * 0.25), f * 0.9, 14);
-      prims.push({ type: 'twig', pts, w0: 0.012, w1: 0.004 });
+      const pts = twig(f * 0.05, 0, f * 1.15 + R(-0.12, 0.12), R(0.7, 0.85), f * 0.6 + R(-0.2, 0.2), 14);
+      prims.push({ type: 'twig', pts, w0: 0.01, w1: 0.004 });
       let side = rng() < 0.5 ? 1 : -1;
-      for (let t = R(0.1, 0.16); t < 0.97; t += R(0.085, 0.11)) {
+      for (let t = R(0.06, 0.1); t < 0.98; t += R(0.04, 0.055)) {
         const { p, a } = at(pts, t);
         side = -side;
-        prims.push({ type: 'oval', p, a: a + side * R(0.6, 1.0), len: R(0.1, 0.13) * (1 - t * 0.2), wid: 0.62, skew: side * 0.12, t });
+        const b = twig(p[0], p[1], a + side * R(0.4, 0.8), R(0.15, 0.24) * (1 - t * 0.3), side * R(0.2, 0.6), 6);
+        prims.push({ type: 'stalk', pts: b, w: 0.004 });
+        for (let s = 0.06; s <= 1.0; s += 0.06) {
+          const q = at(b, s);
+          for (const sd of [-1, 1]) prims.push({ type: 'oval', p: q.p, a: q.a + sd * R(0.25, 0.6), len: R(0.026, 0.036), wid: 0.38, t: Math.min(1, t + s * 0.2) });
+        }
       }
+      // the plume's tip: a dense tassel
       const tip = at(pts, 1);
-      prims.push({ type: 'oval', p: tip.p, a: tip.a, len: 0.09, wid: 0.6, t: 1 });
+      for (let k = 0; k < 18; k++) prims.push({ type: 'oval', p: tip.p, a: tip.a + R(-0.9, 0.9), len: R(0.03, 0.042), wid: 0.38, t: 1 });
     }
     sprays.push(prims);
   }
 
-  // 3. Magnolia & holm oak: stout twigs ending in whorls of big, glossy, elliptic leaves, more leaves along them
+  // 2. Lime & broadleaf: zigzag twigs, drooping a little, crowded with two ranks of oval, pointed, lopsided leaves
+  begin(2);
   {
     const prims = [];
-    const n = 4;
+    const n = 6;
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n - 0.5;
-      const pts = twig(f * 0.06, 0, f * 1.5 + R(-0.1, 0.1), R(0.5, 0.62), f * 0.5, 10);
-      prims.push({ type: 'twig', pts, w0: 0.016, w1: 0.008 });
+      const pts = twig(f * 0.06, 0, f * 1.15 + R(-0.1, 0.1), R(0.6, 0.76) * (1 - Math.abs(f) * 0.2), f * 0.6, 14);
+      prims.push({ type: 'twig', pts, w0: 0.012, w1: 0.004 });
       let side = rng() < 0.5 ? 1 : -1;
-      for (let t = R(0.2, 0.3); t < 0.8; t += R(0.14, 0.18)) {
+      for (let t = R(0.08, 0.13); t < 0.97; t += R(0.06, 0.08)) {
         const { p, a } = at(pts, t);
         side = -side;
-        prims.push({ type: 'oval', p, a: a + side * R(0.7, 1.1), len: R(0.12, 0.16), wid: 0.44, t, gloss: true });
+        prims.push({ type: 'oval', p, a: a + side * R(0.6, 1.1), len: R(0.12, 0.16) * (1 - t * 0.15), wid: 0.64, skew: side * 0.12, t });
       }
       const tip = at(pts, 1);
-      const whorl = 6 + Math.floor(rng() * 3);
+      prims.push({ type: 'oval', p: tip.p, a: tip.a, len: 0.11, wid: 0.62, t: 1 });
+    }
+    sprays.push(prims);
+  }
+
+  // 3. Magnolia & holm oak: stout twigs ending in whorls of big, glossy, elliptic leaves, more leaves crowding along them
+  begin(3);
+  {
+    const prims = [];
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n - 0.5;
+      const pts = twig(f * 0.06, 0, f * 1.15 + R(-0.1, 0.1), R(0.56, 0.68), f * 0.4, 10);
+      prims.push({ type: 'twig', pts, w0: 0.016, w1: 0.008 });
+      let side = rng() < 0.5 ? 1 : -1;
+      for (let t = R(0.12, 0.2); t < 0.85; t += R(0.09, 0.12)) {
+        const { p, a } = at(pts, t);
+        side = -side;
+        prims.push({ type: 'oval', p, a: a + side * R(0.7, 1.15), len: R(0.13, 0.17), wid: 0.46, t, gloss: true });
+      }
+      const tip = at(pts, 1);
+      const whorl = 7 + Math.floor(rng() * 3);
       for (let k = 0; k < whorl; k++) {
         const a = tip.a + ((k + 0.5) / whorl - 0.5) * 3.6 + R(-0.15, 0.15);
-        prims.push({ type: 'oval', p: tip.p, a, len: R(0.15, 0.2), wid: 0.42, t: 1, gloss: true });
+        prims.push({ type: 'oval', p: tip.p, a, len: R(0.15, 0.21), wid: 0.44, t: 1, gloss: true });
       }
     }
     sprays.push(prims);
   }
 
   // 4. Pine: twigs carrying brushes of long needles that sweep forward, densest towards the tips
+  begin(4);
   {
     const prims = [];
-    const n = 3;
+    const n = 4;
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n - 0.5;
-      const pts = twig(f * 0.05, 0, f * 1.2 + R(-0.1, 0.1), R(0.55, 0.68), f * 0.3, 10);
+      const pts = twig(f * 0.05, 0, f * 1.3 + R(-0.1, 0.1), R(0.55, 0.68), f * 0.3, 10);
       prims.push({ type: 'twig', pts, w0: 0.018, w1: 0.01 });
-      for (let t = 0.25; t <= 1.0; t += 0.05) {
+      for (let t = 0.18; t <= 1.0; t += 0.04) {
         const { p, a } = at(pts, t);
-        const count = Math.round(lerp(5, 11, t));
+        const count = Math.round(lerp(6, 13, t));
         for (let k = 0; k < count; k++) {
           const na = a + R(-1.15, 1.15) * (1.1 - t * 0.4);
-          const len = R(0.11, 0.17);
+          const len = R(0.12, 0.18);
           const q = [p[0] + Math.sin(na) * len, p[1] + Math.cos(na) * len];
-          prims.push({ type: 'needle', a: p, b: q, w: 0.0045, t });
+          prims.push({ type: 'needle', a: p, b: q, w: 0.005, t });
         }
       }
     }
@@ -188,6 +200,7 @@ function buildSprays(rng) {
   }
 
   // 5. Palm frond (Canary Island date palm): a rachis up the middle with long leaflets in a V, shortest at both ends
+  begin(5);
   {
     const prims = [];
     const pts = twig(0, 0, 0, 1.0, R(-0.05, 0.05), 16);
@@ -200,16 +213,22 @@ function buildSprays(rng) {
     sprays.push(prims);
   }
 
-  // 6-8. Far-crown clumps: dense broadleaf, feathery (gappy, small leaves), conifer (tufts of needle-like strokes)
-  sprays.push(clump(520, 0.19, 0.55, 7));
-  sprays.push(clump(900, 0.1, 0.35, 9, 5));
+  // 6-8. Far-crown clumps, each a section of a distant crown in spring leaf, gappy enough that the far shell's cards
+  // seen through one another show as much leaf as the near crowns: broadleaf (big leaves, a few holes), feathery (small
+  // leaves), conifer (tufts of needle-like strokes spread evenly over a disc)
+  begin(6);
+  sprays.push(clump(480, 0.19, 0.55, 7, 7));
+  begin(7);
+  sprays.push(clump(1500, 0.11, 0.38, 9, 4));
+  begin(8);
   {
     const prims = [];
-    for (let c = 0; c < 26; c++) {
-      const ang = R(0, Math.PI * 2), rr = Math.sqrt(rng()) * 1.05;
+    const n = 26;
+    for (let c = 0; c < n; c++) {
+      const ang = c * 2.39996 + R(-0.3, 0.3), rr = Math.sqrt((c + R(0.2, 0.8)) / n) * 1.05;
       const cx = Math.cos(ang) * rr, cy = 1.3 + Math.sin(ang) * rr * 0.85;
-      for (let k = 0; k < 40; k++) {
-        const na = R(-Math.PI, Math.PI), len = R(0.12, 0.2);
+      for (let k = 0; k < 16; k++) {
+        const na = R(-Math.PI, Math.PI), len = R(0.1, 0.17);
         prims.push({ type: 'needle', a: [cx, cy], b: [cx + Math.sin(na) * len, cy + Math.cos(na) * len], w: 0.016, t: Math.min(1, Math.max(0, (cy - 0.3) / 2)) });
       }
     }
@@ -255,12 +274,14 @@ export function createLeafAtlas() {
     c.lineCap = 'round';
     c.lineJoin = 'round';
   }
-  const rng = mulberry32(20261023);
-  const R = (a, b) => a + (b - a) * rng();
-  const sprays = buildSprays(rng);
+  const SEED = 20261023;
+  const sprays = buildSprays(SEED);
   const tileMeters = [];
+  let rng = null;
+  const R = (a, b) => a + (b - a) * rng();
 
   sprays.forEach((prims, k) => {
+    rng = mulberry32(SEED + 7919 * (k + 1)); // (the leaves' shades, per tile)
     // Fit: attachment point at the bottom centre of the tile (the far clumps: centred), widest extent to the gutter
     const b = sprayBounds(prims);
     const [ox, oy] = tileOrigin(k);
@@ -377,7 +398,36 @@ export function createLeafAtlas() {
   tex.colorSpace = THREE.NoColorSpace;
   tex.needsUpdate = true;
   tex.name = 'DonostiaLeafAtlas';
-  return { texture: tex, tileMeters };
+  return { texture: tex, tileMeters, tileTone: tileTones(level0) };
+}
+
+// Mean tone of each tile's covered texels as trees-material.js's foliageColour shades them (the green channel, for a
+// typical leaf tint, twigs included): a crown drawn with a far tile takes the tone of its species' spray from
+// vegetation.js, which scales the far trees' tint by the ratio
+function tileTones(level0) {
+  const smooth = (e0, e1, x) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const TINT_G = 0.15, TWIG_G = 0.043; // linear green of a mid foliage tint and of the twigs' brown
+  const tones = [];
+  for (let k = 0; k < ATLAS_TILES * ATLAS_TILES; k++) {
+    const [ox, oy] = tileOrigin(k);
+    let sum = 0, n = 0;
+    for (let y = oy; y < oy + TILE; y += 2) {
+      for (let x = ox; x < ox + TILE; x += 2) {
+        const i = (y * ATLAS_SIZE + x) * 4;
+        if (level0[i + 3] < 128) continue;
+        const r = level0[i] / 255, g = level0[i + 1] / 255, b = level0[i + 2] / 255;
+        const warm = smooth(0.62, 1.0, g) * 0.55, cool = (1 - smooth(0, 0.38, g)) * 0.45;
+        const leaf = TINT_G * r * 1.4 * (1 + 0.08 * warm) * (1 - 0.08 * cool);
+        sum += leaf + (TWIG_G - leaf) * b;
+        n++;
+      }
+    }
+    tones.push(n ? sum / n / TINT_G : 1);
+  }
+  return tones;
 }
 
 // Box-filtered mip chain whose alpha is rescaled per tile so the share of texels above the alpha-test cutoff stays as

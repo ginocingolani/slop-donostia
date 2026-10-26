@@ -38,9 +38,13 @@ const noise2D = Fn(([p]) => {
 
 // Sunlight shining through leaves (Barré-Brisebois & Bouchard's fast translucency approximation): looking against
 // the light, a leaf glows with the light it lets through. It takes the direct light's colour, so shadows (the crown's
-// own included) dim it like the sunlit side. Materials set `translucencyNode` (vec3, 0 where nothing shines through).
+// own included) dim it like the sunlit side. Materials set `translucencyNode` (vec3, 0 where nothing shines through)
+// and may set `directOcclusionNode` (float): the share of the direct light that reaches the leaf (the far crowns'
+// stand-in for their own shadow where the sun's shadow maps don't reach).
 class FoliageLightingModel extends THREE.PhysicalLightingModel {
   direct(lightData, builder) {
+    const occlusion = builder.material.directOcclusionNode;
+    if (occlusion) lightData = { ...lightData, lightColor: lightData.lightColor.mul(occlusion) };
     const { lightDirection, lightColor, reflectedLight } = lightData;
     const translucency = builder.material.translucencyNode;
     if (translucency) {
@@ -60,6 +64,7 @@ class DonostiaTreeMaterial extends THREE.MeshStandardNodeMaterial {
   constructor(parameters) {
     super(parameters);
     this.translucencyNode = null;
+    this.directOcclusionNode = null;
   }
 
   setupLightingModel() {
@@ -158,8 +163,9 @@ export function createTreeMaterial(leafAtlas, instances) {
 
   // Leaf cards & bark tubes are whole triangles of one or the other: the bark's noise only runs on the bark (the atlas
   // read, with its implicit derivatives, stays in the main flow)
+  const light = leafLight(aData.xyz, leaf, crownAO);
   mat.colorNode = Fn(() => {
-    const c = foliageColour(aData.xyz, leaf).mul(crownAO.mul(0.45).add(0.55)).toVar();
+    const c = light.colour.toVar();
     If(isLeaf.lessThan(0.5), () => {
       c.assign(barkColour(species, uv(), rnd).mul(crownAO.mul(0.4).add(0.6)));
     });
@@ -169,16 +175,47 @@ export function createTreeMaterial(leafAtlas, instances) {
   mat.roughnessNode = mix(float(0.93), float(0.72).sub(leaf.r.mul(0.1)), isLeaf);
   // Card normals are crown-shell normals on both faces: no back-face flip
   mat.normalNode = normalViewGeometry;
-  // Sky light: deep inside the crown far less
-  mat.aoNode = crownAO.mul(0.75).add(0.25);
-  // Light through the leaves: yellow-green, strongest out on the thin shell
-  mat.translucencyNode = aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.5)).mul(crownAO.mul(0.8).add(0.2)).mul(isLeaf);
+  mat.aoNode = light.ao;
+  mat.translucencyNode = light.translucency.mul(isLeaf);
   return mat;
 }
 
+// The far & billboard crowns are lit as the near ones (leafLight), each leaf taking for its crown occlusion the near
+// cards' mean at its height in the crown, from the bottom to the top (measured over every species' near cards; their
+// leaves deep in the crown are as dark as those out on the shell are bright)
+const FAR_CROWN_AO = [0.62, 0.73];
+// Beyond the view depth the sun's shadow maps reach (lighting.js widens it with the camera's altitude, from 300 m at
+// street level) no crown is shadowed, by itself or its neighbours: there the far & billboard crowns let the sun reach
+// only the leaves turned to it, fading in from a little short of side-on (the dot of the leaf's direction from the
+// crown's middle with the sun's) to FAR_SUNWARD[1]. Measured against the mid crowns the shadow maps darken just
+// nearer: as bright within ~3% over the forced-level views (street, park, air; midday, golden hour, night), where the
+// shell's former shading left the far woods a third brighter.
+const FAR_SUNWARD = [-0.05, 0.65];
+
+// A leaf's colour, sky light (ao) & light through it given its crown occlusion (aTree.y on the near cards)
+function leafLight(tint, leaf, crownAO) {
+  return {
+    colour: foliageColour(tint, leaf).mul(crownAO.mul(0.45).add(0.55)),
+    // sky light: deep inside the crown far less
+    ao: crownAO.mul(0.75).add(0.25),
+    // light through the leaves: yellow-green, strongest out on the thin shell
+    translucency: tint.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.5)).mul(crownAO.mul(0.8).add(0.2))
+  };
+}
+
+// The far crowns' occlusion at height `y` in the unit crown (-1 bottom, 1 top)
+const farCrownAO = (y) => mix(float(FAR_CROWN_AO[0]), float(FAR_CROWN_AO[1]), smoothstep(-0.9, 0.9, y));
+
+// Share of the sun reaching a far crown's leaf (or trunk side) at direction `dir` (any length) from the crown's middle,
+// given how far `beyond` the shadow maps the crown stands (0: within them, where it casts & receives its own shadow)
+const farSunOcclusion = (dir, sunDir, beyond) =>
+  mix(float(1.0), smoothstep(FAR_SUNWARD[0], FAR_SUNWARD[1], dot(normalize(dir), sunDir)), beyond);
+
 /**
- * The far trees: returns { material, uniforms: { lodCenter, midEnd, view, farEnd } }.
+ * The far trees: returns { material, uniforms: { lodCenter, midEnd, view, farEnd, sunDir, shadowEnd } }.
  * farTiles[species] = the atlas tile of the species' far crown (6, 7 or 8: the bottom row, left to right).
+ * sunDir (towards the sun) & shadowEnd (the view depth where the sun's shadow maps end; 0: no shadow maps) are kept
+ * up to date by vegetation.js.
  */
 export function createFarTreeMaterial(leafAtlas, farTiles) {
   const mat = new DonostiaTreeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, metalness: 0.0, roughness: 0.8 });
@@ -186,7 +223,9 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
     lodCenter: uniform(new THREE.Vector3(0, -1e5, 0)),
     midEnd: uniform(0),
     view: uniform(new THREE.Vector3()),
-    farEnd: uniform(3200)
+    farEnd: uniform(3200),
+    sunDir: uniform(new THREE.Vector3(0, 1, 0)),
+    shadowEnd: uniform(0)
   };
 
   const P = attribute('aFarPos', 'vec4');
@@ -214,8 +253,11 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
     return P.xyz.add(yawed(local).mul(far.mul(fade))).add(vec3(TREE_WIND.x, 0.0, TREE_WIND.y).mul(sway));
   })();
 
-  // Normals of the stretched unit shapes, turned with the tree, in view space
-  const worldNormal = varying(yawed(normalize(normalGeometry.div(select(isCrown, vec3(S.y, S.z, S.y), vec3(S.w, S.x, S.w))))), 'vFarNormal');
+  // Normals turned with the tree, in view space: the unit shapes' own, not stretched with the crown. The near cards'
+  // shell normals point along their position in the unit crown, so a flattened crown's top doesn't face the sky more
+  // squarely in the far level (flat crowns, tamarisks, magnolias, came out bright under a high sun); the prism's are
+  // level either way
+  const worldNormal = varying(yawed(normalGeometry), 'vFarNormal');
   mat.normalNode = cameraViewMatrix.transformDirection(worldNormal);
 
   // The species' far tile is the broadleaf one slid along the bottom row of the atlas
@@ -224,22 +266,27 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
       select(species.lessThan(4.5), float(farTiles[4]), float(farTiles[5]))))));
   // (one read, in a variable: built as a plain node, the colour, alpha, roughness & translucency slots each sampled it)
   const leaf = texture(leafAtlas, uv().add(vec2(tile.sub(6.0).div(3.0), 0.0))).toVar('farLeaf');
-  // lower cards sit deeper in shade
-  const shade = varying(select(isCrown, smoothstep(-0.9, 0.9, g.y).mul(0.5).add(0.5), float(0.85)), 'vFarShade');
+  // the near cards' occlusion at the card's height (the trunk: under its crown)
+  const crownAO = varying(select(isCrown, farCrownAO(g.y), float(0.85)), 'vFarCrownAO');
+  const light = leafLight(aData.xyz, leaf, crownAO);
+  // their own shadow beyond the sun's shadow maps, which fade out over their last 7.5% (the trunk: its sunny side)
+  const centreDepth = cameraViewMatrix.mul(vec4(P.xyz.add(vec3(0.0, S.x, 0.0)), 1.0)).z.negate();
+  const beyond = smoothstep(uniforms.shadowEnd.mul(0.925), uniforms.shadowEnd, centreDepth);
+  mat.directOcclusionNode = varying(farSunOcclusion(yawed(select(isCrown, g, vec3(g.x, 0.0, g.z))), uniforms.sunDir, beyond), 'vFarSun');
 
   const alpha = select(isCrown, leaf.a, float(frontFacing));
   mat.alphaTestNode = float(0.5);
   mat.maskShadowNode = alpha.greaterThan(0.5);
   mat.colorNode = Fn(() => {
-    const c = foliageColour(aData.xyz, leaf).mul(shade).toVar();
+    const c = light.colour.toVar();
     If(isCrown.not(), () => {
       c.assign(barkColour(species, uv().mul(vec2(3.0, 4.0)), rnd).mul(0.8));
     });
     return vec4(c, alpha);
   })();
   mat.roughnessNode = select(isCrown, float(0.72).sub(leaf.r.mul(0.1)), float(0.93));
-  mat.aoNode = shade.mul(0.7).add(0.3);
-  mat.translucencyNode = select(isCrown, aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.2)).mul(shade), vec3(0.0));
+  mat.aoNode = light.ao;
+  mat.translucencyNode = select(isCrown, light.translucency, vec3(0.0));
   return { material: mat, uniforms };
 }
 
@@ -247,11 +294,16 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
 // shell's cards at golden hour, midday and night (within ~0.15 of a level over the whole image): how squarely the
 // crown normals face the camera (1: a solid ball), how far they lean skyward, the roughness (one quad's coherent
 // normals caught a sheen of sky the shell's scattered cards don't: bright blue-grey woods at night) and a tone for
-// the shell's self-shading.
+// the shell's self-shading. Checked again since the shell is lit as the near crowns and shades its own sunless side
+// beyond the shadow maps: as bright on average, though darker seen level and lighter seen from above (a solid ball's
+// normals were further off).
 const BILLBOARD_FACING = 0.5;
 const BILLBOARD_LEAN = 0.5;
 const BILLBOARD_ROUGHNESS = 0.95;
 const BILLBOARD_TONE = 0.95;
+// The quad's size against the crown's spheroid: with the tile read twice it then shows as much leaf as the far shell
+// and the near crowns, seen from the street as from the air
+const BILLBOARD_SIZE = 0.93;
 
 // The species' far tile (6, 7 or 8) as the u offset from the broadleaf tile's uvs
 const farTileShift = (species, farTiles) => {
@@ -279,7 +331,7 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
   const g = positionGeometry; // the quad's corner: crown x & y in -1..1, trunk x in -1..1 & y in 0..1
 
   mat.positionNode = Fn(() => {
-    // the far shell reaches from -0.92 to 1.1 crown half-heights about its centre, and 1.1 crown radii out
+    // the far shell's crown, a little above its centre
     const centre = P.xyz.add(vec3(0.0, S.x.add(S.z.mul(0.09)), 0.0)).toVar();
     const toCam = normalize(uniforms.view.sub(centre)).toVar();
     const pole = select(abs(toCam.y).greaterThan(0.99), vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0));
@@ -287,8 +339,8 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
     const up = toCam.cross(right);
     // the crown spheroid (radius S.y, half-height S.z) seen from the camera's elevation
     const sinE = toCam.y, cosE = float(1.0).sub(sinE.mul(sinE)).max(0.0).sqrt();
-    const halfW = S.y.mul(1.05);
-    const halfH = S.z.mul(cosE).mul(S.z.mul(cosE)).add(S.y.mul(sinE).mul(S.y.mul(sinE))).sqrt().mul(1.05);
+    const halfW = S.y.mul(BILLBOARD_SIZE);
+    const halfH = S.z.mul(cosE).mul(S.z.mul(cosE)).add(S.y.mul(sinE).mul(S.y.mul(sinE))).sqrt().mul(BILLBOARD_SIZE);
     const crown = centre.add(right.mul(g.x.mul(halfW)).add(up.mul(g.y.mul(halfH))));
     // the trunk: upright, turned to the camera, from the root flare to under the crown
     const trunkTop = max(S.x.sub(S.z.mul(0.3)), S.x.mul(0.5));
@@ -305,17 +357,28 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
   const sphere = vec3(q.mul(0.8), float(1.0).sub(dot(q, q).mul(0.64)).max(0.0).sqrt().mul(BILLBOARD_FACING));
   mat.normalNode = normalize(sphere.add(cameraViewMatrix.mul(vec4(0.0, BILLBOARD_LEAN, 0.0, 0.0)).xyz));
 
-  const leaf = texture(leafAtlas, uv().add(farTileShift(species, farTiles))).toVar('billboardLeaf');
-  const shade = select(isCrown, smoothstep(-0.9, 0.9, q.y).mul(0.5).add(0.5), float(0.85));
+  // The tile twice, the second time turned half round (uv1), and the leaf of whichever covers more: the quad stands in
+  // for the far shell's crown, the clump of its cards seen through one another, and a single layer of the tile was
+  // sparser
+  const shift = farTileShift(species, farTiles);
+  const leaf1 = texture(leafAtlas, uv().add(shift)), leaf2 = texture(leafAtlas, uv(1).add(shift));
+  const leaf = select(leaf1.a.greaterThanEqual(leaf2.a), leaf1, leaf2).toVar('billboardLeaf');
+  // lit as the far shell, over the ball the quad stands for (the trunk: a cylinder): the near cards' occlusion at the
+  // height in the crown, and the crown's own shadow beyond the sun's shadow maps
+  const light = leafLight(aData.xyz, leaf, farCrownAO(q.y));
+  const centreDepth = cameraViewMatrix.mul(vec4(P.xyz.add(vec3(0.0, S.x, 0.0)), 1.0)).z.negate();
+  const beyond = varying(smoothstep(uniforms.shadowEnd.mul(0.925), uniforms.shadowEnd, centreDepth), 'vBillboardBeyond');
+  const ball = vec3(q, float(1.0).sub(dot(q, q)).max(0.0).sqrt());
+  mat.directOcclusionNode = farSunOcclusion(ball, cameraViewMatrix.transformDirection(uniforms.sunDir), beyond);
   const alpha = select(isCrown, leaf.a, float(1.0));
   // the trunk's bark, barkColour() averaged per species (it is a fraction of a pixel wide out here)
   const bark = select(species.lessThan(0.5), color(0x7a735e), select(species.lessThan(1.5), color(0x40352c),
     select(species.lessThan(2.5), color(0x4a3e32), select(species.lessThan(3.5), color(0x5c5952),
       select(species.lessThan(4.5), color(0x6e4632), color(0x7a6b55)))))).mul(0.8);
   mat.alphaTestNode = float(0.5);
-  mat.colorNode = vec4(select(isCrown, foliageColour(aData.xyz, leaf).mul(shade).mul(BILLBOARD_TONE), bark), alpha);
+  mat.colorNode = vec4(select(isCrown, light.colour.mul(BILLBOARD_TONE), bark), alpha);
   mat.roughnessNode = select(isCrown, float(BILLBOARD_ROUGHNESS), float(0.93));
-  mat.aoNode = shade.mul(0.7).add(0.3);
-  mat.translucencyNode = select(isCrown, aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.2)).mul(shade), vec3(0.0));
+  mat.aoNode = select(isCrown, light.ao, float(0.89));
+  mat.translucencyNode = select(isCrown, light.translucency, vec3(0.0));
   return mat;
 }
