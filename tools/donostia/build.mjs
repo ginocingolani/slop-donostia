@@ -15,7 +15,7 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
-import { detectWalls, shoreGuides, wallExclusions } from './walls.mjs';
+import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
@@ -672,6 +672,27 @@ function shoreWalls(dtm, grid, classes) {
   return walls;
 }
 
+// --- 4d. The flights of steps down from the shore walls ------------------------------------------------------------------
+
+// tools/donostia/walls.mjs finds the municipal map's stairs by the walls and fits their slope to the 1 m LiDAR;
+// js/donostia/shore.js builds them as stone steps. The terrain samples inside a flight are kept a little under its
+// slope, so the ramp the grid made of it stays hidden under the steps. Returns GEO.terrain.stairs.
+function shoreStairs(dtm, walls, grid) {
+  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, log });
+  let lowered = 0;
+  for (const s of stairs) {
+    const [a, b, c, cx, cz] = s.plane;
+    scanRings([s.p], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+      const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+      const under = Math.min(s.top, Math.max(s.bot, c + a * (x - cx) + b * (z - cz))) - 0.12;
+      const k = j * grid.w + i;
+      if (grid.data[k] > under) { grid.data[k] = under; lowered++; }
+    });
+  }
+  log(`shore stairs: ${lowered} terrain samples kept under the steps`);
+  return stairs.map(({ plane, ...s }) => s);
+}
+
 function writeTerrainPNG(grid, blue, file, text) {
   const px = new Uint8Array(grid.w * grid.h * 3);
   for (let k = 0; k < grid.data.length; k++) {
@@ -963,6 +984,7 @@ fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
 const walls = shoreWalls(dtm, core.grid, coreClasses);
+const stairs = shoreStairs(dtm, walls, core.grid);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -987,7 +1009,7 @@ const GEO = {
   terrain: {
     heightOffset: HEIGHT_OFFSET, classes: GROUND,
     core: terrainMeta(core.grid, 'terrain-core.png'), context: terrainMeta(context.grid, 'terrain-context.png'),
-    walls
+    walls, stairs
   },
   districts: districts.map((d) => d.name),
   buildings, landmarks, teleports,

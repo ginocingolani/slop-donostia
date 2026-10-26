@@ -19,7 +19,9 @@ import { SHORE } from './data-shore.js';
 //   per kind and per 1 km tile so whole tiles drop out of view, and each kind culled by distance.
 // The tidal band darkens walls & rocks below the high-water line and weed grows under half tide, after the sea's level
 // (seaLevel: the water's userData.seaLevel uniform, so the tide moves it).
-// Draws: one for the walls, one per rock kind and tile in view; three materials.
+// - Stairs: the flights of steps down from the walls to the sand (the municipal map's, GEO.terrain.stairs), solid stone
+//   steps cut square to each flight's fall, in the concrete's grey.
+// Draws: one for the walls, one for the stairs, one per rock kind and tile in view; three materials.
 
 const TILE = 1024; // m
 
@@ -243,6 +245,108 @@ function wallMesh(GEO, terrain, seaLevel) {
   return mesh;
 }
 
+// --- stairs --------------------------------------------------------------------------------------------------------------
+
+const RISE = 0.17; // m: a step's rise; the treads' depth follows from each flight's fitted slope
+const STAIR_BASE = 0.6; // m the steps' masonry goes on under the lowest one
+
+// The part of a ring (flat [x, z, ...]) where (x, z)·(ux, uz) >= s (keep 1) or <= s (keep -1): a Sutherland-Hodgman pass
+function clipHalf(ring, ux, uz, s, keep) {
+  const out = [];
+  const n = ring.length / 2;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ax = ring[2 * i], az = ring[2 * i + 1], bx = ring[2 * j], bz = ring[2 * j + 1];
+    const da = keep * (ax * ux + az * uz - s), db = keep * (bx * ux + bz * uz - s);
+    if (da >= 0) out.push(ax, az);
+    if ((da >= 0) !== (db >= 0)) {
+      const t = da / (da - db);
+      out.push(ax + (bx - ax) * t, az + (bz - az) * t);
+    }
+  }
+  return out;
+}
+
+/**
+ * The flights of steps down from the shore walls (GEO.terrain.stairs, tools/donostia/walls.mjs) in one geometry: each
+ * flight cut square to its fall into steps of about RISE, every step a solid prism of its slice of the flight's outline
+ * from its tread down under the lowest step; a landing is one slab. -> { pos, nrm, tint } (flat-shaded triangles)
+ */
+export function stairGeometry(stairs) {
+  const pos = [], nrm = [], tint = [];
+  const up = [0, 1, 0];
+  const tri = (a, b, c, n, t) => {
+    // wound to face n
+    const cx = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
+    const cy = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+    const cz = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const d = cx * n[0] + cy * n[1] + cz * n[2];
+    if (Math.abs(d) < 1e-9) return;
+    if (d > 0) pos.push(...a, ...b, ...c);
+    else pos.push(...a, ...c, ...b);
+    for (let k = 0; k < 3; k++) { nrm.push(...n); tint.push(t); }
+  };
+  for (const st of stairs) {
+    const { p, top, bot, ux, uz } = st;
+    let s0 = Infinity, s1 = -Infinity;
+    for (let k = 0; k < p.length; k += 2) {
+      const s = p[k] * ux + p[k + 1] * uz;
+      s0 = Math.min(s0, s);
+      s1 = Math.max(s1, s);
+    }
+    const n = top > bot ? Math.max(1, Math.round((top - bot) / RISE)) : 1;
+    const base = bot - STAIR_BASE;
+    // each flight its own shade of the grey stone
+    const t = 0.35 + 0.3 * (Math.abs(Math.sin(p[0] * 12.9898 + p[1] * 78.233) * 43758.5453) % 1);
+    for (let i = 0; i < n; i++) {
+      const piece = n > 1
+        ? clipHalf(clipHalf(p, ux, uz, s0 + ((s1 - s0) * i) / n, 1), ux, uz, s0 + ((s1 - s0) * (i + 1)) / n, -1)
+        : p;
+      const m = piece.length / 2;
+      if (m < 3) continue;
+      const y = top - ((top - bot) * i) / n;
+      // the tread
+      const contour = [];
+      for (let k = 0; k < m; k++) contour.push(new THREE.Vector2(piece[2 * k], piece[2 * k + 1]));
+      for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(contour, [])) {
+        tri([contour[a].x, y, contour[a].y], [contour[b].x, y, contour[b].y], [contour[c].x, y, contour[c].y], up, t);
+      }
+      // the risers & sides, facing away from the piece's middle
+      let mx = 0, mz = 0;
+      for (let k = 0; k < m; k++) { mx += piece[2 * k]; mz += piece[2 * k + 1]; }
+      mx /= m; mz /= m;
+      for (let k = 0; k < m; k++) {
+        const ax = piece[2 * k], az = piece[2 * k + 1], bx = piece[(2 * k + 2) % (2 * m)], bz = piece[(2 * k + 3) % (2 * m)];
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 1e-4) continue;
+        let nx = (bz - az) / len, nz = -(bx - ax) / len;
+        if (nx * ((ax + bx) / 2 - mx) + nz * ((az + bz) / 2 - mz) < 0) { nx = -nx; nz = -nz; }
+        const nn = [nx, 0, nz];
+        tri([ax, y, az], [bx, y, bz], [bx, base, bz], nn, t);
+        tri([ax, y, az], [bx, base, bz], [ax, base, az], nn, t);
+      }
+    }
+  }
+  return pos.length ? { pos, nrm, tint } : null;
+}
+
+function stairMesh(stairs, material) {
+  const g = stairGeometry(stairs);
+  if (!g) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nrm, 3));
+  geo.setAttribute('aTint', new THREE.Float32BufferAttribute(g.tint, 1));
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.name = 'DonostiaShoreStairs';
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.matrixAutoUpdate = false;
+  return mesh;
+}
+
 // --- rock geometries (deterministic) -------------------------------------------------------------------------------------
 
 function mulberry32(seed) {
@@ -460,10 +564,9 @@ function decodeRocks() {
   return out;
 }
 
-function rockMeshes(seaLevel) {
+function rockMeshes({ rock, concrete }) {
   const rocks = decodeRocks();
   if (!rocks.length) return [];
-  const { rock, concrete } = rockMaterials(seaLevel);
   const geos = KINDS.map((k) => k.make());
   const groups = new Map();
   for (const r of rocks) {
@@ -549,7 +652,10 @@ export async function buildShore(GEO, terrain, seaLevel = null) {
     group.name = 'DonostiaShore';
     const walls = wallMesh(GEO, terrain, level);
     if (walls) group.add(walls);
-    const rocks = rockMeshes(level);
+    const stone = rockMaterials(level);
+    const stairs = stairMesh(GEO.terrain.stairs || [], stone.concrete);
+    if (stairs) group.add(stairs);
+    const rocks = rockMeshes(stone);
     for (const m of rocks) group.add(m);
     const last = new THREE.Vector3(Infinity, Infinity, Infinity);
     group.userData.update = (dt, elapsed, camera) => {

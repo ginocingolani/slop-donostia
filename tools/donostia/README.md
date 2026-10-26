@@ -96,6 +96,11 @@ map.
   promenade level (the Paseo Nuevo's parapet hump is flattened, `js/donostia/shore.js` models the parapet). At runtime
   `js/donostia/terrain.js` moves the samples either side of a wall line onto it (`js/donostia/shore-walls.js`, shared
   with the bake), so the ground steps vertically there, and `shore.js` faces the step with masonry and a coping.
+- Shore stairs (`walls.mjs`, `GEO.terrain.stairs`): the municipal map's stairs (`ESKAILERA`) by a wall, within 3 m of
+  it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
+  inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
+  piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
+  under the slope, and `shore.js` builds them as solid steps of about 17 cm.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
   the bed above mean sea level, the OSM bare rock & rocky coastline), never on paving, buildings, beaches, bridges or the

@@ -8,7 +8,7 @@
 // (foot). The detections are smoothed along each shoreline into runs; a shoreline found by an earlier source is not
 // found again by a later one.
 
-import { WALL } from '../../js/donostia/shore-walls.js';
+import { WALL, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const STEP = 0.5; // m between profile samples
 const HALF = 9; // m each side of the shoreline
@@ -255,6 +255,96 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
 
 const r2 = (v) => Math.round(v * 100) / 100;
 
+// --- the flights of steps down from the walls --------------------------------------------------------------------------
+
+// m: a piece of a flight this close to a shore wall goes down from it; one further off (the broad flights between the
+// bastions by Miramar), up to STAIR_FAR, only if it falls a metre or more below the promenade
+const STAIR_REACH = 3, STAIR_FAR = 8;
+const LANDING = 0.12; // fall per metre under which a piece of a flight is a landing
+const STAIR_STEEP = 1.2; // the steepest a flight is taken to fall (beyond: the wall's own drop in the fit)
+
+/**
+ * The flights of steps down from the shore walls to the sand, the rocks or the water: the municipal map's stairs
+ * (ESKAILERA) by a wall (STAIR_REACH; STAIR_FAR for a piece that falls well below the promenade), which the 2 m terrain
+ * keeps as the ramp the wall was. Each piece's slope is
+ * a plane fitted to the 1 m LiDAR inside it, its top & bottom where that plane meets its outline, kept between the
+ * wall's promenade (deck) and its foot; a piece that hardly falls is a landing at its own level.
+ * Returns [{ p: [x, z, ...], top, bot, ux, uz (downhill, horizontal), plane: [a, b, c, cx, cz] (y = c + a (x - cx) +
+ * b (z - cz)) }].
+ */
+export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} }) {
+  const out = [];
+  for (const f of loadLayer('c500_ESKAILERA.json').features) {
+    for (const r of f.g) {
+      const n = r.length / 2;
+      if (n < 3) continue;
+      let area = 0, cx = 0, cz = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) area += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
+      if (Math.abs(area / 2) < 0.5) continue;
+      for (let k = 0; k < r.length; k += 2) { cx += r[k]; cz += r[k + 1]; }
+      cx /= n; cz /= n;
+      // the wall it comes down from: the nearest to its outline (sampled every metre)
+      let wall = null, dist = Infinity;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const ax = r[2 * i], az = r[2 * i + 1], len = Math.hypot(r[2 * j] - ax, r[2 * j + 1] - az);
+        for (let s = 0; s < len || s === 0; s += 1) {
+          const f = len > 0 ? s / len : 0, x = ax + (r[2 * j] - ax) * f, z = az + (r[2 * j + 1] - az) * f;
+          const q = nearestWall(walls, x, z, STAIR_FAR);
+          const d = q ? Math.hypot(x - q.x, z - q.z) : Infinity;
+          if (d < dist) { dist = d; wall = q; }
+        }
+      }
+      if (!wall) continue;
+      // least squares plane through the LiDAR inside (the corners too, for the narrow pieces)
+      const S = [];
+      scanRings([r], dtm.x0, dtm.z0, dtm.res, dtm.w, dtm.h, (i, j) => {
+        const v = dtm.data[j * dtm.w + i];
+        if (!Number.isNaN(v)) S.push(dtm.x0 + (i + 0.5) * dtm.res - cx, dtm.z0 + (j + 0.5) * dtm.res - cz, v);
+      });
+      for (let k = 0; k < r.length; k += 2) {
+        const v = dtm.sample(r[k], r[k + 1]);
+        if (!Number.isNaN(v)) S.push(r[k] - cx, r[k + 1] - cz, v);
+      }
+      if (S.length < 9) continue;
+      let sxx = 0, sxz = 0, szz = 0, sxh = 0, szh = 0, sh = 0, sx = 0, sz = 0;
+      const m = S.length / 3;
+      for (let k = 0; k < S.length; k += 3) {
+        const [x, z, h] = [S[k], S[k + 1], S[k + 2]];
+        sx += x; sz += z; sh += h; sxx += x * x; sxz += x * z; szz += z * z; sxh += x * h; szh += z * h;
+      }
+      // centred on the samples' mean
+      const mx = sx / m, mz = sz / m, mh = sh / m;
+      const Cxx = sxx / m - mx * mx, Cxz = sxz / m - mx * mz, Czz = szz / m - mz * mz;
+      const Cxh = sxh / m - mx * mh, Czh = szh / m - mz * mh;
+      const det = Cxx * Czz - Cxz * Cxz;
+      let a = 0, b = 0;
+      if (det > 1e-6) { a = (Cxh * Czz - Czh * Cxz) / det; b = (Czh * Cxx - Cxh * Cxz) / det; }
+      let slope = Math.hypot(a, b);
+      if (slope > STAIR_STEEP) { a *= STAIR_STEEP / slope; b *= STAIR_STEEP / slope; slope = STAIR_STEEP; }
+      const c = mh - a * mx - b * mz;
+      const at = (x, z) => c + a * (x - cx) + b * (z - cz);
+      let top = -Infinity, bot = Infinity;
+      for (let k = 0; k < r.length; k += 2) { const h = at(r[k], r[k + 1]); top = Math.max(top, h); bot = Math.min(bot, h); }
+      if (dist > STAIR_REACH && bot > wall.deck - 1) continue;
+      top = Math.min(top, wall.deck + 0.02);
+      bot = Math.max(bot, wall.foot - 0.1);
+      let ux = slope > 1e-3 ? -a / slope : wall.nx, uz = slope > 1e-3 ? -b / slope : wall.nz;
+      if (slope < LANDING || top - bot < 0.12) {
+        // a landing: flat at its own level
+        top = bot = Math.min(wall.deck + 0.02, Math.max(wall.foot, at(cx, cz)));
+        ux = wall.nx; uz = wall.nz;
+      }
+      out.push({
+        p: r.map(r2), top: r2(top), bot: r2(bot), ux: Math.round(ux * 1000) / 1000, uz: Math.round(uz * 1000) / 1000,
+        plane: [a, b, c, cx, cz]
+      });
+    }
+  }
+  log(`shore stairs: ${out.length} flights & landings by the walls (${out.filter((s) => s.top === s.bot).length} landings)`);
+  return out;
+}
+
 // --- the shorelines & the places without a wall ----------------------------------------------------------------------
 
 const inBox = (b, x, z) => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
@@ -311,7 +401,7 @@ export function shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel })
  */
 export function wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext }) {
   const w = ext.maxX - ext.minX, h = ext.maxZ - ext.minZ;
-  // 1: stairs, kept a metre clear; 2: buildings & bridges, where no wall may stand
+  // 1: stairs, kept half a metre clear; 2: buildings & bridges, where no wall may stand
   const mask = new Uint8Array(w * h);
   const paint = (rings, v) => scanRings(rings, ext.minX, ext.minZ, 1, w, h, (i, j) => { mask[j * w + i] = v; });
   for (const f of loadLayer('c500_ESKAILERA.json').features) paint(f.g.filter((r) => r.length >= 6), 1);
@@ -335,8 +425,8 @@ export function wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext }) {
       }
     }
   }
-  // a metre round the stairs, half a metre round the buildings (a wall may run up to a pavilion's side, not across its
-  // front)
+  // half a metre round the stairs (built as steps, see detectStairs, which the wall runs up to) and round the buildings
+  // (a wall may run up to a pavilion's side, not across its front)
   const near = (x, z, r, step, v) => {
     for (let b = -r; b <= r; b += step) for (let a = -r; a <= r; a += step) {
       const i = Math.floor(x + a - ext.minX), j = Math.floor(z + b - ext.minZ);
@@ -344,5 +434,5 @@ export function wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext }) {
     }
     return false;
   };
-  return (x, z) => near(x, z, 1, 1, 1) || near(x, z, 0.5, 0.5, 2);
+  return (x, z) => near(x, z, 0.5, 0.5, 1) || near(x, z, 0.5, 0.5, 2);
 }
