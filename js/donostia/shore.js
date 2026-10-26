@@ -16,7 +16,7 @@ import { SHORE } from './data-shore.js';
 //   wobbly rubble) is worked out in the shader from metres along the wall and the height, per wall from its vertices.
 // - Rocks: the flysch sandstone of Urgull's foot (fallen blocks, bedded slabs), the Zurriola dike's concrete cubes, the
 //   riprap at the foot of the river walls and boulders along the rocky coast; a few procedural geometries, instanced
-//   per kind and per 1 km tile so whole tiles drop out of view.
+//   per kind and per 1 km tile so whole tiles drop out of view, and each kind culled by distance.
 // The tidal band darkens walls & rocks below the high-water line and weed grows under half tide, after the sea's level
 // (seaLevel: the water's userData.seaLevel uniform, so the tide moves it).
 // Draws: one for the walls, one per rock kind and tile in view; three materials.
@@ -385,15 +385,19 @@ function fixWinding(tris) {
 }
 
 // KINDS of tools/donostia/bake-shore.mjs, in order
+// cull: metres from the camera beyond which a kind is not drawn, about where it shrinks to a few pixels. Far rocks are
+// all sub-pixel triangles, which cost the GPU far more than their count says (it shades 2x2 pixel quads), and once more
+// in the shadow map; beyond, the ground's weathered-rock colour stands in. The pebbles cast no shadow.
 const KINDS = [
-  { name: 'boulder', make: () => boulder(101), concrete: false },
-  { name: 'boulder2', make: () => boulder(202), concrete: false },
-  { name: 'boulder3', make: () => boulder(303), concrete: false },
-  { name: 'slab', make: () => slab(404, 3), concrete: false },
-  { name: 'slab2', make: () => slab(505, 2), concrete: false },
-  { name: 'cube', make: () => cube(), concrete: true },
-  { name: 'pebble', make: () => boulder(606, 0), concrete: false }
+  { name: 'boulder', make: () => boulder(101), concrete: false, cull: 420 },
+  { name: 'boulder2', make: () => boulder(202), concrete: false, cull: 420 },
+  { name: 'boulder3', make: () => boulder(303), concrete: false, cull: 420 },
+  { name: 'slab', make: () => slab(404, 3), concrete: false, cull: 700 },
+  { name: 'slab2', make: () => slab(505, 2), concrete: false, cull: 700 },
+  { name: 'cube', make: () => cube(), concrete: true, cull: 600 },
+  { name: 'pebble', make: () => boulder(606, 0), concrete: false, cull: 160, noShadow: true }
 ];
+const RECULL = 8; // m the camera moves before the rocks are culled again
 
 function rockMaterials(seaLevel) {
   const tint = attribute('aTint', 'float');
@@ -481,12 +485,57 @@ function rockMeshes(seaLevel) {
     mesh.computeBoundingBox();
     mesh.computeBoundingSphere();
     mesh.name = `DonostiaShoreRocks-${KINDS[kind].name}-${key}`;
-    mesh.castShadow = true;
+    mesh.castShadow = !KINDS[kind].noShadow;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
+    mesh.userData.cull = new RockCull(mesh, KINDS[kind].cull);
     meshes.push(mesh);
   }
   return meshes;
+}
+
+// Keeps a rock mesh's instances within maxDist of the camera at the front of its buffers (matrices & tints), drawing
+// only those: streetscape.js's DistanceCulled, with the tint attribute kept in step
+class RockCull {
+  constructor(mesh, maxDist) {
+    this.mesh = mesh;
+    this.tint = mesh.geometry.getAttribute('aTint');
+    this.srcM = mesh.instanceMatrix.array.slice();
+    this.srcT = this.tint.array.slice();
+    this.n = this.srcT.length;
+    this.max2 = maxDist * maxDist;
+    this.inside = new Uint8Array(this.n).fill(1);
+  }
+
+  update(cam) {
+    const src = this.srcM;
+    let changed = false;
+    for (let i = 0; i < this.n; i++) {
+      const dx = src[16 * i + 12] - cam.x, dy = src[16 * i + 13] - cam.y, dz = src[16 * i + 14] - cam.z;
+      const inside = dx * dx + dy * dy + dz * dz < this.max2 ? 1 : 0;
+      if (inside !== this.inside[i]) { this.inside[i] = inside; changed = true; }
+    }
+    if (!changed) return;
+    const mesh = this.mesh, dstM = mesh.instanceMatrix.array, dstT = this.tint.array;
+    let c = 0;
+    for (let i = 0; i < this.n; i++) {
+      if (!this.inside[i]) continue;
+      for (let k = 0; k < 16; k++) dstM[16 * c + k] = src[16 * i + k];
+      dstT[c] = this.srcT[i];
+      c++;
+    }
+    mesh.count = c;
+    mesh.visible = c > 0;
+    if (c > 0) {
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, c * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+      this.tint.clearUpdateRanges();
+      this.tint.addUpdateRange(0, c);
+      this.tint.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  }
 }
 
 /**
@@ -500,7 +549,14 @@ export async function buildShore(GEO, terrain, seaLevel = null) {
     group.name = 'DonostiaShore';
     const walls = wallMesh(GEO, terrain, level);
     if (walls) group.add(walls);
-    for (const m of rockMeshes(level)) group.add(m);
+    const rocks = rockMeshes(level);
+    for (const m of rocks) group.add(m);
+    const last = new THREE.Vector3(Infinity, Infinity, Infinity);
+    group.userData.update = (dt, elapsed, camera) => {
+      if (camera.position.distanceToSquared(last) < RECULL * RECULL) return;
+      last.copy(camera.position);
+      for (const m of rocks) m.userData.cull.update(camera.position);
+    };
     return group.children.length ? group : null;
   } catch (e) {
     // the city stands without its shore rather than not at all (main.js skips a null module)
