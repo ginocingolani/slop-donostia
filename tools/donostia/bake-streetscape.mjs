@@ -30,7 +30,9 @@ const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
 const CORE = FRAME.core;
 const PREVIEW = previewDir();
 const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
+const { nearestWall, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
 const G = GEO.terrain.classes;
+const WALLS = GEO.terrain.walls || [];
 
 // Species ids shared with js/donostia/trees-species.js (SPECIES order)
 const SP = { plane: 0, tamarisk: 1, broadleaf: 2, evergreen: 3, pine: 4, palm: 5 };
@@ -578,6 +580,13 @@ function bakeRailings(cuts = []) {
       let d = 0;
       while (d < 3 && terrain.heightAt(x + nx * d, z + nz * d) < land - 0.3) d += 0.25;
       const rx = x + nx * (d + 0.2), rz = z + nz * (d + 0.2);
+      // on a shore wall (GEO.terrain.walls, found by build.mjs): on its coping, 25 cm behind the masonry face, which the
+      // 2 m terrain cannot place within a metre or two
+      const wall = nearestWall(WALLS, rx, rz, 4);
+      if (wall && !wall.end && wall.d < 0.5) {
+        const wx = wall.x - wall.nx * 0.25, wz = wall.z - wall.nz * 0.25;
+        return { x: wx, z: wz, y: wall.deck + COPING[WALLS[wall.wall].t], sand, cut: cuts.find((c) => Math.hypot(wx - c.x, wz - c.z) < c.r) };
+      }
       // standing on the promenade: the median of its height 1-3 m inland, clear of the 2 m grid's blend over the edge
       // and of the slope seaward of the line, however steep the terrain draws the wall
       const hs = [1.2, 1.8, 2.4, 3.0].map((e) => terrain.heightAt(rx + nx * e, rz + nz * e)).sort((a, b) => a - b);
@@ -753,7 +762,9 @@ const OPENING_R = { steps: 1.3, ramp: 1.5 };
 const MONUMENT_R = [0.9, 1.6, 1.6]; // half the pedestal's width along the railing, and a hand's breadth
 function railingFeatures(runs) {
   const cuts = [], monuments = [];
-  const accesses = beachAccesses().map((a) => ({ ...a, on: nearestOnRailings(runs, a.x, a.z) })).filter((a) => a.on && a.on.d < 3);
+  // (a ramp runs down along the wall, so its upper end may lie a few metres inland of the railing on the coping)
+  const accesses = beachAccesses().map((a) => ({ ...a, on: nearestOnRailings(runs, a.x, a.z) }))
+    .filter((a) => a.on && a.on.d < (a.kind === 'ramp' ? 4.5 : 3));
   for (const a of accesses) {
     const p = runFrame(runs[a.on.run]).at(a.on.s);
     cuts.push({ x: p.x, z: p.z, r: OPENING_R[a.kind] });
