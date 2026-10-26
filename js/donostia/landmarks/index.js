@@ -20,6 +20,8 @@ import * as tabakalera from './tabakalera.js';
 import * as atotxaDorrea from './atotxa-dorrea.js';
 import * as anoeta from './anoeta.js';
 import * as illunbe from './illunbe.js';
+import * as alderdiEder from './alderdi-eder.js';
+import * as klubNautikoa from './klub-nautikoa.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
@@ -48,7 +50,9 @@ const MODELS = [
   [tabakalera, ['tabakalera']],
   [atotxaDorrea, ['atotxa-dorrea']],
   [anoeta, ['anoeta']],
-  [illunbe, ['illunbe']]
+  [illunbe, ['illunbe']],
+  [alderdiEder, []],
+  [klubNautikoa, []]
 ];
 
 export function buildLandmarks(GEO, terrain) {
@@ -58,7 +62,7 @@ export function buildLandmarks(GEO, terrain) {
   const ctx = { GEO, terrain, kit };
   for (const [module, ids] of MODELS) {
     const sites = ids.map((id) => GEO.landmarks.find((s) => s.id === id)).filter(Boolean);
-    if (!sites.length) continue;
+    if (!sites.length && ids.length) continue;
     let model = null;
     try {
       model = module.build(sites, ctx);

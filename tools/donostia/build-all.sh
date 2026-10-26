@@ -36,4 +36,5 @@ $NODE "$HERE/bake-streetscape.mjs"   # js/donostia/data-streetscape.js (trees, r
 $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names & districts for the HUD)
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js
+$NODE "$HERE/bake-alderdi.mjs"       # js/donostia/data-alderdi.js (Alderdi Eder's gardens)
 echo "Donostia data rebuilt"
