@@ -472,6 +472,16 @@ const seafrontGarden = (x, z) => (inBox(ALDERDI_EDER, x, z) || bayBeachEdges.dis
 stats.garden = scatter((k, x, z) => surf[k] === G.garden && wallDist[k] > 2.5 && roomy(x, z, 1.5) && seafrontGarden(x, z), 7.5, 0.8, 7003, 'garden');
 stats.garden += scatter((k, x, z) => surf[k] === G.garden && wallDist[k] > 3 && roomy(x, z, 2.2), 13, 0.55, 7002, 'garden');
 
+// Trees whose species the photographs settle where OSM does not tag one: { x, z, sp, height (m) }, applied to the
+// tree nearest the point
+const KNOWN_TREES = [
+  { x: 299.48, z: 81.75, sp: SP.palm, height: 13 } // Alderdi Eder: the Canary date palm in the middle of the round bed
+];
+for (const k of KNOWN_TREES) {
+  const near = nearestTree(k.x, k.z, 2);
+  if (near) Object.assign(near.tree, { sp: k.sp, height: k.height });
+}
+
 // Species by place, then a scale whose crown keeps off the nearest wall
 for (const t of trees) {
   const { x, z } = t;
