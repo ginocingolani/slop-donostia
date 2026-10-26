@@ -188,8 +188,12 @@ zones.push({
   name: 'Zurriola dike', seed: 23, coverage: 0.72,
   cell: (k, x, z, y) => {
     if (kursaalNear[k] || y < -1.6) return null;
-    if (dike[k]) return { d: 99 };
     if (blockedNear[k] || PAVED.has(terrain.classes[k])) return null;
+    if (dike[k]) {
+      // (the OSM dike runs on along the bank: not up on the promenade behind its wall)
+      const q = wallAt(x, z, 6);
+      return q && q.d < 0.4 ? null : { d: 99 };
+    }
     if (x < KURSAAL_BANK.minX || x > KURSAAL_BANK.maxX || z < KURSAAL_BANK.minZ || z > KURSAAL_BANK.maxZ) return null;
     const q = wallAt(x, z, 9);
     if (!q || walls[q.wall].t !== WALL.river || q.d < 0.5 || q.d > 7.5) return null;

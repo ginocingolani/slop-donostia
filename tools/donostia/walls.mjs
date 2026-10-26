@@ -322,7 +322,7 @@ export function wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext }) {
     const t = e.tags || {};
     if (e.type !== 'way' || !e.geometry || !t.bridge || t.bridge === 'no' || !(t.highway || t.railway)) continue;
     const pts = e.geometry.map((p) => lonLatToLocal(p.lon, p.lat));
-    const half = (Number.parseFloat(t.width) > 0.5 ? Number.parseFloat(t.width) : 12) / 2 + 2;
+    const half = (Number.parseFloat(t.width) > 0.5 ? Number.parseFloat(t.width) : 9) / 2 + 1;
     for (let k = 1; k < pts.length; k++) {
       const [ax, az] = pts[k - 1], [bx, bz] = pts[k];
       const len = Math.hypot(bx - ax, bz - az);
