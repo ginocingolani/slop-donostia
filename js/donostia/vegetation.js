@@ -22,7 +22,9 @@ import { createTreeMaterial, createFarTreeMaterial, createBillboardTreeMaterial 
 // - far shadows: the far trees within the sun's shadow range (lighting.js widens it with the camera's altitude; at
 //   street level the mid level covers all of it) on a second instance list: a shadow-only stand-in on
 //   SHADOW_ONLY_LAYER, which only the cascade cameras see (main.js), instead of every tree of the city drawn into
-//   both cascades
+//   both cascades; beyond the cascades the far & billboard crowns shade their sunless side themselves
+// Every level shows the same crown: the far crowns are fitted to the near level's leaf (trees-species.js), the mid
+// cards carry a set share of the near level's leaf, and the far & billboard crowns are lit as the near cards.
 
 const LOD_NEAR = 85; // m: full detail within
 const LOD_MID = 300; // m: cards along the branches within; the far trees beyond
@@ -80,7 +82,7 @@ export async function buildVegetation(GEO, terrain) {
   far.uniforms.midEnd.value = LOD_MID;
   far.uniforms.farEnd.value = FAR_END;
 
-  // Geometries & crowns: [species][variant] = { geometries: [near, mid], crown }
+  // Geometries & crowns: [species][variant] = { geometries: [near, mid], crown, far: the far crown }
   const kits = SPECIES.map((_, s) => [0, 1].map((v) => buildTreeGeometries(s, v, atlas.tileMeters)));
 
   // Per-tree transform & data
@@ -113,9 +115,9 @@ export async function buildVegetation(GEO, terrain) {
     data[i * 4 + 1] = tint.g;
     data[i * 4 + 2] = tint.b;
     data[i * 4 + 3] = sp + r2 * 0.999;
-    const { C, R } = kits[sp][variant].crown;
+    const crown = kits[sp][variant].far;
     farPos.set([x, y, z, yaw], i * 4);
-    farShape.set([C.y * sy, ((R.x + R.z) / 2) * 0.92 * (sx + sz) / 2, R.y * sy, (spec.trunk ? spec.trunk.r : spec.palm.r) * s], i * 4);
+    farShape.set([crown.y * sy, crown.r * (sx + sz) / 2, crown.h * sy, (spec.trunk ? spec.trunk.r : spec.palm.r) * s], i * 4);
     meshOf[i] = (sp * 2 + variant) * 2;
     capacity[meshOf[i]]++;
     capacity[meshOf[i] + 1]++;
@@ -306,11 +308,14 @@ export async function buildVegetation(GEO, terrain) {
   let billboardStart = BILLBOARD_START;
   // (a quality knob: the distance where far trees turn into billboards; Infinity keeps the cards; refills next frame)
   group.userData.setBillboardStart = (d) => { billboardStart = d; lastCull.reach = -Infinity; };
+  // (the far crowns' tint takes their species' spray tone over that of the far tile they're drawn with)
+  const farTone = SPECIES.map((sp) => atlas.tileTone[sp.tile] / atlas.tileTone[sp.far]);
   const pack = ([p, s, d], n, i) => {
+    const tone = farTone[trees.sp[i]];
     for (let k = 0; k < 4; k++) {
       p.array[n * 4 + k] = farPos[i * 4 + k];
       s.array[n * 4 + k] = farShape[i * 4 + k];
-      d.array[n * 4 + k] = data[i * 4 + k];
+      d.array[n * 4 + k] = data[i * 4 + k] * (k < 3 ? tone : 1);
     }
   };
   // (both meshes stay visible: with no instances three skips the draw but keeps the pipeline, so the precompile & the
@@ -381,9 +386,25 @@ export async function buildVegetation(GEO, terrain) {
 
   // the sun's shadow range (main.js points it at lighting.js); without one, no far tree casts
   group.userData.shadowReach = () => LOD_MID - SHADOW_MARGIN;
+  // The sun: the scene's shadow-casting light, looked up once the trees are in the scene. The far & billboard crowns
+  // shade their own sunless side beyond the view depth its shadow maps reach (trees-material.js)
+  let sun;
+  const findSun = () => {
+    let root = group;
+    while (root.parent) root = root.parent;
+    if (root === group) return undefined;
+    let found = null;
+    root.traverse((o) => { if (!found && o.isLight && o.castShadow && o.shadow?.camera) found = o; });
+    return found;
+  };
   group.userData.update = (dt, elapsed, camera) => {
     const cam = camera.position;
     far.uniforms.view.value.copy(cam);
+    if (sun === undefined) sun = findSun();
+    if (sun) {
+      far.uniforms.sunDir.value.copy(sun.position).normalize();
+      far.uniforms.shadowEnd.value = sun.shadow.camera.far;
+    }
     if (cam.distanceToSquared(lastPick) >= REPICK * REPICK) pick(cam);
     const reach = group.userData.shadowReach();
     // Refill before the view can turn out of the widened frustum. The whole rotation since the last refill counts, not
