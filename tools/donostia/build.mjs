@@ -908,6 +908,7 @@ const TELEPORTS = [
   ['miramar', 'Miramar jauregia', 'Palacio de Miramar', [-1.9958, 43.3152], 6, [-1.99831, 43.31464], 10],
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
   ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
+  ['dabadaba', 'Dabadaba', 'Sala Dabadaba', [-1.975780, 43.315545], 1.7, [-1.976278, 43.315608], 3],
   ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
 ];
 
