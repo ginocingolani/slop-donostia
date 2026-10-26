@@ -43,6 +43,19 @@ test('the Donostia entry never loads New York modules', () => {
   for (const m of nyc) assert.ok(!modules.includes(m), `${m} is reachable from js/donostia/main.js`);
 });
 
+test('the display font ships with its licence, and Harri never ships at all', () => {
+  const preload = html.match(/<link rel="preload" href="\.\/([^"]+\.woff2)" as="font"/)[1];
+  const css = readFileSync(join(root, 'css/donostia.css'), 'utf8');
+  const face = css.match(/@font-face\s*{[^}]*url\('\.\.\/([^']+)'\)/)[1];
+  assert.equal(face, preload, 'the preloaded font is the one css/donostia.css uses');
+  assert.ok(existsSync(join(root, face)), `${face} exists`);
+  const fontDir = dirname(join(root, face));
+  assert.match(readFileSync(join(fontDir, 'OFL.txt'), 'utf8'), /SIL OPEN FONT LICENSE Version 1\.1/);
+  // Harri (Blancoletters) is commercial: its EULA forbids giving third parties access to the font files
+  const files = require('node:fs').readdirSync(join(root, 'fonts'), { recursive: true });
+  assert.deepEqual(files.filter((f) => /harri/i.test(f)), [], 'no Harri font files in the repository');
+});
+
 test('the generated geodata keeps its shape', async () => {
   const { pathToFileURL } = require('node:url');
   const { GEO } = await import(pathToFileURL(join(root, 'js/donostia/geodata.js')).href);

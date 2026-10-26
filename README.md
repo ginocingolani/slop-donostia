@@ -30,3 +30,7 @@ Geographic data: Eusko Jaurlaritza / Gobierno Vasco – geoEuskadi (CC BY 4.0); 
 4.0); Donostiako Udala / Ayuntamiento de San Sebastián (CC BY-SA 3.0); © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
 (ODbL). The data was reprojected, simplified, resampled and combined for Slop Donostia. The New York data keeps its
 original sources (NYC Open Data, OpenStreetMap).
+
+The HUD's display font, [`fonts/donostia-display`](fonts/donostia-display/README.md), is a modified Marcellus under the
+SIL Open Font License 1.1, not MIT. Harri, the commercial Basque face it stands in for, is never included; the font's
+README says how to use it with a licence of your own.

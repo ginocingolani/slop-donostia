@@ -1,5 +1,166 @@
 /* css/donostia.css — Slop Donostia additions on top of css/style.css (slop-newyork) */
 
+/* ------------------------------------------------------------------------------------------------------------------
+   Design layer: upstream's quiet glass corners, re-cut in Donostia's own materials. The panels take the Cantabrian
+   blue and the limestone white of the city's txuri-urdin; Igeldo sandstone marks whatever is active. Place names are
+   set in the letter of the Basque carved inscriptions (the crowned A of the lintels and stelae), the way the Basque
+   Country letters its fascias, and only the names: controls, numbers and Spanish stay in Inter. The motifs are kept to
+   two, both taken from the stones themselves rather than from folklore: the compass-drawn rosette of the discoidal
+   stelae, and the inner rule of a carved cartouche
+   ------------------------------------------------------------------------------------------------------------------ */
+@font-face {
+  font-family: 'Donostia Display';
+  src: url('../fonts/donostia-display/DonostiaDisplay-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  --glass: rgba(12, 28, 45, 0.64);
+  --glass-strong: rgba(10, 23, 38, 0.9);
+  --glass-border: rgba(236, 226, 204, 0.12);
+  --glass-highlight: rgba(255, 246, 228, 0.07);
+  --hover: rgba(244, 236, 220, 0.09);
+  --divider: rgba(244, 236, 220, 0.13);
+
+  --text: #f4efe4;
+  --text-2: rgba(244, 239, 228, 0.7);
+  --text-3: rgba(244, 239, 228, 0.47);
+
+  /* Igeldo / Ulia sandstone: upstream's taxi-yellow hooks (loader, radar button, touch) take it too */
+  --harri: #dcb574;
+  --harri-ink: #1b1509;
+  --taxi: var(--harri);
+  --taxi-ink: var(--harri-ink);
+  --rosette-ink: #10233a;
+  --carve: rgba(240, 228, 204, 0.17);
+
+  --r-panel: 10px;
+  --r-ctl: 6px;
+
+  /* Harri (Blancoletters / Type-Ø-Tones) first, wherever a licence has loaded it; Donostia Display otherwise */
+  --font-display: 'Harri', 'Donostia Display', Georgia, serif;
+}
+
+/* The display lettering is always capitals (as Harri is drawn), opened up, and never set under 12 px */
+
+/* The carved cartouche: a hairline cut just inside the frame */
+.brand,
+.cluster,
+.radar-card,
+.fullmap-title,
+.popover {
+  outline: 1px solid var(--carve);
+  outline-offset: -5px;
+}
+
+/* The rosette disc (index.html #i-rosette) where upstream had the MTA bullet */
+.rosette {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  color: var(--harri);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Loader
+   ------------------------------------------------------------------------------------------------------------------ */
+#loading-overlay {
+  background: radial-gradient(120% 90% at 50% 38%, #142a42 0%, #0a1726 55%, #050b13 100%);
+}
+
+.rosette.loader-rosette {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 24px;
+  animation: rosette-turn 24s linear infinite;
+}
+
+@keyframes rosette-turn {
+  to { transform: rotate(360deg); }
+}
+
+.loader-title {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.loader-title .brand-slop {
+  color: var(--text-3);
+}
+
+.loader-track {
+  height: 2px;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Top left: brand
+   ------------------------------------------------------------------------------------------------------------------ */
+.brand {
+  padding: 0 18px 0 10px;
+}
+
+.brand-titles h1 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand-slop {
+  color: var(--text-2);
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Top right: toolbar & popovers; sandstone for the active choice
+   ------------------------------------------------------------------------------------------------------------------ */
+.time-btn.active,
+.time-btn.active:hover,
+.pop-item.active,
+.pop-item.active:hover {
+  background: var(--harri);
+  color: var(--harri-ink);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.popover {
+  border-radius: var(--r-panel);
+}
+
+.pop-item {
+  border-radius: var(--r-ctl);
+}
+
+.pop-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--harri);
+}
+
+.pop-title:not(:first-child) {
+  border-top-color: var(--carve);
+}
+
+/* The viewpoints read like the names on a lintel: the Basque name in capitals, the Spanish under it */
+.tp-btn {
+  padding-block: 7px;
+}
+
+.tp-btn .pop-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* Popovers open against their invoker in js/main.js upstream; here they simply hang under the toolbar */
 #teleport-popover,
 #credits-popover {
@@ -19,17 +180,13 @@
 
 .credits p {
   margin: 0 0 8px;
+  padding: 0 10px;
   opacity: 0.86;
 }
 
 .credits a,
 .brand-subtitle a {
   color: inherit;
-}
-
-.mta-bullet {
-  font-size: 0.62em;
-  letter-spacing: -0.02em;
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
@@ -39,15 +196,59 @@ body[data-mode='god'] .gauge-alt {
   opacity: 1;
 }
 
-/* ------------------------------------------------------------------------------------------------------------------
-   Bottom left: auzoa, place & street-name signs over the radar
-   ------------------------------------------------------------------------------------------------------------------ */
-:root {
-  --sign-blue: #174a8c;
+/* the panel's name in the inscription letter, as the popovers' titles */
+.gauge-label {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  color: var(--harri);
 }
 
+/* ------------------------------------------------------------------------------------------------------------------
+   Bottom left: the street-name plaques over the radar card, which reads the auzoa & place above the map like the
+   inscription over a stela's disc (on a panel, so the names stay legible against any sky)
+   ------------------------------------------------------------------------------------------------------------------ */
+:root {
+  --sign-blue: #1b4f8f;
+}
+
+.radar-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--grain), var(--glass-strong);
+}
+
+/* as wide as the radar under it: the names give way (ellipsis) rather than widen the card */
 .location {
-  max-width: min(340px, calc(100vw - 2 * var(--edge)));
+  width: 0;
+  min-width: 100%;
+  gap: 2px;
+  padding: 10px 14px 9px;
+}
+
+.location:not(:has(.loc-eu)) {
+  display: none;
+}
+
+/* The auzoa in the inscription letter; its Spanish name (where it differs) and the altitude stay small Inter */
+.location-place {
+  font-family: var(--font-display);
+  font-size: 17px; /* the longest names (KONTXA HONDARTZA, MIRAMON-ZORROAGA) still fit the card whole */
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.065em;
+  color: var(--text);
+  text-shadow: none;
+}
+
+.location-place .loc-es,
+.location-alt {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
 }
 
 #hud-location-signs:empty,
@@ -67,10 +268,11 @@ body[data-mode='god'] .gauge-alt {
   white-space: nowrap;
 }
 
+/* the Basque name keeps every letter while the Spanish one still has room to give, and only then ellipsizes */
 .location-place .loc-eu,
 .location-poi-line .loc-eu {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -93,6 +295,7 @@ body[data-mode='god'] .gauge-alt {
 .location-alt {
   display: none;
   flex: none;
+  text-transform: none;
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
 }
@@ -104,11 +307,10 @@ body[data-mode='god'] .gauge-alt {
 }
 
 .location-poi-line {
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: -0.005em;
-  color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 14px rgba(0, 0, 0, 0.4);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-2);
   animation: rise-in 0.4s var(--ease-out) both;
 }
 
@@ -117,7 +319,8 @@ body[data-mode='god'] .gauge-alt {
   max-width: 100%;
 }
 
-/* The blade keeps upstream's shape in a deep blue: the Basque name, the Spanish one under it where it differs */
+/* An enamelled plaque in the city's blue, white rule inset: the Basque name lettered as the Basque Country letters its
+   streets, the Spanish one under it in Inter where it differs */
 .street-sign {
   display: inline-flex;
   flex: 0 1 auto;
@@ -125,7 +328,17 @@ body[data-mode='god'] .gauge-alt {
   gap: 3px;
   min-width: 0;
   max-width: min(300px, calc(100vw - 2 * var(--edge)));
+  padding: 9px 14px 8px;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 55%), var(--sign-blue);
+}
+
+.sign-eu {
+  text-transform: uppercase;
 }
 
 .sign-eu,
@@ -144,9 +357,23 @@ body[data-mode='god'] .gauge-alt {
   color: rgba(255, 255, 255, 0.78);
 }
 
-/* The radar flies the camera where you click (so it stays put under the pointer); its corner button opens the map */
+/* The radar flies the camera where you click (so it stays put under the pointer); its corner button opens the map.
+   It is the card's lower part now, flush with its edges */
 .radar {
+  height: 176px;
+  border-radius: 0;
+  background: #0a1118;
   cursor: crosshair;
+}
+
+/* north: a small sandstone disc, as the rosette's */
+.radar-north {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--harri-ink);
+  background: var(--harri);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .radar:hover {
@@ -164,11 +391,11 @@ body[data-mode='god'] .gauge-alt {
   z-index: 1;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--r-ctl);
   display: grid;
   place-items: center;
   color: rgba(255, 255, 255, 0.85);
-  background: rgba(10, 12, 15, 0.6);
+  background: rgba(10, 23, 38, 0.66);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
@@ -179,8 +406,16 @@ body[data-mode='god'] .gauge-alt {
   background: var(--taxi);
 }
 
-.fullmap-title .mta-bullet {
-  font-size: 0.62em;
+.fullmap-title h2 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.map-zoom {
+  border-radius: var(--r-panel);
 }
 
 #btn-open-map[aria-pressed='true'] {
@@ -217,6 +452,9 @@ body[data-mode='god'] .gauge-alt {
    its credits sits on the bottom edge instead, clear of the map controls above it */
 @media (max-width: 820px) {
   .fullmap-footer { bottom: var(--edge); }
+  /* the brand folds to its GitHub link, as upstream's does */
+  .brand > .rosette { display: none; }
+  .loader-title { font-size: 34px; }
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
@@ -226,6 +464,11 @@ body[data-mode='god'] .gauge-alt {
   .radar { display: block; width: 200px; height: 128px; }
   .hud-bottom-right { display: none; }
   .location-alt { display: inline; }
+  .location { padding: 8px 11px 7px; }
+  .location-place { font-size: 16px; letter-spacing: 0.05em; }
+  /* the altitude takes the Spanish auzo name's place beside the Basque one */
+  .location-place .loc-es { display: none; }
+  .location-place .loc-eu { flex-shrink: 1; min-width: 0; }
   .street-sign { padding: 8px 11px 6px; font-size: 14px; }
 }
 
@@ -254,6 +497,8 @@ body[data-mode='god'] .gauge-alt {
   padding-bottom: 0;
 }
 
+.touch-boost { border-color: rgba(220, 181, 116, 0.6); }
+
 .touch-action[data-touch-action='up'] { grid-area: up; }
 .touch-action[data-touch-action='down'] { grid-area: down; }
 .touch-boost { grid-area: boost; align-self: center; }
@@ -266,6 +511,11 @@ body[data-mode='god'] .gauge-alt {
 body.touch-enabled .hud-bottom-right { display: none; }
 body.touch-enabled .location-alt { display: inline; }
 body.touch-enabled .radar { display: block; width: 176px; height: 116px; }
+/* the narrower card: a smaller inscription, so a whole auzo name still fits beside the altitude */
+body.touch-enabled .location { padding: 8px 11px 7px; }
+body.touch-enabled .location-place { font-size: 15px; letter-spacing: 0.05em; }
+body.touch-enabled .location-place .loc-es { display: none; }
+body.touch-enabled .location-place .loc-eu { flex-shrink: 1; min-width: 0; }
 body.touch-enabled .radar-expand { width: 36px; height: 36px; top: 4px; right: 4px; }
 /* above the stick (136 px) and its caption */
 body.touch-enabled .hud-bottom-left { bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 172px); }
@@ -287,4 +537,6 @@ body.touch-enabled .hud-bottom-left { bottom: calc(max(var(--edge), env(safe-are
     max-width: calc(100% - 2 * var(--edge) - 152px - 150px);
   }
   body.touch-enabled .radar { width: 150px; height: 96px; }
+  body.touch-enabled .location-place { font-size: 13px; }
+  body.touch-enabled .location-poi { display: none; }
 }

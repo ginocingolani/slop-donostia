@@ -9,6 +9,8 @@
 // so node can load the index for tests.
 
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+// the HUD's inscription letter (css/donostia.css --font-display), for the full map's auzo names
+const DISPLAY_FONT = 'Harri, "Donostia Display", Georgia, serif';
 const WATER = 7;
 const RADAR_SCALE = 0.32; // radar pixels per metre near the ground; it zooms out as the camera climbs
 const FULL_MIN_ZOOM = 0.03;
@@ -46,7 +48,7 @@ export const MAP = {
   labelMajor: '#e8ebf0',
   district: 'rgba(246, 245, 242, 0.62)',
   search: '#5fd0ff',
-  accent: '#ffc21a'
+  accent: '#dcb574' // Igeldo sandstone, the HUD's accent
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -524,8 +526,8 @@ export class MapLayers {
   }
 
   /** Auzoa names at their label points, upper case (screen transform of v); returns their boxes */
-  drawDistrictLabels(ctx, v, fontPx, placed = []) {
-    ctx.font = `700 ${fontPx}px ${FONT}`;
+  drawDistrictLabels(ctx, v, fontPx, placed = [], font = `700 ${fontPx}px ${FONT}`) {
+    ctx.font = font;
     if ('letterSpacing' in ctx) ctx.letterSpacing = '0.12em';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1011,7 +1013,7 @@ export class FullMap {
     }
     v.screen(ctx);
     const placed = [];
-    if (v.s < 0.3) this.layers.drawDistrictLabels(ctx, v, 12, placed);
+    if (v.s < 0.3) this.layers.drawDistrictLabels(ctx, v, 14, placed, `400 14px ${DISPLAY_FONT}`);
     this.layers.drawLandmarks(ctx, v, { r: 3.6, named: v.s >= 0.25, placed });
     this.layers.drawStreetLabels(ctx, v, { fontPx: 11, maxLabels: 260, sameNameGap: 320, placed, highlight: this.highlight });
     // the camera, where it is on the map
@@ -1019,8 +1021,8 @@ export class FullMap {
     ctx.translate(v.toX(p.x), v.toY(p.z));
     if (!this.cone) {
       this.cone = ctx.createRadialGradient(0, 0, 3, 0, 0, 70);
-      this.cone.addColorStop(0, 'rgba(255, 194, 26, 0.45)');
-      this.cone.addColorStop(1, 'rgba(255, 194, 26, 0)');
+      this.cone.addColorStop(0, 'rgba(220, 181, 116, 0.5)');
+      this.cone.addColorStop(1, 'rgba(220, 181, 116, 0)');
     }
     const cam = this.god.camera;
     drawCamera(ctx, this.cone, this.god.yaw, this.god.pitch, 2 * Math.atan(Math.tan((cam.fov * Math.PI) / 360) * cam.aspect), 70, 1.25);

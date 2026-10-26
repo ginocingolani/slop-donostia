@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop Donostia</title>
-  <link rel="icon" href="data:," />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d9b26f'/%3E%3Ccircle cx='16' cy='16' r='12.4' fill='none' stroke='%2310233a' stroke-width='1.2' opacity='.55'/%3E%3Cpath fill='%2310233a' d='M16 16A9.5 9.5 0 0 1 16 6.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 11.25A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 16 25.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 11.25A9.5 9.5 0 0 1 16 16Z'/%3E%3C/svg%3E" />
   <meta name="description" content="Donostia / San Sebastián from the top of Igeldo to the end of Sagüés and south to Anoeta and the Hospital Universitario, built with three.js WebGPURenderer and TSL on the Basque LiDAR terrain, the municipal 1:500 map, b5m building heights and OpenStreetMap. A fork of mrdoob/slop-newyork." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js pinned to the r186.1 npm release (slop-newyork tracks @dev; jsDelivr cannot serve arbitrary three.js commits: the repo exceeds its 50 MB limit) -->
@@ -41,7 +41,11 @@
   <script type="module" src="./js/donostia/main.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;display=swap" />
+  <!-- The place names are set in Donostia Display (fonts/donostia-display, SIL OFL). Harri, the Basque display face it
+       stands in for, is commercial and cannot ship in this repo: with a licence, load it here (an Adobe Fonts web
+       project's <link>, or a licensed webfont served from elsewhere) and css/donostia.css picks it up by name. -->
+  <link rel="preload" href="./fonts/donostia-display/DonostiaDisplay-Regular.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./css/style.css" />
   <link rel="stylesheet" href="./css/donostia.css" />
 </head>
@@ -64,13 +68,20 @@
       <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m20 20-4.6-4.6"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+      <!-- The six-petal rosette drawn with a compass on the discoidal stelae, lintels and chests of the Basque Country:
+           a sandstone disc (currentColor) with the rosette cut into it -->
+      <symbol id="i-rosette" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="currentColor"/>
+        <circle cx="16" cy="16" r="12.4" fill="none" stroke-width="1.2" style="stroke: var(--rosette-ink); opacity: 0.55"/>
+        <path style="fill: var(--rosette-ink)" d="M16 16A9.5 9.5 0 0 1 16 6.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 11.25A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 16 25.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 11.25A9.5 9.5 0 0 1 16 16Z"/>
+      </symbol>
     </defs>
   </svg>
 
   <div id="loading-overlay" role="status" aria-live="polite">
     <div class="loader">
-      <span class="mta-bullet loader-bullet" aria-hidden="true">DSS</span>
-      <div class="loader-title">Slop Donostia</div>
+      <svg class="rosette loader-rosette" aria-hidden="true"><use href="#i-rosette"/></svg>
+      <div class="loader-title"><span class="brand-slop">Slop</span> Donostia</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <div id="loading-status">Starting…</div>
     </div>
@@ -80,10 +91,10 @@
 
   <header class="hud hud-top-left">
     <div class="panel brand">
-      <span class="mta-bullet" aria-hidden="true">DSS</span>
+      <svg class="rosette" aria-hidden="true"><use href="#i-rosette"/></svg>
       <div class="brand-titles">
         <div class="brand-heading">
-          <h1>Slop Donostia</h1>
+          <h1><span class="brand-slop">Slop</span> Donostia</h1>
           <a class="repo-link" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer" aria-label="Slop Donostia on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
         </div>
         <div class="brand-subtitle">fork of <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">slop-newyork</a> · <span id="hud-fps" class="fps-ok">60</span> fps</div>
@@ -128,22 +139,25 @@
     <p>Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
     <p>Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
     <p>The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/donostia/phase1-map/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
+    <p>Lettering: Donostia Display, Marcellus by Astigmatic with the crowned A of the Basque inscriptions (<a href="https://github.com/ginocingolani/slop-donostia/blob/donostia/phase1-map/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
     <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
   </div>
 
-  <!-- Bottom left: where am I (auzoa, place, street-name signs) over the radar -->
+  <!-- Bottom left: the street-name plaques, over a card that reads where you are (auzoa, place) above the radar -->
   <div class="hud hud-bottom-left">
-    <div id="hud-location" class="location" aria-live="off">
-      <div class="location-place"><span id="hud-district"></span><span class="location-alt"><span id="hud-location-alt">0</span> m</span></div>
-      <div id="hud-location-poi" class="location-poi" hidden></div>
-      <div id="hud-location-signs"></div>
-    </div>
-    <aside id="minimap-card" class="panel radar" aria-label="Radar: click to fly there">
-      <canvas id="minimap-canvas" title="Egin klik hara joateko · Click to fly there"></canvas>
-      <span class="radar-north" aria-hidden="true">N</span>
-      <button id="radar-expand" class="radar-expand" type="button" title="Mapa osoa · Full map [M]" aria-label="Open the full map">
-        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-fit"/></svg>
-      </button>
+    <div id="hud-location-signs"></div>
+    <aside id="minimap-card" class="panel radar-card" aria-label="Where you are, and the radar: click to fly there">
+      <div id="hud-location" class="location" aria-live="off">
+        <div class="location-place"><span id="hud-district"></span><span class="location-alt"><span id="hud-location-alt">0</span> m</span></div>
+        <div id="hud-location-poi" class="location-poi" hidden></div>
+      </div>
+      <div class="radar">
+        <canvas id="minimap-canvas" title="Egin klik hara joateko · Click to fly there"></canvas>
+        <span class="radar-north" aria-hidden="true">N</span>
+        <button id="radar-expand" class="radar-expand" type="button" title="Mapa osoa · Full map [M]" aria-label="Open the full map">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#i-fit"/></svg>
+        </button>
+      </div>
     </aside>
   </div>
 
@@ -200,7 +214,7 @@
     </div>
     <div class="fullmap-header">
       <div class="panel fullmap-title">
-        <span class="mta-bullet" aria-hidden="true">DSS</span>
+        <svg class="rosette" aria-hidden="true"><use href="#i-rosette"/></svg>
         <div>
           <h2>Donostiako mapa</h2>
           <p id="fullmap-player-info" class="fullmap-subtitle">Donostia / San Sebastián</p>
