@@ -4,7 +4,8 @@
 //   data/donostia/terrain-core.png     2 m heights over the core extent (R/G = 16-bit cm above -100 m, B = water 0..255)
 //   data/donostia/terrain-context.png  8 m heights over the whole terrain-tile union (horizon hills & sea floor)
 //   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
-//   js/donostia/geodata.js             frame, terrain metadata, buildings, landmark sites & teleports
+//   js/donostia/geodata.js             frame, terrain metadata (with the shore walls), buildings, landmark sites &
+//                                      teleports
 // --preview writes debug images (hillshade, building heights) into the given folder.
 // Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
@@ -14,6 +15,8 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
+import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
+import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
@@ -588,6 +591,108 @@ function groundClasses(grid, wet) {
   return cls;
 }
 
+// --- 4c. Shore walls: La Concha's promenade wall, the Paseo Nuevo, the Urumea's & the port's quays ---------------------
+
+// The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
+// LiDAR; here the samples on either side of each wall line that share a triangle across it (wallSnaps, which
+// js/donostia/terrain.js runs again to move them onto the line) lose the smear: those in front drop to the foot of the
+// wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back up to
+// the promenade's level. Nothing further from a wall changes. Returns GEO.terrain.walls.
+function shoreWalls(dtm, grid, classes) {
+  const t = performance.now();
+  // OSM water at sea level, as the water mask has it (ponds sit above POND_LEVEL)
+  const seaLevel = (rings) => {
+    const heights = [];
+    scanRings(rings, dtm.x0, dtm.z0, 1, dtm.w, dtm.h, (i, j) => {
+      const v = dtm.data[j * dtm.w + i];
+      if (!Number.isNaN(v)) heights.push(v);
+    });
+    heights.sort((a, b) => a - b);
+    return heights.length > 0 && heights[heights.length >> 1] <= POND_LEVEL;
+  };
+  const classAt = (x, z) => {
+    const i = Math.floor((x - grid.x0) / grid.res), j = Math.floor((z - grid.z0) / grid.res);
+    return i < 0 || j < 0 || i >= grid.w || j >= grid.h ? -1 : classes[j * grid.w + i];
+  };
+  const margin = 12;
+  const walls = detectWalls({
+    dtm, classAt, log,
+    guides: shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }),
+    exclude: wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext: CORE }),
+    bounds: { minX: CORE.minX + margin, maxX: CORE.maxX - margin, minZ: CORE.minZ + margin, maxZ: CORE.maxZ - margin }
+  });
+  const snaps = wallSnaps(walls, grid);
+  const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
+  // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
+  // drops takes the class of the ground beyond (the beach, the rocks, the water)
+  const BAND = 2.9, PAD = 9;
+  const index = wallIndex(walls, 16, PAD);
+  const seen = new Uint8Array(grid.w * grid.h);
+  let lowered = 0, raised = 0;
+  for (const wall of walls) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let k = 0; k < wall.p.length; k += 4) {
+      minX = Math.min(minX, wall.p[k]); maxX = Math.max(maxX, wall.p[k]);
+      minZ = Math.min(minZ, wall.p[k + 1]); maxZ = Math.max(maxZ, wall.p[k + 1]);
+    }
+    const i0 = Math.max(0, Math.floor((minX - PAD - grid.x0) / grid.res)), i1 = Math.min(grid.w - 1, Math.ceil((maxX + PAD - grid.x0) / grid.res));
+    const j0 = Math.max(0, Math.floor((minZ - PAD - grid.z0) / grid.res)), j1 = Math.min(grid.h - 1, Math.ceil((maxZ + PAD - grid.z0) / grid.res));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * grid.w + i;
+      if (seen[k]) continue;
+      seen[k] = 1;
+      const [x, z] = at(k);
+      const q = nearestWall(walls, x, z, PAD, index);
+      if (!q || q.end || q.d <= 0) continue;
+      const w = walls[q.wall];
+      if (q.d > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
+      const snapped = snaps.get(k);
+      if (grid.data[k] > q.foot + 0.1 || snapped) {
+        if (grid.data[k] > q.foot + 0.1) { grid.data[k] = q.foot; lowered++; }
+        const out = BAND + 2 + w.b * Math.max(0, q.deck - q.foot) - q.d;
+        const beyond = classAt(x + q.nx * out, z + q.nz * out);
+        if (beyond >= 0 && beyond !== GROUND.building) classes[k] = beyond;
+      }
+    }
+  }
+  // Behind: the smear back up to the promenade's level, and nothing over the coping (the Paseo Nuevo's parapet, which
+  // the LiDAR keeps as a hump, is modelled: level with the walk)
+  for (const [k, s] of snaps) {
+    if (s.side > 0) continue;
+    const v = grid.data[k];
+    const level = walls[s.wall].t === WALL.paseo ? s.deck : Math.min(Math.max(v, s.deck), s.deck + 0.04);
+    if (v < s.deck - 0.15 || v > s.deck + 0.04 || walls[s.wall].t === WALL.paseo) {
+      if (Math.abs(level - v) > 0.005) raised++;
+      grid.data[k] = level;
+    }
+  }
+  log(`shore walls: ${walls.length} runs, ${walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
+    `samples onto the walls, ${lowered} in front dropped to the foot, ${raised} behind levelled with the promenade ` +
+    `(${((performance.now() - t) / 1000).toFixed(1)} s)`);
+  return walls;
+}
+
+// --- 4d. The flights of steps down from the shore walls ------------------------------------------------------------------
+
+// tools/donostia/walls.mjs finds the municipal map's stairs by the walls and fits their slope to the 1 m LiDAR;
+// js/donostia/shore.js builds them as stone steps. The terrain samples inside a flight are kept a little under its
+// slope, so the ramp the grid made of it stays hidden under the steps. Returns GEO.terrain.stairs.
+function shoreStairs(dtm, walls, grid) {
+  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, log });
+  let lowered = 0;
+  for (const s of stairs) {
+    const [a, b, c, cx, cz] = s.plane;
+    scanRings([s.p], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+      const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+      const under = Math.min(s.top, Math.max(s.bot, c + a * (x - cx) + b * (z - cz))) - 0.12;
+      const k = j * grid.w + i;
+      if (grid.data[k] > under) { grid.data[k] = under; lowered++; }
+    });
+  }
+  log(`shore stairs: ${lowered} terrain samples kept under the steps`);
+  return stairs.map(({ plane, ...s }) => s);
+}
+
 function writeTerrainPNG(grid, blue, file, text) {
   const px = new Uint8Array(grid.w * grid.h * 3);
   for (let k = 0; k < grid.data.length; k++) {
@@ -803,6 +908,7 @@ const TELEPORTS = [
   ['miramar', 'Miramar jauregia', 'Palacio de Miramar', [-1.9958, 43.3152], 6, [-1.99831, 43.31464], 10],
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
   ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
+  ['dabadaba', 'Dabadaba', 'Sala Dabadaba', [-1.975780, 43.315545], 1.7, [-1.976278, 43.315608], 3],
   ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
 ];
 
@@ -878,6 +984,8 @@ lap('terrain grids');
 fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
+const walls = shoreWalls(dtm, core.grid, coreClasses);
+const stairs = shoreStairs(dtm, walls, core.grid);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -901,7 +1009,8 @@ const GEO = {
   frame: { crs: FRAME.crs, origin: FRAME.origin, core: CORE, context: CONTEXT },
   terrain: {
     heightOffset: HEIGHT_OFFSET, classes: GROUND,
-    core: terrainMeta(core.grid, 'terrain-core.png'), context: terrainMeta(context.grid, 'terrain-context.png')
+    core: terrainMeta(core.grid, 'terrain-core.png'), context: terrainMeta(context.grid, 'terrain-context.png'),
+    walls, stairs
   },
   districts: districts.map((d) => d.name),
   buildings, landmarks, teleports,

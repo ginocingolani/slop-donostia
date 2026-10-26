@@ -58,8 +58,11 @@ const osmAreas = (test) => places.filter((e) => test(e.tags || {})).flatMap(osmP
 // La Concha, Ondarreta, Zurriola & the Santa Clara cove, with OSM's tidal sections down to the low-water line
 const osmBeaches = osmAreas((t) => t.natural === 'beach');
 const osmRock = osmAreas((t) => t.natural === 'bare_rock');
-// Breakwaters & the closed piers of the port (the open ones are pontoons over the water)
-const osmQuays = osmAreas((t) => t.man_made === 'breakwater' || (t.man_made === 'pier' && t.floating !== 'yes'));
+// Breakwaters & the closed piers of the port (the open ones are pontoons over the water); the rubble mounds of the
+// Paseo Nuevo's apron and the Zurriola dike are rock under js/donostia/shore.js's boulders & cubes
+const RUBBLE = new Set([702275854, 400267149]);
+const osmQuays = places.filter((e) => !RUBBLE.has(e.id) && (e.tags?.man_made === 'breakwater' || (e.tags?.man_made === 'pier' && e.tags?.floating !== 'yes'))).flatMap(osmPolygons);
+const osmRubble = places.filter((e) => RUBBLE.has(e.id) && e.tags?.man_made === 'breakwater').flatMap(osmPolygons);
 // Paved squares outside the Parte Vieja
 const osmSquares = osmAreas((t) => t.place === 'square' || t.surface === 'sett' || (t.highway === 'pedestrian' && t.area === 'yes'));
 // The Parte Vieja between the Boulevard, the port, Urgull and the Urumea (OSM's boundary relation has no geometry)
@@ -81,6 +84,7 @@ const LAYERS = [
   { name: 'bare rock', id: S.rock, polys: osmRock },
   { name: 'beaches', id: S.beach, polys: [...osmBeaches, ...c500('c500_HONDARTZA.json')] },
   { name: 'breakwaters & piers', id: S.quay, polys: osmQuays },
+  { name: 'rubble mounds', id: S.rock, polys: osmRubble },
   { name: 'paths', id: S.path, polys: c500('c500_BIDEA.json') },
   { name: 'pedestrian', id: S.pedestrian, polys: c500('c500_OINEZKOEN_ZONA.json') },
   { name: 'sidewalks', id: S.sidewalk, polys: c500('c500_ESPALOIA.json') },

@@ -21,7 +21,7 @@ elif [ "$#" -gt 0 ]; then
   exit 1
 fi
 
-# terrain, water, buildings, landmarks & teleports -> data/donostia/terrain-*.png, water.png, js/donostia/geodata.js
+# terrain, shore walls, water, buildings, landmarks & teleports -> data/donostia/terrain-*.png, water.png, js/donostia/geodata.js
 if compgen -G "$HERE/raw/dtm/*.asc" > /dev/null && [ -s "$HERE/raw/bathy/isobaths.json" ]; then
   $NODE "$HERE/build.mjs"
 else
@@ -31,8 +31,10 @@ fi
 # these read build.mjs's outputs
 $NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png
 $NODE "$HERE/bake-bridges.mjs"       # js/donostia/data-bridges.js
+$NODE "$HERE/bake-shore.mjs"         # js/donostia/data-shore.js (rocks of the shore; the walls are build.mjs's)
 $NODE "$HERE/bake-streetscape.mjs"   # js/donostia/data-streetscape.js (trees, railing, lamps, benches)
 $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names & districts for the HUD)
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js
+$NODE "$HERE/bake-alderdi.mjs"       # js/donostia/data-alderdi.js (Alderdi Eder's gardens)
 echo "Donostia data rebuilt"

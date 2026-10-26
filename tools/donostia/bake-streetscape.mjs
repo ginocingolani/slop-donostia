@@ -11,7 +11,9 @@
 //   (tamarisks along La Concha, Ondarreta & Alderdi Eder, London planes in the ensanche, pines & evergreens in the hill
 //   woods...) and a scale that keeps its crown off the nearest wall.
 // - La Concha's railing: the landward edge of the Kontxa & Ondarreta beach polygons where the promenade (sidewalk or
-//   pedestrian paving) meets them, pulled onto the top of the wall in the LiDAR terrain; its lamp posts every ~17 m.
+//   pedestrian paving) meets them, pulled onto the top of the wall in the LiDAR terrain, open at the heads of OSM's
+//   steps & ramps down to the sand; its pillars & lamp pedestals, the candelabra by the Hotel de Londres and the
+//   rotunda's clock & barometer (OSM's clock, the barometer mirrored across the rotunda's ramps).
 // - Street lamps & benches from OSM, with a heading (benches face the bay, or away from the wall behind them), and
 //   wall lanterns along the facades of the Parte Vieja, where OSM maps no street lamps.
 
@@ -28,7 +30,9 @@ const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
 const CORE = FRAME.core;
 const PREVIEW = previewDir();
 const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
+const { nearestWall, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
 const G = GEO.terrain.classes;
+const WALLS = GEO.terrain.walls || [];
 
 // Species ids shared with js/donostia/trees-species.js (SPECIES order)
 const SP = { plane: 0, tamarisk: 1, broadleaf: 2, evergreen: 3, pine: 4, palm: 5 };
@@ -468,6 +472,16 @@ const seafrontGarden = (x, z) => (inBox(ALDERDI_EDER, x, z) || bayBeachEdges.dis
 stats.garden = scatter((k, x, z) => surf[k] === G.garden && wallDist[k] > 2.5 && roomy(x, z, 1.5) && seafrontGarden(x, z), 7.5, 0.8, 7003, 'garden');
 stats.garden += scatter((k, x, z) => surf[k] === G.garden && wallDist[k] > 3 && roomy(x, z, 2.2), 13, 0.55, 7002, 'garden');
 
+// Trees whose species the photographs settle where OSM does not tag one: { x, z, sp, height (m) }, applied to the
+// tree nearest the point
+const KNOWN_TREES = [
+  { x: 299.48, z: 81.75, sp: SP.palm, height: 13 } // Alderdi Eder: the Canary date palm in the middle of the round bed
+];
+for (const k of KNOWN_TREES) {
+  const near = nearestTree(k.x, k.z, 2);
+  if (near) Object.assign(near.tree, { sp: k.sp, height: k.height });
+}
+
 // Species by place, then a scale whose crown keeps off the nearest wall
 for (const t of trees) {
   const { x, z } = t;
@@ -526,10 +540,20 @@ trees.forEach((t, i) => {
   packed[9 * N + i] = Math.round(t.s * 100);
 });
 
-// --- La Concha's railing (barandilla) and its lamp posts --------------------------------------------------------------
+// --- La Concha's railing (barandilla), its lamp posts and monuments ----------------------------------------------------
+//
+// Juan Rafael Alday's barandilla (1910-16), after photographs: white cast iron in 0.8 m modules on a stone plinth, five
+// modules between grey stone pillars; in every fourth pillar's place a white pedestal carrying a single-globe lamp
+// post. A pair of monumental candelabra by the first ramp down to the beach, in front of the Hotel de Londres, and the
+// rotunda's two obelisks (1911), the clock and the barometer, by the heads of its two ramps.
 
 const PROMENADE = new Set([G.sidewalk, G.pedestrian, G.bike]);
-function bakeRailings() {
+const MODULE = 0.8, MODULES_PER_SECTION = 5, LAMP_EVERY = 4;
+const POST_W = [0.46, 0.62, 0]; // m along the railing: a stone pillar, a lamp pedestal, the face of a monument
+// cuts: [{ x, z, r, monument }] where the railing stops (openings, monuments): the samples within r of the centre along
+// the railing (the centre may lie a little off its line) are left out. -> { runs: [[[x, y, z], ...], ...], abut: [[start
+// on a monument, end on one], ...] }
+function bakeRailings(cuts = []) {
   const runs = [];
   for (const ring of bayBeaches) {
     // resample the closed ring every metre
@@ -561,29 +585,100 @@ function bakeRailings() {
       const drop = land - sand;
       const ok = land > 2.5 && ((paved >= 2 && drop > 0.6) || (paved + natural >= 2 && drop > 2.5));
       if (!ok) return null;
-      // walk inland until the terrain reaches the top of the wall (the 2 m grid smears the drop over a few metres)
+      // walk inland until the terrain reaches the top of the wall (the 2 m grid smears the drop over a few metres; on a
+      // vertical wall this stops at once, on the edge)
       let d = 0;
       while (d < 3 && terrain.heightAt(x + nx * d, z + nz * d) < land - 0.3) d += 0.25;
       const rx = x + nx * (d + 0.2), rz = z + nz * (d + 0.2);
-      return { x: rx, z: rz, y: terrain.heightAt(rx + nx * 0.8, rz + nz * 0.8), sand };
+      // on a shore wall (GEO.terrain.walls, found by build.mjs): on its coping, 25 cm behind the masonry face, which the
+      // 2 m terrain cannot place within a metre or two
+      const wall = nearestWall(WALLS, rx, rz, 4);
+      if (wall && !wall.end && wall.d < 0.5) {
+        const wx = wall.x - wall.nx * 0.25, wz = wall.z - wall.nz * 0.25;
+        return { x: wx, z: wz, y: wall.deck + COPING[WALLS[wall.wall].t], sand, cut: cuts.find((c) => Math.hypot(wx - c.x, wz - c.z) < c.r) };
+      }
+      // standing on the promenade: the median of its height 1-3 m inland, clear of the 2 m grid's blend over the edge
+      // and of the slope seaward of the line, however steep the terrain draws the wall
+      const hs = [1.2, 1.8, 2.4, 3.0].map((e) => terrain.heightAt(rx + nx * e, rz + nz * e)).sort((a, b) => a - b);
+      return { x: rx, z: rz, y: (hs[1] + hs[2]) / 2, sand, cut: cuts.find((c) => Math.hypot(rx - c.x, rz - c.z) < c.r) };
     });
-    // runs of consecutive valid samples (the ring is closed: start after a gap)
-    let start = samples.findIndex((s) => !s);
+    // where a run stops at a cut: the point between its last sample a and the cut's first c at the cut's radius
+    const edge = (a, c) => {
+      const C = c.cut;
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 16; i++) {
+        const t = (lo + hi) / 2;
+        if (Math.hypot(a.x + (c.x - a.x) * t - C.x, a.z + (c.z - a.z) * t - C.z) < C.r) hi = t;
+        else lo = t;
+      }
+      return { x: a.x + (c.x - a.x) * lo, z: a.z + (c.z - a.z) * lo, y: a.y + (c.y - a.y) * lo, sand: a.sand, abut: !!C.monument };
+    };
+    // runs of consecutive valid samples (the ring is closed: start after a gap), carried on to the edges of cuts
+    const valid = (s) => s && !s.cut;
+    let start = samples.findIndex((s) => !valid(s));
     if (start < 0) start = 0;
     let cur = [];
     for (let k = 1; k <= m; k++) {
       const s = samples[(start + k) % m];
-      if (s) cur.push(s);
-      if (!s || k === m) {
-        // walked so the sea lies on the (-dz, dx) side of the direction of travel (dx, dz), whatever the ring's winding
-        if (cur.length >= 10) runs.push(sign > 0 ? cur : cur.reverse());
+      if (valid(s)) {
+        const prev = samples[(start + k - 1) % m];
+        if (!cur.length && prev?.cut) cur.push(edge(s, prev));
+        cur.push(s);
+      }
+      if (!valid(s) || k === m) {
+        if (cur.length && s?.cut) cur.push(edge(cur[cur.length - 1], s));
+        // walked so the sea lies on the (-dz, dx) side of the direction of travel (dx, dz), whatever the ring's winding;
+        // a stub between two openings keeps at least one section
+        if (cur.length >= 4) runs.push(sign > 0 ? cur : cur.reverse());
         cur = [];
       }
     }
   }
-  // smooth out the snapping jitter, then thin
-  const out = [];
+  // a run that stops short of a monument (beside a stair head the wall test fails) is carried on to its face
   for (const run of runs) {
+    for (const atEnd of [false, true]) {
+      const e = atEnd ? run[run.length - 1] : run[0];
+      const c = e.abut ? null : cuts.find((q) => q.monument && Math.hypot(e.x - q.x, e.z - q.z) < q.r + 2.5);
+      if (!c) continue;
+      const f = 1 - c.r / Math.hypot(e.x - c.x, e.z - c.z);
+      const p = { x: e.x + (c.x - e.x) * f, z: e.z + (c.z - e.z) * f, y: e.y, sand: e.sand, abut: true };
+      if (atEnd) run.push(p);
+      else run.unshift(p);
+    }
+  }
+  // a single sample dropped is no opening: join runs that nearly meet (head to tail, as both keep the sea on one side),
+  // then leave out stubs and the runs that only double another (where two beach rings share an edge)
+  const gap = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  for (let joined = true; joined;) {
+    joined = false;
+    for (const a of runs) {
+      const b = runs.find((r) => r !== a && gap(a[a.length - 1], r[0]) < 1.6);
+      if (!b) continue;
+      a.push(...b);
+      runs.splice(runs.indexOf(b), 1);
+      joined = true;
+      break;
+    }
+  }
+  // longest first, a run keeps the stretches that do not double one already kept (where two beach rings share an
+  // edge); a railing beside another at a different height (down a ramp along the wall) stays
+  const kept = [];
+  for (const r of runs.slice().sort((a, b) => b.length - a.length)) {
+    let cur = [];
+    const flush = () => {
+      if (cur.length >= 5 && gap(cur[0], cur[cur.length - 1]) > 1.5) kept.push(cur);
+      cur = [];
+    };
+    for (const s of r) {
+      if (kept.some((o) => o.some((q) => !q.abut && gap(s, q) < 1.7 && Math.abs(s.y - q.y) < 0.8))) flush();
+      else cur.push(s);
+    }
+    flush();
+  }
+  // smooth out the snapping jitter, then thin
+  const out = [], abut = [];
+  for (const run of kept) {
+    abut.push([!!run[0].abut, !!run[run.length - 1].abut]);
     let pts = run.map((s) => [s.x, s.y, s.z]);
     for (let pass = 0; pass < 3; pass++) {
       pts = pts.map((p, k) => {
@@ -594,7 +689,7 @@ function bakeRailings() {
     }
     out.push(simplify3(pts, 0.06));
   }
-  return out;
+  return { runs: out, abut };
 }
 
 // Douglas-Peucker on an open 3D polyline
@@ -618,33 +713,175 @@ function simplify3(pts, tol) {
   return pts.filter((_, i) => keep[i]);
 }
 
-const railings = bakeRailings();
-// Lamp posts along each railing every ~17 m, standing just behind it
-const promenadeLamps = [];
-for (const run of railings) {
-  let acc = 8.5;
-  for (let k = 1; k < run.length; k++) {
-    const [ax, ay, az] = run[k - 1], [bx, by, bz] = run[k];
-    const len = Math.hypot(bx - ax, bz - az);
-    // (nx, nz) points to the sea (see bakeRailings)
-    const nx = -(bz - az) / (len || 1), nz = (bx - ax) / (len || 1);
-    let t = 0;
-    while (acc <= len - t) {
-      t += acc;
-      const f = t / len;
-      promenadeLamps.push([ax + (bx - ax) * f - nx * 0.3, ay + (by - ay) * f, az + (bz - az) * f - nz * 0.3]);
-      acc = 17;
-    }
-    acc -= len - t;
-  }
+// A run's arc lengths, and its point & seaward normal at arc length s (straight on past either end)
+function runFrame(run) {
+  const cum = [0];
+  for (let k = 1; k < run.length; k++) cum.push(cum[k - 1] + Math.hypot(run[k][0] - run[k - 1][0], run[k][2] - run[k - 1][2]));
+  const at = (s) => {
+    let k = 1;
+    while (k < run.length - 1 && cum[k] < s) k++;
+    const [ax, ay, az] = run[k - 1], [bx, by, bz] = run[k], len = cum[k] - cum[k - 1] || 1e-9, f = (s - cum[k - 1]) / len;
+    return { x: ax + (bx - ax) * f, y: ay + (by - ay) * f, z: az + (bz - az) * f, nx: -(bz - az) / len, nz: (bx - ax) / len };
+  };
+  return { L: cum[cum.length - 1], at };
 }
-const railLength = railings.reduce((s, r) => s + r.slice(1).reduce((a, p, k) => a + Math.hypot(p[0] - r[k][0], p[2] - r[k][2]), 0), 0);
-log(`railing: ${railings.length} runs, ${railLength.toFixed(0)} m, ${railings.reduce((s, r) => s + r.length, 0)} vertices; ${promenadeLamps.length} promenade lamps`);
+
+// The point of the railings nearest (x, z): { run, s (arc length), d (distance) }
+function nearestOnRailings(runs, x, z) {
+  let best = null;
+  runs.forEach((run, ri) => {
+    let acc = 0;
+    for (let k = 1; k < run.length; k++) {
+      const [ax, , az] = run[k - 1], [bx, , bz] = run[k];
+      const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1e-9, l = Math.sqrt(l2);
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
+      if (!best || d < best.d) best = { run: ri, s: acc + t * l, d };
+      acc += l;
+    }
+  });
+  return best;
+}
+
+// Steps and ramps down to the beach (OSM ways near the bay's beaches): their upper ends, where the railing opens
+function beachAccesses() {
+  const out = [];
+  for (const e of osmStreets) {
+    const t = e.tags || {};
+    if (e.type !== 'way' || !e.geometry) continue;
+    const steps = t.highway === 'steps';
+    const ramp = /^(footway|path|pedestrian)$/.test(t.highway) && (t.incline !== undefined || t.ramp === 'yes');
+    if (!steps && !ramp) continue;
+    const g = e.geometry.filter(Boolean);
+    const a = lonLatToLocal(g[0].lon, g[0].lat), b = lonLatToLocal(g[g.length - 1].lon, g[g.length - 1].lat);
+    if (Math.min(bayBeachEdges.distance(a[0], a[1], 10), bayBeachEdges.distance(b[0], b[1], 10)) > 8) continue;
+    // the way climbs along its direction when tagged incline=up (or a positive grade); untagged, the terrain decides
+    const inc = String(t.incline ?? '');
+    const climbs = inc === 'up' || /^\+?[0-9.]+%?$/.test(inc) ? true
+      : inc === 'down' || /^-[0-9.]+%?$/.test(inc) ? false : terrain.heightAt(b[0], b[1]) > terrain.heightAt(a[0], a[1]);
+    const [x, z] = climbs ? b : a;
+    out.push({ x, z, kind: steps ? 'steps' : 'ramp' });
+  }
+  return out;
+}
+
+// Openings & monuments on the railing first baked whole: the cuts that open it, and the monuments on its line as
+// [kind (0 a candelabrum, 1 the clock, 2 the barometer), x, z, y, seaward normal x, z, ...]
+const MONUMENT = { candelabrum: 0, clock: 1, barometer: 2 };
+const OPENING_R = { steps: 1.3, ramp: 1.5 };
+const MONUMENT_R = [0.9, 1.6, 1.6]; // half the pedestal's width along the railing, and a hand's breadth
+function railingFeatures(runs) {
+  const cuts = [], monuments = [];
+  // (a ramp runs down along the wall, so its upper end may lie a few metres inland of the railing on the coping)
+  const accesses = beachAccesses().map((a) => ({ ...a, on: nearestOnRailings(runs, a.x, a.z) }))
+    .filter((a) => a.on && a.on.d < (a.kind === 'ramp' ? 4.5 : 3));
+  for (const a of accesses) {
+    const p = runFrame(runs[a.on.run]).at(a.on.s);
+    cuts.push({ x: p.x, z: p.z, r: OPENING_R[a.kind] });
+  }
+  // a monument at arc length s on run ri
+  const place = (kind, ri, s) => {
+    const p = runFrame(runs[ri]).at(s);
+    monuments.push(kind, p.x, p.z, p.y, p.nx, p.nz);
+    cuts.push({ x: p.x, z: p.z, r: MONUMENT_R[kind], monument: true });
+  };
+  // the candelabra flank the head of the steps nearest the Hotel de Londres, as photographed: the opening beside the
+  // north-eastern one, then two short sections of railing (three modules each) to the south-western one
+  const hotel = osmPlaces.find((e) => e.type === 'way' && /^Hotel de Londres/.test(e.tags?.name || '') && e.geometry);
+  if (hotel) {
+    const g = hotel.geometry.filter(Boolean);
+    const [hx, hz] = lonLatToLocal(g.reduce((s, p) => s + p.lon, 0) / g.length, g.reduce((s, p) => s + p.lat, 0) / g.length);
+    const first = accesses.filter((a) => a.kind === 'steps' && Math.hypot(a.x - hx, a.z - hz) < 80)
+      .sort((a, b) => Math.hypot(a.x - hx, a.z - hz) - Math.hypot(b.x - hx, b.z - hz))[0];
+    if (first) {
+      const f = runFrame(runs[first.on.run]).at(first.on.s);
+      // +1 when arc length grows towards the south-west (-x, +z): the tangent is (nz, -nx)
+      const sw = -f.nz - f.nx > 0 ? 1 : -1;
+      place(MONUMENT.candelabrum, first.on.run, first.on.s - sw * (OPENING_R.steps + MONUMENT_R[0]));
+      place(MONUMENT.candelabrum, first.on.run, first.on.s + sw * (OPENING_R.steps + 2 * POST_W[0] + 6 * MODULE + MONUMENT_R[0]));
+    }
+  }
+  // the clock (OSM, on the railing) and, across the rotunda, the barometer: the clock is mirrored about the middle of
+  // the rotunda's two ramp heads
+  const clock = osmFurniture.find((e) => e.type === 'node' && e.tags?.amenity === 'clock' && !e.tags.display &&
+    bayBeachEdges.distance(...lonLatToLocal(e.lon, e.lat), 8) < 8);
+  if (clock) {
+    const [cx, cz] = lonLatToLocal(clock.lon, clock.lat);
+    const on = nearestOnRailings(runs, cx, cz);
+    if (on.d < 3) {
+      place(MONUMENT.clock, on.run, on.s);
+      const ramps = accesses.filter((a) => a.kind === 'ramp' && Math.hypot(a.x - cx, a.z - cz) < 30);
+      if (ramps.length === 2) {
+        const [A, B] = ramps, mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2, l = Math.hypot(B.x - A.x, B.z - A.z);
+        const ux = (B.x - A.x) / l, uz = (B.z - A.z) / l, dx = cx - mx, dz = cz - mz, k = 2 * (dx * ux + dz * uz);
+        const ob = nearestOnRailings(runs, mx + dx - k * ux, mz + dz - k * uz);
+        if (ob.d < 4) {
+          place(MONUMENT.barometer, ob.run, ob.s);
+          // both face the bay square to the line between them, not to the rotunda's curve under each
+          const i = monuments.length - 12, bx = monuments[i + 7] - monuments[i + 1], bz = monuments[i + 8] - monuments[i + 2];
+          let nx = -bz, nz = bx;
+          const l = Math.hypot(nx, nz), s = nx * (monuments[i + 4] + monuments[i + 10]) + nz * (monuments[i + 5] + monuments[i + 11]) < 0 ? -1 : 1;
+          for (const j of [i, i + 6]) { monuments[j + 4] = (s * nx) / l; monuments[j + 5] = (s * nz) / l; }
+        }
+      }
+    }
+  }
+  return { cuts, monuments };
+}
+
+// Posts along a run: a stone pillar at either end (none where it meets a monument) and between sections of up to five
+// modules (as many 0.8 m modules as fit, spread evenly and stretched by a few percent to fill the run); every fourth
+// pillar a lamp pedestal, but none beside a monument nor between two (the rotunda, lit by its obelisks). [s (m along
+// the run), type (0 pillar, 1 lamp pedestal, 2 a monument's face), ...]
+function layoutPosts(run, [abut0, abut1]) {
+  const { L } = runFrame(run);
+  const P = POST_W[0], e0 = abut0 ? 0 : P, e1 = abut1 ? 0 : P;
+  const free = (n) => L - e0 - e1 - (n - 1) * P; // metres of ironwork with n sections
+  let n = Math.max(1, Math.round((free(1) + P) / (MODULES_PER_SECTION * MODULE + P))), M = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    M = Math.max(n, Math.round(free(n) / MODULE));
+    n = Math.max(1, Math.ceil(M / MODULES_PER_SECTION));
+  }
+  M = Math.max(n, Math.round(free(n) / MODULE));
+  const stretch = Math.max(0.2, free(n)) / (M * MODULE);
+  const width = (k) => (k === 0 ? e0 : k === n ? e1 : P);
+  const posts = [];
+  let s = e0 / 2;
+  for (let k = 0; k <= n; k++) {
+    const lamp = k % LAMP_EVERY === 2 && k > (abut0 ? 1 : 0) && k < n - (abut1 ? 1 : 0) && !(abut0 && abut1);
+    const type = (k === 0 && abut0) || (k === n && abut1) ? 2 : lamp ? 1 : 0;
+    posts.push(s, type);
+    const m = Math.floor(M / n) + (k < M % n ? 1 : 0);
+    s += width(k) / 2 + m * MODULE * stretch + width(k + 1) / 2;
+  }
+  return posts;
+}
+
+const osmPlaces = JSON.parse(fs.readFileSync(path.join(HERE, 'data/osm_places.json'), 'utf8')).elements;
+const { cuts: railingCuts, monuments } = railingFeatures(bakeRailings().runs);
+const { runs: railings, abut: railingAbut } = bakeRailings(railingCuts);
+const railingPosts = railings.map((run, i) => layoutPosts(run, railingAbut[i]));
+// The lamp posts on their pedestals: [x, y, z] (y the promenade)
+const promenadeLamps = [];
+railings.forEach((run, ri) => {
+  const f = runFrame(run), posts = railingPosts[ri];
+  for (let k = 0; k < posts.length; k += 2) {
+    if (posts[k + 1] !== 1) continue;
+    const p = f.at(posts[k]);
+    promenadeLamps.push([p.x, p.y, p.z]);
+  }
+});
+const railLength = railings.reduce((s, r) => s + runFrame(r).L, 0);
+const pillarCount = railingPosts.reduce((s, p) => s + p.filter((v, i) => i % 2 && v === 0).length, 0);
+log(`railing: ${railings.length} runs, ${railLength.toFixed(0)} m, ${railings.reduce((s, r) => s + r.length, 0)} vertices, ` +
+  `${pillarCount} pillars, ${promenadeLamps.length} lamp pedestals; ${railingCuts.length} openings & monuments, ` +
+  `monuments ${monuments.filter((_, i) => i % 6 === 0).join(' ')}`);
 
 // --- street lamps & benches (OSM) --------------------------------------------------------------------------------------
 
 const heading = (dx, dz) => Math.round(((Math.atan2(dx, dz) * 180) / Math.PI + 360) % 360);
-const nearPromenadeLamp = (x, z, d) => promenadeLamps.some((p) => Math.hypot(p[0] - x, p[2] - z) < d);
+const nearPromenadeLamp = (x, z, d) => promenadeLamps.some((p) => Math.hypot(p[0] - x, p[2] - z) < d) ||
+  monuments.some((v, i) => i % 6 === 0 && Math.hypot(monuments[i + 1] - x, monuments[i + 2] - z) < d + 2);
 const lamps = [];
 let lampsMoved = 0, lampsDropped = 0;
 for (const e of osmFurniture) {
@@ -731,8 +968,14 @@ const DATA_OUT = {
   // polylines [x, y, z, ...] in cm along the top of the promenade wall; travelling along one (dx, dz), the sea lies
   // towards (-dz, dx)
   railings: railings.map((r) => r.flatMap((p) => p.map(cm))),
-  // [x, y, z] cm, standing just behind the railing
-  promenadeLamps: promenadeLamps.flatMap((p) => p.map(cm)),
+  // per railing, its posts: [s (cm along it), type (0 a stone pillar, 1 a lamp pedestal, 2 a monument's face), ...]
+  railingPosts: railingPosts.map((p) => p.map((v, i) => (i % 2 ? v : cm(v)))),
+  // [kind (0 a candelabrum, 1 the clock, 2 the barometer), x, y, z (cm, on the railing's line, y the promenade),
+  // heading (deg, atan2(x, z) of the seaward normal), ...]
+  monuments: Array.from({ length: monuments.length / 6 }, (_, i) => {
+    const [kind, x, z, y, nx, nz] = monuments.slice(6 * i, 6 * i + 6);
+    return [kind, cm(x), cm(y), cm(z), Math.round(((Math.atan2(nx, nz) * 180) / Math.PI + 360) % 360)];
+  }).flat(),
   // [x, z] cm and the heading in degrees (atan2(dx, dz) of the way it faces: lamps towards the street, benches the
   // way a seated person looks)
   lamps: lamps.flat(),
@@ -781,6 +1024,11 @@ if (PREVIEW) {
       }
     }
     for (const [x, , z] of promenadeLamps) dot(x, z, [255, 255, 0], rr + 1);
+    railings.forEach((run, ri) => {
+      const f = runFrame(run), posts = railingPosts[ri];
+      for (let k = 0; k < posts.length; k += 2) if (!posts[k + 1]) { const p = f.at(posts[k]); dot(p.x, p.z, [0, 0, 255], rr); }
+    });
+    for (let i = 0; i < monuments.length; i += 6) dot(monuments[i + 1], monuments[i + 2], [255, 255, 255], rr + 3);
     for (const [x, z] of lamps) dot(x / 100, z / 100, [255, 255, 255], rr + 1);
     for (const [x, z] of wallLamps) dot(x / 100, z / 100, [255, 140, 0], rr + 1);
     for (const [x, z] of benches) dot(x / 100, z / 100, [80, 80, 255], rr + 1);

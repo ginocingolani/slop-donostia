@@ -8,8 +8,8 @@ A fork of [Slop New York](https://github.com/mrdoob/slop-newyork) by Mr.doob, wh
 actors and audio it builds on. The New York simulation is still here as [`newyork.html`](newyork.html).
 
 Right now: LiDAR terrain, sea and surf, the 1:500 buildings with facades and roofs, twenty modelled landmarks (the
-Kursaal, the Buen Pastor, the Bretxa, Igeldo's funicular and Montaña Suiza, Anoeta...), the Urumea bridges, trees and
-street furniture, explored with a free god-mode camera. Next: the travel modes (walk, drive, cycle, helicopter and a
+Kursaal, the Buen Pastor, the Bretxa, Igeldo's funicular and Montaña Suiza, Anoeta...), the Urumea bridges, the sea
+and river walls with the rocks of the shore, trees and street furniture, explored with a free god-mode camera. Next: the travel modes (walk, drive, cycle, helicopter and a
 trainera).
 
 ## Data

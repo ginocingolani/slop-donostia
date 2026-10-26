@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { decodePNGOffThread } from './png.js';
+import { wallSnaps, snapPosition } from './shore-walls.js';
 
 // js/donostia/terrain.js
 // LiDAR terrain of Donostia (geoEuskadi 2017 MDT + 1 m isobaths, baked by tools/donostia/build.mjs): a 2 m core grid
@@ -9,6 +10,9 @@ import { decodePNGOffThread } from './png.js';
 // of the same size, and switching detail with distance only toggles which one is visible (swapping a geometry's index
 // instead makes WebGPURenderer rebuild the draw every time). Skirts hanging under every chunk edge hide the cracks
 // between neighbouring levels and the seam with the context grid. Chunks wholly under the sea are never built.
+// Along the shore walls (GEO.terrain.walls, js/donostia/shore-walls.js) the core samples on either side of each wall line
+// move onto it, so the ground steps down vertically at the wall instead of ramping over a 2 m cell; js/donostia/shore.js
+// faces the step with masonry.
 
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];
@@ -32,6 +36,17 @@ class HeightField {
     this.heights = field.heights;
     this.classes = field.classes; // GEO.terrain.classes ids (B channel)
     this._half = field.half;
+    this.moved = null; // Map(sample index -> [x, z]) of the samples on the shore walls (setWalls)
+    this.sides = null; // Int8Array: +1 in front of a wall, -1 behind it, 0 elsewhere
+  }
+
+  // Moves the samples next to each wall onto its line (the same samples tools/donostia/build.mjs dropped to the wall's
+  // foot or raised to its promenade)
+  setWalls(walls) {
+    if (!walls || !walls.length) return;
+    this.sides = new Int8Array(this.w * this.h);
+    this.moved = new Map();
+    for (const [k, s] of wallSnaps(walls, this, this.sides)) this.moved.set(k, snapPosition(s, this.heights[k], walls[s.wall].b));
   }
 
   get width() { return this.w * this.res; }
@@ -166,15 +181,27 @@ function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
   // normals as normalized 16-bit (a third less than floats, the same shading); WebGPU has no 3-component 16-bit
   // vertex format, hence the 4th component
   const nrm = new Int16Array(count * 4);
-  const r2 = 2 * field.res;
+  const { moved, sides } = field;
+  let shifted = false;
+  // central differences, one-sided at the field's edges and next to a wall (the ground on its other side is a storey
+  // up or down: the paving behind it and the sand in front stay flat)
+  const slope = (k, a, b, side) => {
+    const okA = a !== k && (!side || sides[a] !== -side), okB = b !== k && (!side || sides[b] !== -side);
+    if (okA && okB) return (heights[a] - heights[b]) / (2 * field.res);
+    if (okA) return (heights[a] - heights[k]) / field.res;
+    if (okB) return (heights[k] - heights[b]) / field.res;
+    return 0;
+  };
   const put = (v, i, j, drop) => {
     const ii = i0 + i, jj = j0 + j, k = jj * w + ii;
-    pos[3 * v] = field.sampleX(ii);
+    const m = moved ? moved.get(k) : undefined;
+    if (m) shifted = true;
+    pos[3 * v] = m ? m[0] : field.sampleX(ii);
     pos[3 * v + 1] = ys[j * nx + i] - drop;
-    pos[3 * v + 2] = field.sampleZ(jj);
-    // central differences, one-sided at the field's edges
-    const gx = (heights[ii < w - 1 ? k + 1 : k] - heights[ii > 0 ? k - 1 : k]) / r2;
-    const gz = (heights[jj < h - 1 ? k + w : k] - heights[jj > 0 ? k - w : k]) / r2;
+    pos[3 * v + 2] = m ? m[1] : field.sampleZ(jj);
+    const side = sides ? sides[k] : 0;
+    const gx = slope(k, ii < w - 1 ? k + 1 : k, ii > 0 ? k - 1 : k, side);
+    const gz = slope(k, jj < h - 1 ? k + w : k, jj > 0 ? k - w : k, side);
     const s = 32767 / Math.sqrt(gx * gx + 1 + gz * gz);
     nrm[4 * v] = Math.round(-gx * s);
     nrm[4 * v + 1] = Math.round(s);
@@ -193,7 +220,9 @@ function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 4, true));
-  const x0 = field.sampleX(i0), z0 = field.sampleZ(j0), x1 = field.sampleX(i0 + cols), z1 = field.sampleZ(j0 + rows);
+  // (samples moved onto a wall may leave the chunk's rectangle by a few metres)
+  const pad = shifted ? 3.5 : 0;
+  const x0 = field.sampleX(i0) - pad, z0 = field.sampleZ(j0) - pad, x1 = field.sampleX(i0 + cols) + pad, z1 = field.sampleZ(j0 + rows) + pad;
   geo.boundingBox = new THREE.Box3(new THREE.Vector3(x0, minY - SKIRT, z0), new THREE.Vector3(x1, maxY, z1));
   geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
   return geo;
@@ -207,6 +236,7 @@ export class Terrain {
       return new HeightField(m, await decodePNGOffThread(await res.arrayBuffer(), 'heightField', meta.heightOffset));
     };
     const [core, context] = await Promise.all([fetchField(meta.core), fetchField(meta.context)]);
+    core.setWalls(meta.walls);
     return new Terrain(core, context);
   }
 

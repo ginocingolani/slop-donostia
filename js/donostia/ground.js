@@ -181,7 +181,7 @@ const BASE = {
   [S.road]: 0x3c3e41, [S.sidewalk]: 0xaca89e, [S.pedestrian]: 0xbeb097, [S.garden]: HEX.lawnA, [S.woodland]: 0x3a3a24,
   [S.beach]: HEX.sandDry, [S.seabed]: HEX.seabed, [S.building]: 0x7a7772, [S.bike]: HEX.bike, [S.stairs]: HEX.stairs,
   [S.rail]: HEX.ballast, [S.setts]: 0x96938b, [S.path]: HEX.gravel, [S.treePit]: HEX.soil, [S.flowers]: 0x5a6a33,
-  [S.hedge]: HEX.hedge, [S.yard]: 0xa6a49d, [S.rock]: HEX.rockA, [S.quay]: 0x9b9990
+  [S.hedge]: HEX.hedge, [S.yard]: 0xa6a49d, [S.rock]: 0x6a6356, [S.quay]: 0x9b9990
 };
 const ROUGH = {
   [S.road]: 0.86, [S.sidewalk]: 0.8, [S.pedestrian]: 0.78, [S.setts]: 0.7, [S.stairs]: 0.8, [S.quay]: 0.85, [S.yard]: 0.85,
@@ -458,7 +458,9 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       const treePit = C.soil.mul(nF.mul(0.35).add(0.8));
       const rail = C.ballast.mul(nF.mul(0.35).add(0.8)).mul(nM.mul(0.15).add(0.92));
       const seabed = C.seabed.mul(mix(float(1), float(0.35), smoothstep(0, 12, y.negate()))).mul(nM.mul(0.2).add(0.9));
-      const bareRock = mix(C.rockA, C.rockB, nM).mul(nF.mul(0.2).add(0.9));
+      // the coast's bare rock & rubble mounds: weathered sandstone, darker in the hollows and down to the tide
+      const bareRock = mix(C.rockWet, mix(C.rockA, C.rockB, nM), smoothstep(0.25, 0.75, nL.mul(0.5).add(nF.mul(0.5))).mul(0.6).add(0.2))
+        .mul(nF.mul(0.2).add(0.9)).mul(smoothstep(-0.5, 3.0, y).mul(0.35).add(0.65));
       surfColour.assign(pick(wid, [[S.garden, lawn], [S.hedge, hedge], [S.woodland, woodland], [S.path, path],
         [S.treePit, treePit], [S.rail, rail], [S.seabed, seabed], [S.rock, bareRock]], lawn));
     });
@@ -509,8 +511,14 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     puddle.assign(smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, wetness))
       .mul(flagsW.y).mul(smoothstep(0.985, 0.996, normalWorldGeometry.y)).mul(float(1).sub(kerbStone)));
 
-    return marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
+    const lit = marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
       .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film));
+    // The faces the 2 m grid still draws as steep ramps (a wall's ends, a flight's flanks, the quays and abutments the
+    // shore walls leave out, Urgull's crags): weathered stone rather than the surface's sand or paving stretched down
+    // them. The natural ground has its own rock on the steep faces.
+    const steepFace = smoothstep(0.3, 0.5, slope).mul(inCore).mul(float(1).sub(eq(wid, S.natural)));
+    const faceStone = mix(C.rockA, C.rockB, nM).mul(nF.mul(0.2).add(0.88)).mul(smoothstep(-0.5, 3.0, y).mul(0.3).add(0.7));
+    return mix(lit, faceStone, steepFace);
   })();
 
   const shoreWet = max(eq(wid, S.natural), eq(wid, S.rock)).mul(smoothstep(2.4, 1.2, y));

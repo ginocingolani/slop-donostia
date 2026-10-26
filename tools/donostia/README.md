@@ -19,15 +19,17 @@ The steps it runs, in order:
 |---|---|---|
 | `fetch.sh` | the web | `tools/donostia/raw/` (gitignored); `tools/donostia/data/osm_*.json` & `osm_queries.sha256` (committed) |
 | `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed); `raw/bathy/isobaths.json` and the unzipped `raw/dtm/*.asc` (bake-only) |
-| `build.mjs` | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` |
+| `build.mjs` (with `walls.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls) |
 | `bake-ground.mjs` | `tools/donostia/data/`, the terrain | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
+| `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches | `js/donostia/data-shore.js` (the rocks) |
 | `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata | `js/donostia/data-streetscape.js` |
 | `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
 | `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
+| `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
 
-`build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>` and `bake-streetscape.mjs --preview <dir>` also write
-debug images for checking a rebuild.
+`build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
+`bake-shore.mjs --preview <dir>` and `bake-alderdi.mjs --preview <dir>` also write debug images for checking a rebuild.
 
 The OpenStreetMap snapshot is committed and only fetched again when it is missing, when a query changed since it was
 taken (`osm_queries.sha256` records the hash of each query as sent) or with `--refresh-osm`. The queries
@@ -70,8 +72,9 @@ mixes them carries each licence for the part that comes from its source.
 | `data/donostia/ground-*.png` | municipal map, OSM, the terrain | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/geodata.js` | municipal map, b5m, OSM, the terrain | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-streets.js`, `data-urgull-parts.js` | OSM, municipal map | ODbL 1.0 + CC BY-SA 3.0 |
-| `js/donostia/data-bridges.js`, `data-streetscape.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
+| `js/donostia/data-bridges.js`, `data-streetscape.js`, `data-shore.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
+| `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
 
 The data was modified: reprojected into the local frame, simplified, clipped, rasterised, resampled and combined as
 described above. Every generated file names its sources and licences: the extracted layers in their `source` field
@@ -83,6 +86,25 @@ map.
 
 - The LiDAR terrain stores the sea surface as exactly 0 m; `build.mjs` floods it from the open sea and lays the
   isobath sea floor (harmonic fill between contours) under it.
+- Shore walls (`walls.mjs`, `GEO.terrain.walls`): the 1 m LiDAR keeps a sea wall as a 2-3 m ramp and the 2 m grid smears
+  it over a cell or two. Every shoreline the maps know of (the municipal beaches' edges, the OSM river & docks at sea
+  level, the OSM coastline & breakwaters, in that order) is walked metre by metre with a profile square to it; a steep
+  fall of 1.4 m or more from flat paving to the beach, rocks or water is a wall (not at stairs, buildings or bridges).
+  Each wall keeps its crest line, the promenade level behind it, the LiDAR ground at its foot and, for the Paseo
+  Nuevo's and the river's walls, a batter. Only the 2 m samples within reach of a wall change: the ones in front drop to
+  its foot (never rising: the river bed stays) and take the ground class beyond, the smeared ones behind come back to the
+  promenade level (the Paseo Nuevo's parapet hump is flattened, `js/donostia/shore.js` models the parapet). At runtime
+  `js/donostia/terrain.js` moves the samples either side of a wall line onto it (`js/donostia/shore-walls.js`, shared
+  with the bake), so the ground steps vertically there, and `shore.js` faces the step with masonry and a coping.
+- Shore stairs (`walls.mjs`, `GEO.terrain.stairs`): the municipal map's stairs (`ESKAILERA`) by a wall, within 3 m of
+  it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
+  inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
+  piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
+  under the slope, and `shore.js` builds them as solid steps of about 17 cm.
+- Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
+  flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
+  the bed above mean sea level, the OSM bare rock & rocky coastline), never on paving, buildings, beaches, bridges or the
+  Kursaal's podium.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
