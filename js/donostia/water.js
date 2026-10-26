@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, vec2, vec3, vec4, texture, positionWorld, cameraPosition, cameraViewMatrix, time, mix, smoothstep,
-  clamp, pow, dot, normalize, max, abs, fract, floor, sin, sqrt, exp, fwidth, select, mx_noise_float, uniform
+  clamp, pow, dot, normalize, min, max, abs, fract, floor, sin, sqrt, exp, fwidth, select, mx_noise_float, uniform
 } from 'three/tsl';
 import { decodePNGOffThread } from './png.js';
 
@@ -223,9 +223,16 @@ async function loadFields() {
 
 // --- Material ---------------------------------------------------------------------------------------------------------
 
-function floorHeight(field) {
+// vec3(the floor's bilinear height, the lowest and the highest of the four samples around): at a quay or sea wall the
+// terrain steps from the promenade to the bed between two samples, where the bilinear floor would rise to the surface
+// and draw a beach's shallows and swash against the wall (js/donostia/shore-walls.js)
+function floorHeights(field) {
+  const size = vec2(field.w, field.h);
   const uv = positionWorld.xz.sub(vec2(field.x0, field.z0)).div(vec2(field.width, field.depth));
-  return texture(field.heightTexture, uv).r;
+  const base = floor(uv.mul(size).sub(0.5)).add(0.5);
+  const at = (a, b) => texture(field.heightTexture, base.add(vec2(a, b)).div(size)).r;
+  const s00 = at(0, 0), s10 = at(1, 0), s01 = at(0, 1), s11 = at(1, 1);
+  return vec3(texture(field.heightTexture, uv).r, min(min(s00, s10), min(s01, s11)), max(max(s00, s10), max(s01, s11)));
 }
 
 // [tile size (m), rotation (rad), RMS slope]: incommensurate scales & angles so no pattern repeats (as upstream)
@@ -247,7 +254,9 @@ function createWaterMaterial(terrain, fieldsTex) {
     .and(p.z.greaterThan(core.z0 + core.res)).and(p.z.lessThan(core.z0 + core.depth - core.res));
   const inContext = p.x.greaterThan(context.x0).and(p.x.lessThan(context.x0 + context.width))
     .and(p.z.greaterThan(context.z0)).and(p.z.lessThan(context.z0 + context.depth));
-  const seaFloor = select(inCore, floorHeight(core), select(inContext, floorHeight(context), float(-60)));
+  const floors = select(inCore, floorHeights(core), select(inContext, floorHeights(context), vec3(-60.0))).toVar();
+  // against a wall (a step of metres between neighbouring samples) the water keeps the depth of the bed at its foot
+  const seaFloor = mix(floors.x, floors.y, smoothstep(2.0, 4.0, floors.z.sub(floors.y))).toVar();
   // the plane rides the tide and the ponds sit at their own levels: depth is measured from the surface itself
   const depth = max(p.y.sub(seaFloor), 0.0);
 
@@ -362,7 +371,7 @@ function createWaterMaterial(terrain, fieldsTex) {
     c.assign(mix(c, vec3(0.008, 0.042, 0.075), smoothstep(7.0, 20.0, d)));
     c.assign(mix(c, vec3(0.005, 0.026, 0.055), smoothstep(20.0, 45.0, d)));
     // over rock (a steep bottom) the shallows stay dark & weedy instead of turquoise
-    const rocky = smoothstep(0.12, 0.4, fwidth(seaFloor).div(max(fwidth(p.x).add(fwidth(p.z)), 0.02)));
+    const rocky = smoothstep(0.12, 0.4, fwidth(floors.x).div(max(fwidth(p.x).add(fwidth(p.z)), 0.02)));
     c.assign(mix(c, mix(vec3(0.035, 0.07, 0.05), c, smoothstep(1.0, 6.0, d)), rocky.mul(float(1.0).sub(river))));
     // the Urumea & the ponds: green, silty, the bed lost within a metre
     const silt = noise2D(p.xz.mul(0.006).add(7.3));

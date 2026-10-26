@@ -12,6 +12,7 @@ import { buildLandmarks } from './landmarks/index.js';
 import { buildVegetation, SHADOW_ONLY_LAYER } from './vegetation.js';
 import { buildStreetscape } from './streetscape.js';
 import { buildBridges } from './bridges.js';
+import { buildShore } from './shore.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
@@ -32,7 +33,8 @@ const STORAGE_KEY = 'donostia-god-camera';
 // --- the world -----------------------------------------------------------------------------------------------------------
 
 /**
- * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges.
+ * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
+ * the shore's walls & rocks.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
@@ -71,12 +73,14 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('buildings', buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
   mark('buildings');
   status('Planting trees & dressing the streets…');
-  const [vegetation, streetscape, bridges] = await Promise.all([
-    buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain)
+  const [vegetation, streetscape, bridges, shore] = await Promise.all([
+    buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain),
+    buildShore(GEO, terrain, water.userData.seaLevel)
   ]);
   add('vegetation', vegetation);
   add('streetscape', streetscape);
   add('bridges', bridges);
+  add('shore', shore);
   modules.sky = lighting.sky;
   mark('details');
 
