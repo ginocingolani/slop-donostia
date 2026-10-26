@@ -1,34 +1,43 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, color, attribute, uv, abs, fract, min, max, mix, length, fwidth, smoothstep, select, mrt,
-  pow, clamp
+  Fn, float, vec2, vec3, vec4, color, attribute, uv, abs, fract, min, max, mix, length, fwidth, smoothstep, mrt,
+  pow, clamp, atan, cos
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
-// - La Concha's white cast-iron railing (the barandilla of 1910) on its sandstone coping along the top of the
-//   promenade wall above Kontxa & Ondarreta: posts, handrail & coping as geometry, the ironwork between them (bars,
-//   rails and rings) drawn on one alpha-to-coverage strip, anti-aliased by its screen-space footprint
-// - the promenade's white lamp posts with their opal globes, every ~17 m behind the railing
+// - La Concha's barandilla (Juan Rafael Alday, 1910-16) along the top of the promenade wall above Kontxa & Ondarreta:
+//   white cast iron in 0.8 m modules (a big ring with a smaller one inside and sprays of leaves, between pairs of
+//   balusters) on a stone plinth, five modules between grey stone pillars. Plinth, tube handrail & pillars are
+//   geometry; the ironwork is drawn on one alpha-to-coverage strip, anti-aliased by its screen footprint
+// - its white lamp posts, each on a pedestal in place of every fourth pillar; the two monumental candelabra by the
+//   steps in front of the Hotel de Londres; the rotunda's obelisks, clock & barometer, with their arms of globes
 // - OSM's street lamps (a dark cast-iron post under a four-sided lantern) and benches (wooden slats on iron frames)
 // - lanterns on iron brackets along the lanes of the Parte Vieja, where OSM maps no street lamps
 // Lamps glow at dusk & night with cityUniforms.uInteriorGlow (emissive + bloom), each over a soft pool of light on the
-// ground; no real lights. Everything is instanced or merged: 10 draws.
+// ground; no real lights. Everything is instanced or merged: 9 draws.
 // buildStreetscape(GEO, terrain) -> Promise<Object3D | null>; its userData.update(dt, elapsed, camera) culls the small
 // props by distance.
 
-const RAIL_H = 1.0; // ironwork height above the coping (m)
-const COPING_H = 0.1; // coping top above the promenade
-const POST_EVERY = 2.4; // m between railing posts (16 ironwork modules)
-const MODULE = 0.15; // m, one bar & ring module of the ironwork
+// The barandilla, measured on photographs against its 0.8 m module (m)
+const MODULE = 0.8; // one ring and a pair of balusters
+const PLINTH_H = 0.22; // the stone plinth's top above the promenade
+const RAIL_H = 1.0; // the ironwork, plinth to the top of the handrail
+const HANDRAIL_R = 0.028;
+const POST_W = [0.46, 0.62, 0]; // along the railing: a stone pillar, a lamp pedestal, a monument's face (as baked)
+const LAMP_PEDESTAL_H = 1.4; // its cap, above the promenade
+const LAMP_GLOBE = [3.78, 0.24]; // the lamp post's globe: centre above its pedestal, radius
 
 // Paints (linear rgb + roughness), per vertex of the merged furniture
 const WHITE_IRON = [0.82, 0.82, 0.79, 0.42];
 const DARK_IRON = [0.025, 0.03, 0.028, 0.5];
-const SANDSTONE = [0.5, 0.43, 0.33, 0.88];
 const WOOD = [0.24, 0.13, 0.065, 0.75];
+const STONE = [0.43, 0.42, 0.39, 0.85]; // the grey plinth, pillars and the candelabra's pedestals
+const PAINTED_STONE = [0.74, 0.74, 0.71, 0.7]; // the lamp pedestals, whitewashed
+const LIMESTONE = [0.6, 0.58, 0.53, 0.8]; // the obelisks
+const DIAL = [0.86, 0.86, 0.84, 0.35];
 
 // --- geometry helpers ---------------------------------------------------------------------------------------------------
 
@@ -62,6 +71,15 @@ class Builder {
     }
   }
 
+  // a triangle with a normal per corner (counter-clockwise seen from its front)
+  tri(a, b, c, na, nb, nc, paint) {
+    for (const [p, n] of [[a, na], [b, nb], [c, nc]]) {
+      this.pos.push(p.x, p.y, p.z);
+      this.nrm.push(n.x, n.y, n.z);
+      this.paint.push(...paint);
+    }
+  }
+
   build() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -76,15 +94,107 @@ class Builder {
 const M4 = () => new THREE.Matrix4();
 const box = (w, h, d, x = 0, y = 0, z = 0) => [new THREE.BoxGeometry(w, h, d), M4().makeTranslation(x, y + h / 2, z)];
 
-// Promenade lamp post: a turned white cast-iron column on an octagonal plinth (y up from the ground, globe apart)
-function promenadePostGeometry() {
-  const b = new Builder();
-  const profile = [[0, 0], [0.19, 0], [0.19, 0.09], [0.15, 0.13], [0.15, 0.42], [0.11, 0.5], [0.085, 0.58], [0.075, 0.7],
-    [0.066, 2.75], [0.085, 2.85], [0.06, 2.92], [0.12, 3.05], [0.12, 3.12], [0.07, 3.18], [0.05, 3.3], [0, 3.3]];
-  b.add(new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 10), WHITE_IRON);
-  return b.build();
+// A turned profile [[r, y], ...] round the y axis; facetted: flat-shaded, for masonry & square shafts
+const lathe = (profile, segments, phi = 0) => new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments, phi);
+const facetted = (geo) => {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  g.computeVertexNormals();
+  return g;
+};
+// A square shaft of half-widths [[h, y], ...]: a four-sided lathe turned to face the axes
+const squareShaft = (rows) => facetted(lathe(rows.map(([h, y]) => [h * Math.SQRT2, y]), 4, Math.PI / 4));
+
+// A bar of square section w from p to q
+function beam(b, p, q, w, paint, m) {
+  const d = new THREE.Vector3().subVectors(q, p), len = d.length();
+  const at = M4().compose(new THREE.Vector3().addVectors(p, q).multiplyScalar(0.5),
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()), new THREE.Vector3(1, 1, 1));
+  b.add(new THREE.BoxGeometry(w, len, w), paint, m.clone().multiply(at));
 }
-const PROMENADE_GLOBE_Y = 3.52;
+
+// The promenade's lamp post on its pedestal, after photographs: a bell base, a slender shaft, a collared capital
+// holding the globe (y up from the pedestal's cap; the globe apart)
+const LAMP_COLUMN = [[0, 0], [0.2, 0], [0.2, 0.06], [0.17, 0.1], [0.16, 0.3], [0.12, 0.42], [0.13, 0.5], [0.1, 0.56],
+  [0.085, 0.75], [0.075, 0.85], [0.08, 0.9], [0.062, 0.95], [0.055, 3.0], [0.075, 3.05], [0.075, 3.1], [0.052, 3.15],
+  [0.048, 3.3], [0.09, 3.42], [0.12, 3.48], [0.06, 3.52], [0.04, 3.55], [0, 3.55]];
+
+// The monumental candelabra (1911) by the ramp in front of the Hotel de Londres, after photographs (~8.5 m): a square
+// grey stone pedestal set in the railing's line, a cast-iron base with four scrolled griffins, a column with collars,
+// a ring of eight globes on scrolled arms and a ninth on top. m: the local frame (y up from the promenade, +z to the
+// sea); globes collect [x, y, z, r].
+const CANDELABRUM_HALF = 0.8; // the stone pedestal's half-width
+function candelabrum(b, m, globes) {
+  const add = (g, paint, local = null) => b.add(g, paint, local ? m.clone().multiply(local) : m);
+  const globe = (x, y, z, r) => { const p = new THREE.Vector3(x, y, z).applyMatrix4(m); globes.push([p.x, p.y, p.z, r]); };
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const H = CANDELABRUM_HALF;
+  add(squareShaft([[0, -0.4], [H + 0.08, -0.4], [H + 0.08, 0.18], [H, 0.24], [H, 1.12], [H + 0.08, 1.2], [H + 0.08, 1.35], [0, 1.35]]), STONE);
+  add(lathe([[0, 1.35], [0.62, 1.35], [0.62, 1.45], [0.5, 1.58], [0.44, 2.05], [0.32, 2.45], [0.26, 2.62], [0.3, 2.7], [0.3, 2.8],
+    [0.18, 2.88], [0.15, 3.3], [0.19, 3.36], [0.13, 3.42], [0.12, 4.15], [0.17, 4.22], [0.17, 4.3], [0.12, 4.36], [0.11, 4.9],
+    [0.17, 4.98], [0.24, 5.12], [0.24, 5.22], [0.11, 5.3], [0.09, 6.4], [0.12, 6.46], [0.08, 6.52], [0.075, 7.5], [0.13, 7.62],
+    [0.13, 7.7], [0.06, 7.76], [0, 7.76]], 10), WHITE_IRON);
+  // the base's four scrolled griffins, on the diagonals
+  for (let k = 0; k < 4; k++) {
+    const a = ((k + 0.5) * Math.PI) / 2, sx = Math.sin(a), sz = Math.cos(a);
+    add(new THREE.TorusGeometry(0.17, 0.06, 5, 10), WHITE_IRON, M4().makeTranslation(sx * 0.5, 1.95, sz * 0.5).multiply(M4().makeRotationY(a + Math.PI / 2)));
+    beam(b, V(sx * 0.34, 2.4, sz * 0.34), V(sx * 0.62, 1.62, sz * 0.62), 0.1, WHITE_IRON, m);
+  }
+  // eight arms out of the capital, alternately long & high and short & low, each a scroll with a cup and a globe
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4 + Math.PI / 8, long = k % 2 === 0, r = long ? 0.95 : 0.7, h = long ? 5.75 : 5.5;
+    const sx = Math.sin(a), sz = Math.cos(a);
+    beam(b, V(sx * 0.18, 5.15, sz * 0.18), V(sx * r, 5.15, sz * r), 0.06, WHITE_IRON, m);
+    beam(b, V(sx * r, 5.12, sz * r), V(sx * r, h - 0.2, sz * r), 0.05, WHITE_IRON, m);
+    add(new THREE.TorusGeometry(0.12, 0.035, 4, 8), WHITE_IRON, M4().makeTranslation(sx * r * 0.62, 5.0, sz * r * 0.62).multiply(M4().makeRotationY(a + Math.PI / 2)));
+    add(new THREE.CylinderGeometry(0.09, 0.045, 0.1, 8), WHITE_IRON, M4().makeTranslation(sx * r, h - 0.18, sz * r));
+    globe(sx * r, h + 0.04, sz * r, 0.22);
+  }
+  globe(0, 8.02, 0, 0.27);
+}
+
+// The rotunda's obelisks (1911), the clock and the barometer, after photographs (~17 m): a pedestal with corner
+// blocks set in the railing's line, a moulded step, a band carrying two iron arms of four globes, a tapering shaft, a
+// capital stage under a projecting slab, the head with a dial under a hood on each face, a finial and a weathervane.
+// m: the local frame as the candelabra's; +x along the railing.
+const OBELISK_HALF = 1.45;
+function obelisk(b, m, globes, barometer) {
+  const add = (g, paint, local = null) => b.add(g, paint, local ? m.clone().multiply(local) : m);
+  const globe = (x, y, z, r) => { const p = new THREE.Vector3(x, y, z).applyMatrix4(m); globes.push([p.x, p.y, p.z, r]); };
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const H = OBELISK_HALF;
+  add(squareShaft([[0, -0.6], [H, -0.6], [H, 1.75], [H + 0.08, 1.85], [H + 0.08, 2.0], [1.3, 2.05], [1.22, 2.35], [1.22, 2.9],
+    [1.08, 3.2], [1.0, 3.3], [1.0, 5.3], [1.12, 5.4], [1.12, 5.85], [0.96, 5.95], [0.76, 12.1], [0.9, 12.2], [0.9, 13.75],
+    [1.3, 13.85], [1.3, 14.55], [1.08, 14.62], [1.08, 17.0], [1.24, 17.3], [1.24, 17.4], [0.5, 17.45], [0.5, 17.8],
+    [0.32, 17.85], [0, 18.0]]), LIMESTONE);
+  // the dials, and the hands (the barometer's single needle)
+  for (let f = 0; f < 4; f++) {
+    const face = M4().makeRotationY((f * Math.PI) / 2).multiply(M4().makeTranslation(0, 15.95, 1.085));
+    add(new THREE.CircleGeometry(0.58, 20), DIAL, face);
+    // its hood: a moulded arch over the dial, flaring to the head's corners
+    add(new THREE.TorusGeometry(0.72, 0.1, 4, 12, Math.PI), LIMESTONE, face.clone().multiply(M4().makeTranslation(0, 0, 0.04)));
+    const hands = barometer ? [[0.035, 0.52, 0.2]] : [[0.06, 0.36, 2.1], [0.04, 0.52, -0.5]];
+    for (const [w, l, a] of hands) {
+      add(new THREE.BoxGeometry(w, l, 0.02), DARK_IRON, face.clone().multiply(M4().makeRotationZ(a)).multiply(M4().makeTranslation(0, l / 2 - 0.06, 0.012)));
+    }
+  }
+  // the weathervane
+  beam(b, V(0, 17.9, 0), V(0, 19.4, 0), 0.04, DARK_IRON, m);
+  add(new THREE.BoxGeometry(0.7, 0.025, 0.025), DARK_IRON, M4().makeTranslation(0, 18.65, 0));
+  add(new THREE.BoxGeometry(0.025, 0.025, 0.7), DARK_IRON, M4().makeTranslation(0, 18.65, 0));
+  add(new THREE.BoxGeometry(1.3, 0.06, 0.015), DARK_IRON, M4().makeTranslation(0, 19.1, 0).multiply(M4().makeRotationY(0.6)));
+  // the two arms along the railing: a scrolled bracket out of the band, a crosspiece with four globes on cups
+  for (const side of [-1, 1]) {
+    const x1 = side * 2.3;
+    beam(b, V(side * 1.1, 5.55, 0), V(x1, 6.0, 0), 0.08, WHITE_IRON, m);
+    add(new THREE.TorusGeometry(0.2, 0.05, 5, 10), WHITE_IRON, M4().makeTranslation(side * 1.45, 5.45, 0));
+    for (const [dx, dz, h] of [[0.42, 0, 6.65], [-0.42, 0, 6.65], [0, 0.42, 7.0], [0, -0.42, 7.0]]) {
+      beam(b, V(x1, 6.0, 0), V(x1 + dx, 6.0, dz), 0.05, WHITE_IRON, m);
+      beam(b, V(x1 + dx, 5.95, dz), V(x1 + dx, h - 0.2, dz), 0.045, WHITE_IRON, m);
+      add(new THREE.CylinderGeometry(0.08, 0.04, 0.1, 8), WHITE_IRON, M4().makeTranslation(x1 + dx, h - 0.18, dz));
+      globe(x1 + dx, h, dz, 0.22);
+    }
+  }
+}
 
 // A four-sided lantern's iron (floor, roof, finial, corner bars) with its floor at y0, scaled by k
 function addLanternFrame(b, y0, k = 1, x = 0, z = 0) {
@@ -151,85 +261,147 @@ function benchGeometry() {
   return b.build();
 }
 
-// The railing's solid parts (coping, posts, handrail) and its ironwork strip, along every baked run. A run's points are
-// [x, y, z] (y = the promenade); travelling along it, the sea lies towards (-dz, dx).
-function railingGeometries(runs) {
-  const solid = new Builder();
-  const strip = { pos: [], nrm: [], uv: [] };
-  const V = (x, y, z) => new THREE.Vector3(x, y, z);
-  for (const flat of runs) {
+// The plinth's section across the railing [off (m, + to the sea), dy (m, above the promenade)], from deep in the paving
+// on the land side, over the chamfered top, out round the little cornice and down the wall's face
+const PLINTH = [[-0.24, -0.5], [-0.24, 0.17], [-0.19, PLINTH_H], [0.21, PLINTH_H], [0.21, 0.12], [0.27, 0.08], [0.27, -0.02],
+  [0.21, -0.06], [0.21, -1.6]];
+const MONUMENT_INSET = [0.5, 1.2, 1.2]; // the candelabra's & obelisks' axes stand this far inland of the railing's line
+
+// La Concha's barandilla and everything on its line, from the baked runs ([x, y, z] cm, y the promenade; travelling
+// along one, the sea lies towards (-dz, dx)), their posts ([s cm, type: 0 a pillar, 1 a lamp pedestal, 2 a monument's
+// face, where the ironwork stops against it]) and the monuments ([kind, x, y, z cm, heading deg]):
+// { solid (merged, painted), ironwork (the strip), globes [[x, y, z, r]], pools [[x, z, r]] }
+function barandillaGeometries(runs, postLists, monuments) {
+  const solid = new Builder(), globes = [], pools = [];
+  const strip = { pos: [], nrm: [], uv: [], idx: [] };
+  const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const UP = V(0, 1, 0);
+  const quadToward = (a, b, c, d, toward, paint) => {
+    const n = V().subVectors(d, a).cross(V().subVectors(b, a));
+    if (n.dot(toward) < 0) solid.quad(a, d, c, b, paint);
+    else solid.quad(a, b, c, d, paint);
+  };
+  runs.forEach((flat, ri) => {
     const pts = [];
     for (let k = 0; k < flat.length; k += 3) pts.push(V(flat[k] / 100, flat[k + 1] / 100, flat[k + 2] / 100));
     const n = pts.length;
-    if (n < 2) continue;
-    // seaward normal per vertex: the mean of its segments'
+    if (n < 2) return;
+    const cum = [0];
+    for (let k = 1; k < n; k++) cum.push(cum[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].z - pts[k - 1].z));
+    // seaward normal per segment, and per vertex the mean of its segments'
     const seg = (k) => {
       const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1;
       return V(-dz / l, 0, dx / l);
     };
-    const sea = pts.map((_, k) => {
-      const a = seg(Math.max(0, k - 1)), b = seg(Math.min(n - 2, k));
-      return a.add(b).normalize();
-    });
-    // Coping: top, sea face down the wall, land face into the paving
+    const sea = pts.map((_, k) => seg(Math.max(0, k - 1)).add(seg(Math.min(n - 2, k))).normalize());
+    // the point and seaward normal at arc length s
+    const at = (s) => {
+      let k = 1;
+      while (k < n - 1 && cum[k] < s) k++;
+      const f = Math.max(0, Math.min(1, (s - cum[k - 1]) / (cum[k] - cum[k - 1] || 1e-9)));
+      return { p: pts[k - 1].clone().lerp(pts[k], f), s: sea[k - 1].clone().lerp(sea[k], f).normalize() };
+    };
+    const off = (p, s, o, dy) => V(p.x + s.x * o, p.y + dy, p.z + s.z * o);
+
+    // the plinth, its section swept along the run
     for (let k = 0; k < n - 1; k++) {
-      const p0 = pts[k], p1 = pts[k + 1], s0 = sea[k], s1 = sea[k + 1];
-      const top = (p, s, off) => V(p.x + s.x * off, p.y + COPING_H, p.z + s.z * off);
-      const low = (p, s, off, dy) => V(p.x + s.x * off, p.y + dy, p.z + s.z * off);
-      solid.quad(top(p0, s0, -0.2), top(p1, s1, -0.2), top(p1, s1, 0.3), top(p0, s0, 0.3), SANDSTONE);
-      solid.quad(top(p0, s0, 0.3), top(p1, s1, 0.3), low(p1, s1, 0.3, -1.6), low(p0, s0, 0.3, -1.6), SANDSTONE);
-      solid.quad(low(p0, s0, -0.2, -0.3), low(p1, s1, -0.2, -0.3), top(p1, s1, -0.2), top(p0, s0, -0.2), SANDSTONE);
-    }
-    // Handrail: a flat bar on top of the ironwork
-    const hy0 = COPING_H + RAIL_H - 0.02, hy1 = hy0 + 0.06;
-    for (let k = 0; k < n - 1; k++) {
-      const p0 = pts[k], p1 = pts[k + 1], s0 = sea[k], s1 = sea[k + 1];
-      const at = (p, s, off, dy) => V(p.x + s.x * off, p.y + dy, p.z + s.z * off);
-      solid.quad(at(p0, s0, -0.04, hy1), at(p1, s1, -0.04, hy1), at(p1, s1, 0.04, hy1), at(p0, s0, 0.04, hy1), WHITE_IRON);
-      solid.quad(at(p0, s0, 0.04, hy1), at(p1, s1, 0.04, hy1), at(p1, s1, 0.04, hy0), at(p0, s0, 0.04, hy0), WHITE_IRON);
-      solid.quad(at(p0, s0, -0.04, hy0), at(p1, s1, -0.04, hy0), at(p1, s1, -0.04, hy1), at(p0, s0, -0.04, hy1), WHITE_IRON);
-    }
-    // Ironwork strip & posts by arc length
-    let u = 0, nextPost = 0;
-    for (let k = 0; k < n; k++) {
-      const p = pts[k], s = sea[k];
-      if (k > 0) {
-        const len = Math.hypot(p.x - pts[k - 1].x, p.z - pts[k - 1].z);
-        // posts along this segment
-        while (nextPost <= u + len) {
-          const f = (nextPost - u) / len;
-          const x = pts[k - 1].x + (p.x - pts[k - 1].x) * f, y = pts[k - 1].y + (p.y - pts[k - 1].y) * f, z = pts[k - 1].z + (p.z - pts[k - 1].z) * f;
-          const yaw = Math.atan2(s.x, s.z);
-          for (const [g, m] of [box(0.07, RAIL_H + 0.08, 0.07, 0, COPING_H, 0), box(0.11, 0.05, 0.11, 0, COPING_H + RAIL_H + 0.06, 0)]) {
-            solid.add(g, WHITE_IRON, M4().makeTranslation(x, y, z).multiply(M4().makeRotationY(yaw)).multiply(m));
-          }
-          nextPost += POST_EVERY;
-        }
-        u += len;
-        // a strip quad from the previous point
-        const q = pts[k - 1];
-        const base = strip.pos.length / 3;
-        const nrm = V(sea[k - 1].x + s.x, 0, sea[k - 1].z + s.z).normalize();
-        for (const [pp, uu] of [[q, u - len], [p, u]]) {
-          for (const v of [0, RAIL_H]) {
-            strip.pos.push(pp.x, pp.y + COPING_H + v, pp.z);
-            strip.nrm.push(nrm.x, nrm.y, nrm.z);
-            strip.uv.push(uu, v);
-          }
-        }
-        strip.idx ??= [];
-        strip.idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
+      const s01 = V().addVectors(sea[k], sea[k + 1]).normalize();
+      for (let i = 0; i < PLINTH.length - 1; i++) {
+        const [o0, y0] = PLINTH[i], [o1, y1] = PLINTH[i + 1];
+        const toward = s01.clone().multiplyScalar(-(y1 - y0)).addScaledVector(UP, o1 - o0);
+        quadToward(off(pts[k], sea[k], o0, y0), off(pts[k + 1], sea[k + 1], o0, y0), off(pts[k + 1], sea[k + 1], o1, y1),
+          off(pts[k], sea[k], o1, y1), toward, STONE);
       }
     }
+    // the handrail: a round tube on the balusters, smooth-shaded
+    const HY = PLINTH_H + RAIL_H - HANDRAIL_R, SIDES = 6;
+    const ring = (q, a) => {
+      const nrm = sea[q].clone().multiplyScalar(Math.cos(a)).addScaledVector(UP, Math.sin(a));
+      return [off(pts[q], sea[q], Math.cos(a) * HANDRAIL_R, HY + Math.sin(a) * HANDRAIL_R), nrm];
+    };
+    for (let k = 0; k < n - 1; k++) {
+      for (let j = 0; j < SIDES; j++) {
+        const a0 = (j / SIDES) * Math.PI * 2, a1 = ((j + 1) / SIDES) * Math.PI * 2;
+        const [p00, n00] = ring(k, a0), [p01, n01] = ring(k, a1), [p10, n10] = ring(k + 1, a0), [p11, n11] = ring(k + 1, a1);
+        // wound so the faces look out of the tube
+        if (V().subVectors(p10, p00).cross(V().subVectors(p01, p00)).dot(n00) > 0) {
+          solid.tri(p00, p10, p01, n00, n10, n01, WHITE_IRON);
+          solid.tri(p01, p10, p11, n01, n10, n11, WHITE_IRON);
+        } else {
+          solid.tri(p00, p01, p10, n00, n01, n10, WHITE_IRON);
+          solid.tri(p01, p11, p10, n01, n11, n10, WHITE_IRON);
+        }
+      }
+    }
+    // the posts: stone pillars, and the lamp pedestals with their lamp posts
+    const posts = postLists[ri] || [];
+    for (let k = 0; k < posts.length; k += 2) {
+      if (posts[k + 1] === 2) continue;
+      const { p, s } = at(posts[k] / 100), lamp = posts[k + 1] === 1;
+      const m = M4().makeTranslation(p.x, p.y, p.z).multiply(M4().makeRotationY(Math.atan2(s.x, s.z)));
+      const block = (w, y0, y1, paint) => {
+        const [g, mm] = box(w, y1 - y0, w, 0, y0, 0);
+        solid.add(g, paint, m.clone().multiply(mm));
+      };
+      if (!lamp) {
+        block(0.54, -0.06, 0.3, STONE);
+        block(0.44, 0.28, 1.22, STONE);
+        block(0.54, 1.22, 1.29, STONE);
+        solid.add(facetted(new THREE.ConeGeometry(0.54 * Math.SQRT1_2, 0.07, 4, 1).rotateY(Math.PI / 4).translate(0, 1.325, 0)), STONE, m);
+      } else {
+        block(0.7, -0.06, 0.32, PAINTED_STONE);
+        block(0.6, 0.3, 1.3, PAINTED_STONE);
+        block(0.74, 1.3, 1.36, PAINTED_STONE);
+        block(0.66, 1.36, LAMP_PEDESTAL_H, PAINTED_STONE);
+        solid.add(lathe(LAMP_COLUMN, 8).translate(0, LAMP_PEDESTAL_H, 0), WHITE_IRON, m);
+        globes.push([p.x, p.y + LAMP_PEDESTAL_H + LAMP_GLOBE[0], p.z, LAMP_GLOBE[1]]);
+        pools.push([p.x - s.x * 2.8, p.z - s.z * 2.8, 4.2]);
+      }
+    }
+    // the ironwork strip, section by section between the posts: u counts metres of whole 0.8 m modules (stretched to
+    // fill the section), v metres above the plinth
+    for (let k = 0; k + 2 < posts.length; k += 2) {
+      const sA = posts[k] / 100 + POST_W[posts[k + 1]] / 2, sB = posts[k + 2] / 100 - POST_W[posts[k + 3]] / 2;
+      if (sB - sA < 0.3) continue;
+      const stretch = (sB - sA) / (Math.max(1, Math.round((sB - sA) / MODULE)) * MODULE);
+      const ss = [sA, ...cum.filter((c) => c > sA + 0.02 && c < sB - 0.02), sB];
+      const base = strip.pos.length / 3;
+      for (const sv of ss) {
+        const { p, s } = at(sv);
+        for (const v of [0, RAIL_H]) {
+          strip.pos.push(p.x, p.y + PLINTH_H + v, p.z);
+          strip.nrm.push(s.x, 0, s.z);
+          strip.uv.push((sv - sA) / stretch, v);
+        }
+      }
+      for (let q = 0; q < ss.length - 1; q++) {
+        const i = base + 2 * q;
+        strip.idx.push(i, i + 2, i + 3, i, i + 3, i + 1);
+      }
+    }
+  });
+  // the monuments, a little inland of the line
+  for (let k = 0; k < monuments.length; k += 5) {
+    const kind = monuments[k], yaw = (monuments[k + 4] * Math.PI) / 180, sx = Math.sin(yaw), sz = Math.cos(yaw);
+    const x = monuments[k + 1] / 100 - sx * MONUMENT_INSET[kind], y = monuments[k + 2] / 100;
+    const z = monuments[k + 3] / 100 - sz * MONUMENT_INSET[kind];
+    const m = M4().makeTranslation(x, y, z).multiply(M4().makeRotationY(yaw));
+    if (kind === 0) {
+      candelabrum(solid, m, globes);
+      pools.push([x - sx * 1.5, z - sz * 1.5, 8]);
+      continue;
+    }
+    obelisk(solid, m, globes, kind === 2);
+    pools.push([x - sx * 2.5, z - sz * 2.5, 7]);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(strip.pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(strip.nrm, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(strip.uv, 2));
-  g.setIndex(strip.idx || []);
+  g.setIndex(strip.idx);
   g.computeBoundingBox();
   g.computeBoundingSphere();
-  return { solid: solid.build(), ironwork: g };
+  return { solid: solid.build(), ironwork: g, globes, pools };
 }
 
 // --- materials ----------------------------------------------------------------------------------------------------------
@@ -245,27 +417,67 @@ function createPaintMaterial() {
   return mat;
 }
 
-// The barandilla's ironwork between the posts: per 15 cm module a bar and three stacked rings on a stem, between a top
-// and a bottom rail; coverage anti-aliased by the strip's screen footprint, so far away it fades to a fine lace
-function createIronworkMaterial() {
-  const mat = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, metalness: 0.0, roughness: 0.42 });
-  const coverage = Fn(() => {
-    const p = uv();
-    const lx = fract(p.x.div(MODULE)).sub(0.5).mul(MODULE);
-    const bar = float(MODULE / 2).sub(abs(lx)).sub(0.007);
-    const rails = min(abs(p.y.sub(RAIL_H - 0.05)).sub(0.03), abs(p.y.sub(0.08)).sub(0.025));
-    // a big ring held between the bars, a small one above and below, threaded on a stem from rail to rail
-    const ringR = (cy) => length(vec2(lx, p.y.sub(cy)));
-    const ring = (cy, r, t) => abs(ringR(cy).sub(r)).sub(t);
-    const rings = min(ring(0.5, 0.066, 0.008), min(ring(0.78, 0.034, 0.007), ring(0.22, 0.034, 0.007)));
-    const hollow = ringR(0.5).lessThan(0.058).or(ringR(0.78).lessThan(0.027)).or(ringR(0.22).lessThan(0.027));
-    const stem = select(hollow, float(1.0), abs(lx).sub(0.005));
-    const d = min(min(bar, rails), min(rings, stem));
-    const w = max(fwidth(p.x), fwidth(p.y)).mul(0.75).add(0.0005);
-    const inside = p.y.greaterThan(0.05).and(p.y.lessThan(RAIL_H - 0.015));
-    return select(inside, float(1.0).sub(smoothstep(w.negate(), w, d)), float(0.0));
+// Signed distances (m, negative inside) for the ironwork's pattern, on TSL nodes
+const sdBox = (x, y, hx, hy) => max(abs(x).sub(hx), abs(y).sub(hy));
+const sdRing = (x, y, r, t) => abs(length(vec2(x, y)).sub(r)).sub(t);
+// a leaf: an ellipse of half-axes a (along `angle`, radians from +x) and b about (cx, cy) (near its edge, as a distance)
+const sdLeaf = (x, y, cx, cy, a, b, angle) => {
+  const c = Math.cos(angle), s = Math.sin(angle), dx = x.sub(cx), dy = y.sub(cy);
+  return length(vec2(dx.mul(c).add(dy.mul(s)).div(a), dy.mul(c).sub(dx.mul(s)).div(b))).sub(1).mul(b);
+};
+
+// The barandilla's cast iron between the posts, after photographs, on the strip (u: metres along a section, whole 0.8
+// m modules; v: metres above the plinth). Per module, mirrored about its middle: a pair of square balusters (one at
+// each end, 0.1 m in) on feet, under capitals, with chamfered bosses where the upper & lower rails cross them and a
+// collar halfway; a big ring between the pairs, tied to them, with a smaller ring inside; a stem from the inner ring
+// up through the upper rail to a five-petalled flower between two laurel sprays; leaves and a knot inside the ring's
+// top, a bud on the inner ring's foot, a leaf boss where the ring meets the lower rail; the handrail's band on top.
+// Coverage is anti-aliased by the strip's screen footprint and thinned like a sub-pixel line where the bars are finer
+// than a pixel, so far away the lace keeps its mean density instead of sparkling or thickening (alpha to coverage).
+// Bars shade a little darker towards their edges, so close up they read as rounded casting.
+function ironworkDistance() {
+  return Fn(() => {
+    const p = uv(), y = p.y;
+    const lx = fract(p.x.div(MODULE)).mul(MODULE);
+    const ax = abs(lx.sub(MODULE / 2)); // from the ring's axis, mirrored
+    const bal = abs(ax.sub(MODULE / 2 - 0.103)); // from the nearer baluster's axis
+    let d = abs(y.sub(RAIL_H - HANDRAIL_R)).sub(HANDRAIL_R); // the handrail
+    d = min(d, min(abs(y.sub(0.752)).sub(0.016), abs(y.sub(0.158)).sub(0.016))); // the rails
+    d = min(d, max(bal.sub(0.016), y.sub(0.95))); // balusters
+    d = min(d, min(sdBox(bal, y.sub(0.025), 0.03, 0.025), sdBox(bal, y.sub(0.915), 0.026, 0.03))); // feet, capitals
+    const boss = (cy) => {
+      const q = abs(y.sub(cy));
+      return max(max(bal, q).sub(0.036), bal.add(q).mul(Math.SQRT1_2).sub(0.041));
+    };
+    d = min(d, min(min(boss(0.752), boss(0.158)), sdBox(bal, y.sub(0.449), 0.027, 0.019)));
+    // the rings, tied to the balusters at mid-height, and the stem
+    d = min(d, min(sdRing(ax, y.sub(0.449), 0.249, 0.019), sdRing(ax, y.sub(0.44), 0.15, 0.014)));
+    d = min(d, min(sdBox(ax.sub(0.279), y.sub(0.449), 0.016, 0.02), sdBox(ax, y.sub(0.73), 0.008, 0.14)));
+    // the flower over the upper rail and its two sprays: a drooping twig, leaves alternately above and below
+    const fx = lx.sub(MODULE / 2), fy = y.sub(0.865);
+    d = min(d, length(vec2(fx, fy)).sub(cos(atan(fy, fx).mul(5)).mul(0.009).add(0.03)));
+    const twig = (t) => 0.855 - 0.9 * (t - 0.03) * (t - 0.03);
+    d = min(d, max(abs(y.sub(float(0.855).sub(ax.sub(0.03).mul(ax.sub(0.03)).mul(0.9)))).sub(0.005), abs(ax.sub(0.155)).sub(0.12)));
+    for (const [t, up] of [[0.075, 1], [0.13, -1], [0.185, 1], [0.24, -1], [0.272, 1]]) {
+      d = min(d, sdLeaf(ax, y, t + 0.008, twig(t) + up * 0.021, 0.03, 0.011, up * 0.55));
+    }
+    // inside the ring's top: leaves either side of a knot on the stem; on the inner ring's foot a bud between leaves
+    for (const [cx, cy, a] of [[0.05, 0.64, -0.35], [0.1, 0.625, -0.6], [0.145, 0.6, -0.9]]) d = min(d, sdLeaf(ax, y, cx, cy, 0.035, 0.012, a));
+    d = min(d, min(length(vec2(ax, y.sub(0.665))).sub(0.02), length(vec2(ax.mul(0.8), y.sub(0.262))).sub(0.03)));
+    d = min(d, min(sdLeaf(ax, y, 0.045, 0.245, 0.04, 0.014, -0.25), sdLeaf(ax, y, 0, 0.178, 0.05, 0.024, 0)));
+    return d;
   })();
-  mat.colorNode = vec4(vec3(...WHITE_IRON.slice(0, 3)), coverage);
+}
+
+function createIronworkMaterial() {
+  const mat = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, metalness: 0.0, roughness: 0.45 });
+  const d = ironworkDistance();
+  const p = uv();
+  const w = max(fwidth(p.x), fwidth(p.y)).mul(0.7).add(0.0004);
+  // a bar ~3.6 cm wide blurred over 2w covers about 3.6 / (1.8 + w) of what the smoothstep gives it
+  const coverage = float(1.0).sub(smoothstep(w.negate(), w, d)).mul(min(float(1.0), float(0.036).div(w.add(0.018))));
+  const relief = mix(mix(0.78, 1.0, smoothstep(0.0, 0.012, d.negate())), 0.94, smoothstep(0.004, 0.015, w));
+  mat.colorNode = vec4(vec3(...WHITE_IRON.slice(0, 3)).mul(relief), coverage);
   mat.maskShadowNode = coverage.greaterThan(0.4);
   return mat;
 }
@@ -349,7 +561,7 @@ class DistanceCulled {
   }
 }
 // Cull distances (m): about where each prop shrinks to a few pixels. The lamp glass is never culled, so the city's
-// lamps still glow from afar at night; La Concha's 128 lamp posts are always drawn.
+// lamps still glow from afar at night; La Concha's barandilla, its lamp posts & monuments are always drawn.
 const CULL = { streetPosts: 900, wallLanterns: 450, benches: 350, pools: 2000 };
 const RECULL = 8; // m the camera moves before the props are culled again
 
@@ -376,11 +588,13 @@ export async function buildStreetscape(GEO, terrain) {
     pools.push(...m.elements);
   };
 
-  // La Concha's railing & lamp posts
+  // La Concha's barandilla with its lamp posts, candelabra & obelisks (one merged mesh), its ironwork strip and all
+  // their globes
+  const promenade = [];
   if (data.railings.length) {
-    const { solid, ironwork } = railingGeometries(data.railings);
+    const { solid, ironwork, globes, pools: lit } = barandillaGeometries(data.railings, data.railingPosts || [], data.monuments || []);
     const solidMesh = new THREE.Mesh(solid, paint);
-    solidMesh.name = 'Barandilla_coping_posts';
+    solidMesh.name = 'Barandilla';
     const ironMesh = new THREE.Mesh(ironwork, createIronworkMaterial());
     ironMesh.name = 'Barandilla_ironwork';
     for (const mesh of [solidMesh, ironMesh]) {
@@ -388,17 +602,10 @@ export async function buildStreetscape(GEO, terrain) {
       mesh.matrixAutoUpdate = false;
       group.add(mesh);
     }
+    for (const [x, y, z, r] of globes) place(promenade, x, y, z, 0, r);
+    for (const [x, z, r] of lit) pool(x, z, r);
   }
-  const promenade = [];
-  const L = data.promenadeLamps;
-  for (let k = 0; k < L.length; k += 3) {
-    const x = L[k] / 100, y = L[k + 1] / 100, z = L[k + 2] / 100;
-    place(promenade, x, y, z, 0);
-    pool(x, z, 4.5);
-  }
-  const promenadePosts = instanced(promenadePostGeometry(), paint, promenade, 'Kontxa_lamp_posts');
-  const globe = new THREE.SphereGeometry(0.22, 14, 10).translate(0, PROMENADE_GLOBE_Y, 0);
-  const promenadeGlobes = instanced(globe, glass, promenade, 'Kontxa_lamp_globes', false);
+  const promenadeGlobes = instanced(new THREE.SphereGeometry(1, 12, 8), glass, promenade, 'Kontxa_lamp_globes', false);
 
   // Street lamps & benches
   const lamps = [];
@@ -428,7 +635,7 @@ export async function buildStreetscape(GEO, terrain) {
   const poolMesh = instanced(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), createPoolMaterial(), pools, 'Lamp_light_pools', false);
   if (poolMesh) poolMesh.renderOrder = 1;
 
-  for (const mesh of [promenadePosts, promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, poolMesh]) if (mesh) group.add(mesh);
+  for (const mesh of [promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, poolMesh]) if (mesh) group.add(mesh);
   if (!group.children.length) return null;
 
   const culled = [[streetPosts, CULL.streetPosts], [wallFrames, CULL.wallLanterns], [benchMesh, CULL.benches], [poolMesh, CULL.pools]]
