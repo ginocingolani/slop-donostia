@@ -38,4 +38,12 @@ $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js
 $NODE "$HERE/bake-alderdi.mjs"       # js/donostia/data-alderdi.js (Alderdi Eder's gardens)
+# the port's boats: digitised again from the orthophoto when the raw cache has it, else baked from the committed JSON
+if [ -s "$HERE/raw/ortho/ortho2025-port_x-350_z-300.jpg" ]; then
+  $NODE "$HERE/digitise-boats.mjs"   # tools/donostia/data/port_boats.json
+else
+  echo "digitise-boats.mjs skipped: no orthophoto (tools/donostia/raw/ortho; run with --fetch to get it). Keeping the" \
+    "committed tools/donostia/data/port_boats.json." >&2
+fi
+$NODE "$HERE/bake-boats.mjs"         # js/donostia/data-boats.js (the boats moored in the port)
 echo "Donostia data rebuilt"

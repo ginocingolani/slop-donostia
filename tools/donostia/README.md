@@ -28,10 +28,12 @@ The steps it runs, in order:
 | `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
 | `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
+| `digitise-boats.mjs` (with `jpeg.mjs`; only with `raw/ortho`) | the 2025 orthophoto over the port, OSM marinas & piers, the municipal quays & pontoons, the terrain | `tools/donostia/data/port_boats.json` (committed) |
+| `bake-boats.mjs` | `port_boats.json`, the municipal quays & pontoons, OSM piers | `js/donostia/data-boats.js` |
 
 `build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
-`bake-shore.mjs --preview <dir>`, `bake-marina.mjs --preview <dir>` and `bake-alderdi.mjs --preview <dir>` also write
-debug images for checking a rebuild.
+`bake-shore.mjs --preview <dir>`, `bake-marina.mjs --preview <dir>`, `bake-alderdi.mjs --preview <dir>`,
+`digitise-boats.mjs --preview <dir>` and `bake-boats.mjs --preview <dir>` also write debug images for checking a rebuild.
 
 The OpenStreetMap snapshot is committed and only fetched again when it is missing, when a query changed since it was
 taken (`osm_queries.sha256` records the hash of each query as sent) or with `--refresh-osm`. The queries
@@ -52,7 +54,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | 1 m terrain (MDT LiDAR 2017, tiles 064_4..6_1..3 and 040_6_8) | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 1 m isobaths | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses and the port: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
@@ -79,6 +81,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
+| `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 
 The data was modified: reprojected into the local frame, simplified, clipped, rasterised, resampled and combined as
 described above. Every generated file names its sources and licences: the extracted layers in their `source` field
@@ -131,6 +134,19 @@ map.
   past the mouth: the harbour's green water, no surf or swash, its colour never the turquoise of a sandy shallow) and
   sheltered (rising to 1 within 70 m: the waves down to 28 % of the open sea's, so reflections sharpen). The open sea is
   unchanged.
+- The port's boats (`digitise-boats.mjs`): the 389 boats moored in the inner basin, the north basin and the old port on
+  the 2025 orthophoto (`raw/ortho/ortho2025-port_x-350_z-300.jpg`, decoded by `jpeg.mjs`, a stdlib baseline JPEG
+  decoder, so the pixels are the same on every machine). The bright, neutral or painted pixels on the basins' water,
+  off everything built, make blobs; a row of boats moored side by side is one blob, cut across its axis at the seams
+  between the hulls by dynamic programming (each piece must be as wide as a hull of its length), the axis chosen among
+  the seams' sharpest, the blob's own, the edge it is moored to and its neighbours'. Each piece's tightest box gives the
+  centre, heading, length & beam, its narrower end the bow, its outline (a long teardrop, widest well aft: a sailboat)
+  and colours the family. What the automatic pass gets wrong (the passenger boats & the catamaran, cut across; the
+  old port's few boats; pale quay edges taken for hulls; a dozen others) is dropped, corrected or added by hand in the
+  script, checked tile by tile against the orthophoto. `bake-boats.mjs` takes 15 cm off every length & beam (the photo's
+  blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
+  is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
+  colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
