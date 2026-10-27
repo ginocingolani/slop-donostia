@@ -19,6 +19,7 @@ import { mosaic, PALETTE, BLUE, WHITE, BANNER, medallionUV } from './tifo-design
 // - The banner: a cloth BANNER.width wide (along the rows, at every row) spread over the lower tier at arm's height,
 //   sagging at its edges, rippling as the hands under it push. Its frame and the portrait are two textures
 //   (data/donostia/tifo-banner.png, tifo-portrait.png: tools/donostia/bake-tifo.mjs) laid together by its shader.
+//   The portrait is from a photo by Goiena.eus via Wikimedia Commons (CC BY-SA 4.0; see tools/donostia/README.md).
 // - The flags: on the lower tier either side of the banner and in its top rows, about one fan in three: blue, white
 //   round the banner, a few ikurriñas and striped ones. Each is waved side to side and its cloth ripples (vertex
 //   shader).

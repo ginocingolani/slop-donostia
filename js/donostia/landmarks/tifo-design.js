@@ -7,7 +7,7 @@ import { textWidth, textCoverage } from './glyphs.js';
 //
 // - The card mosaic over the upper tier, as seen from the pitch: x from 0 (left, the east corner) to 1 (right, the
 //   west corner), y from 0 (the tier's front row) to 1 (its back row). A field of blue and white bands, the club's
-//   founding year in white on a blue panel, and the ikurriña on the right, each framed by a row of white cards.
+//   founding year in white on a blue panel, and the ikurriña on the right, each between white bands.
 // - The banner over the lower tier: Aitor Zabaleta's portrait in a round medallion on a dark shield, his name above it,
 //   a gold laurel round it. Its frame is baked into data/donostia/tifo-banner.png and his portrait, the one texture
 //   to replace (see tools/donostia/README.md), into data/donostia/tifo-portrait.png.
@@ -16,12 +16,13 @@ import { textWidth, textCoverage } from './glyphs.js';
 export const PALETTE = [[0.0, 0.11, 0.48], [0.82, 0.83, 0.84], [0.62, 0.02, 0.018], [0.0, 0.3, 0.07]];
 export const BLUE = 0, WHITE = 1, RED = 2, GREEN = 3;
 
-export const BANDS = 18; // across the tier
-export const YEAR = { text: '1909', x0: 0.13, x1: 0.59, y0: 0.1, y1: 0.92, height: 0.66 };
-export const IKURRINA = { x0: 0.63, x1: 0.93, y0: 0.08, y1: 0.94, cross: 0.07, saltire: 0.075 };
-const BORDER_X = 0.011, BORDER_Y = 0.03; // the white frame round the year & the ikurriña
+// Across the tier: 18 bands (blue first), the year's panel over bands 4-10 and the ikurriña over 12-16, each between
+// two white bands, both the tier's full height
+export const BANDS = 18;
+export const YEAR = { text: '1909', x0: 4 / 18, x1: 11 / 18, y0: 0, y1: 1, height: 0.62 };
+export const IKURRINA = { x0: 12 / 18, x1: 17 / 18, y0: 0, y1: 1, cross: 0.07, saltire: 0.075 };
 
-const inBox = (x, y, b, mx = 0, my = 0) => x >= b.x0 - mx && x <= b.x1 + mx && y >= b.y0 - my && y <= b.y1 + my;
+const inBox = (x, y, b) => x >= b.x0 && x < b.x1 && y >= b.y0 && y <= b.y1;
 
 // The ikurriña at (fx, fy) in [0, 1]² over a flag `aspect` times as wide as tall: a red field, the green saltire, the
 // white cross over it (arm widths as shares of the height)
@@ -46,7 +47,6 @@ export function mosaic(aspect) {
   return (x, y) => {
     if (inBox(x, y, YEAR)) return inside((x - tx0) * aspect / yh, (y - ty0) / yh) ? WHITE : BLUE;
     if (inBox(x, y, IKURRINA)) return ikurrinaAt((x - IKURRINA.x0) / (IKURRINA.x1 - IKURRINA.x0), (y - IKURRINA.y0) / (IKURRINA.y1 - IKURRINA.y0), flagAspect);
-    if (inBox(x, y, YEAR, BORDER_X, BORDER_Y) || inBox(x, y, IKURRINA, BORDER_X, BORDER_Y)) return WHITE;
     return Math.floor(x * BANDS) % 2 ? WHITE : BLUE;
   };
 }

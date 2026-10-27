@@ -30,10 +30,12 @@ The steps it runs, in order:
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
 | `digitise-boats.mjs` (with `jpeg.mjs`; only with `raw/ortho`) | the 2025 orthophoto over the port, OSM marinas & piers, the municipal quays & pontoons, the terrain | `tools/donostia/data/port_boats.json` (committed) |
 | `bake-boats.mjs` | `port_boats.json`, the municipal quays & pontoons, OSM piers | `js/donostia/data-boats.js` |
+| `bake-tifo.mjs` (with `jpeg.mjs`) | the tifo's design (`js/donostia/landmarks/tifo-design.js`); the portrait's photo (`raw/refs/tifo/`, kept as committed without it) | `data/donostia/tifo-banner.png`, `tifo-portrait.png` |
 
 `build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
 `bake-shore.mjs --preview <dir>`, `bake-marina.mjs --preview <dir>`, `bake-alderdi.mjs --preview <dir>`,
-`digitise-boats.mjs --preview <dir>` and `bake-boats.mjs --preview <dir>` also write debug images for checking a rebuild.
+`digitise-boats.mjs --preview <dir>`, `bake-boats.mjs --preview <dir>` and `bake-tifo.mjs --preview <dir>` also write debug images for checking a
+rebuild.
 
 The OpenStreetMap snapshot is committed and only fetched again when it is missing, when a query changed since it was
 taken (`osm_queries.sha256` records the hash of each query as sent) or with `--refresh-osm`. The queries
@@ -57,6 +59,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
+| Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Licences
 
@@ -85,6 +88,8 @@ mixes them carries each licence for the part that comes from its source.
 | `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
 | `js/donostia/landmarks/konstituzio-plaza.js` (the square's plan: the arcades' outline, piers and passages, the library's block) | municipal map | CC BY-SA 3.0 |
+| `data/donostia/tifo-portrait.png` | Goiena.eus's photo via Wikimedia Commons (cropped to his portrait's disc, turned to greys, resampled, contrasted) | CC BY-SA 4.0, credit «Goiena.eus, via Wikimedia Commons» |
+| `data/donostia/tifo-banner.png` | nothing outside: drawn by `bake-tifo.mjs` from the design | as the code (MIT) |
 
 The data was modified: reprojected into the local frame, simplified, clipped, rasterised, resampled and combined as
 described above. Every generated file names its sources and licences: the extracted layers in their `source` field
@@ -209,6 +214,19 @@ map.
   Under a land bridge's deck the municipal map still draws the road on top, in plan. So wherever the ground lies 2.5 m
   or more below the deck, `bake-ground.mjs` (run after `bake-bridges.mjs`) paints the steep cells as the embankment's
   grass and turns a bike lane on the flat cells into carriageway.
+- The tifo on Anoeta's south stand (`js/donostia/landmarks/anoeta-tifo.js`, design in `tifo-design.js`), the Aitor
+  Zabaleta harmaila / Grada Aitor Zabaleta, named in 2018 after the Real Sociedad fan killed in Madrid in 1998: the
+  one its fans raised at La Cartuja for the 2026 Copa del Rey final, laid on Anoeta's stand. A card mosaic over the
+  upper tier (blue & white bands, 1909, the ikurriña), the banner with his portrait over the lower tier, flags round
+  it. The portrait (`data/donostia/tifo-portrait.png`) is the one texture to replace, and `bake-tifo.mjs` makes it from
+  any photo: `node tools/donostia/bake-tifo.mjs --photo <file> --circle cx,cy,r --credit "…" --licence "…"` (the disc
+  round his face, in the photo's pixels; `--tones 3|4` posterises it; `--placeholder` leaves a dark disc). Its source
+  now is the only freely licensed image of him found (Wikimedia Commons, Flickr's CC search, the Basque press under CC
+  BY-SA, October 2026): Goiena.eus's photo of the fan zone's screen, licensed CC BY-SA 4.0 by Goiena. What the screen
+  shows, a fan-made medallion from an older photo of him, is a work of its own whose authors and licence the photo
+  does not give; a photo of the banner or a mural at Anoeta, taken by whoever replaces it, or one licensed by its
+  authors or his family, would give the portrait clean rights of its own. Nothing of the press photograph of the
+  Cartuja tifo the design follows is used.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often

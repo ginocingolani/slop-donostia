@@ -380,8 +380,8 @@ function writePreviews(banner, portrait) {
     for (let ch = 0; ch < 3; ch++) rgb[k * 3 + ch] = Math.round(c[ch] * a + 70 * (1 - a));
   }
   fs.writeFileSync(path.join(PREVIEW, 'tifo-banner-preview.png'), encodePNG(rgb, W, H, 3));
-  // the mosaic at one pixel per card, as from the pitch (the tier ~4.5 times as wide as tall)
-  const MW = 280, MH = 40, design = mosaic(4.5);
+  // the mosaic at one pixel per card, as from the pitch (the tier ~5.75 times as wide as tall)
+  const MW = 280, MH = 40, design = mosaic(5.75);
   const mos = new Uint8Array(MW * MH * 3);
   const toS = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
   for (let j = 0; j < MH; j++) for (let i = 0; i < MW; i++) {

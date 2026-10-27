@@ -8,7 +8,7 @@ A fork of [Slop New York](https://github.com/mrdoob/slop-newyork) by Mr.doob, wh
 actors and audio it builds on. The New York simulation is still here as [`newyork.html`](newyork.html).
 
 Right now: LiDAR terrain, sea and surf, the 1:500 buildings with facades and roofs, twenty modelled landmarks (the
-Kursaal, the Buen Pastor, the Bretxa, Igeldo's funicular and Montaña Suiza, Anoeta...), the Urumea bridges, the sea
+Kursaal, the Buen Pastor, the Bretxa, Igeldo's funicular and Montaña Suiza, Anoeta and the tifo on its south stand...), the Urumea bridges, the sea
 and river walls with the rocks of the shore, the port's pontoons, gangways and quays, trees and street furniture, explored with a free god-mode camera. Next: the travel modes (walk, drive, cycle, helicopter and a
 trainera).
 
@@ -30,6 +30,9 @@ Geographic data: Eusko Jaurlaritza / Gobierno Vasco – geoEuskadi (CC BY 4.0); 
 4.0); Donostiako Udala / Ayuntamiento de San Sebastián (CC BY-SA 3.0); © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
 (ODbL). The data was reprojected, simplified, resampled and combined for Slop Donostia. The New York data keeps its
 original sources (NYC Open Data, OpenStreetMap).
+
+Aitor Zabaleta's portrait on the tifo at Anoeta (`data/donostia/tifo-portrait.png`) comes from a photo by Goiena.eus via
+Wikimedia Commons and is under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), like its source. The medallion that photo shows was made by Real Sociedad supporters from an older photograph of him; its makers are not named.
 
 The HUD's display font, [`fonts/ateburu`](fonts/ateburu/README.md), is an original Basque display face drawn for Slop
 Donostia from the carved inscriptions, under the SIL Open Font License 1.1 (no Reserved Font Name), not MIT. Its
