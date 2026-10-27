@@ -956,7 +956,7 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
       // (in front of a wall the access stands on the sand like a block of masonry: the terrain under it goes down to the
       // sand, so the ground steps only at the wall's line behind it; a landing that is the promenade's corner stays)
       const floor = spec.wall && Number.isFinite(sand) && !part.prom ? sand : null;
-      carve.push({ ring: part.p, y0: part.y[0], y1: part.y[1], u: part.u, s0: part.s[0], s1: part.s[1], back, built: true, e: part.e, floor });
+      carve.push({ ring: part.p, y0: part.y[0], y1: part.y[1], u: part.u, s0: part.s[0], s1: part.s[1], back, built: true, e: part.e, floor, prom: !!part.prom });
     }
     if (spec.wall && Number.isFinite(sand)) {
       for (const part of accParts) {
@@ -977,7 +977,7 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
   // between two flights): the same kind of wall, an end within JOIN, and the join turning less than 50° from either (else
   // the join's low side could face the promenade)
   const JOIN = 6, JOIN_SAME = 7; // (two lines of one access: across the head of a double flight)
-  const FILLET = { r: 1.0, min: (30 * Math.PI) / 180, step: (20 * Math.PI) / 180 }; // m, rad
+  const FILLET = { r: 1.0, wide: [4, 3, 2], min: (30 * Math.PI) / 180, step: (20 * Math.PI) / 180 }; // m, rad
   const EASE = 3.5;
   const ownVertex = new Set(); // the access lines' vertices, never eased away
   // first the shore walls lose what runs over the parts (the LiDAR's wall along a flight's or ramp's outer side, which
@@ -1117,12 +1117,28 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
       const turn = Math.acos(Math.max(-1, Math.min(1, d1[0] * d2[0] + d1[1] * d2[1])));
       // (not where a hidden run starts or ends: those follow the parts' own outlines, which their masonry faces)
       if (turn < FILLET.min || hs[k - 1] || hs[k]) { push(x, z, deck, foot, hs[k]); continue; }
-      const t = Math.min(FILLET.r * Math.tan(turn / 2), 0.45 * l1, 0.45 * l2);
-      const at = (u) => {
-        // a quadratic Bézier from t before the corner to t after it, the corner its control point
+      // a quadratic Bézier from t before the corner to t after it, the corner its control point
+      const curve = (t) => (u) => {
         const ax = x - d1[0] * t, az = z - d1[1] * t, bx = x + d2[0] * t, bz = z + d2[1] * t;
         return [(1 - u) * (1 - u) * ax + 2 * u * (1 - u) * x + u * u * bx, (1 - u) * (1 - u) * az + 2 * u * (1 - u) * z + u * u * bz];
       };
+      const tOf = (r) => Math.min(r * Math.tan(turn / 2), 0.45 * l1, 0.45 * l2);
+      let t = tOf(FILLET.r);
+      // a corner turning towards the low side (the inner corner of a notch in the wall) rounded wider where that keeps
+      // clear of the parts: the chord between two samples snapped either side of it would stand in front of the face
+      if (d2[0] * -d1[1] + d2[1] * d1[0] > 0) {
+        for (const r of FILLET.wide) {
+          const tw = tOf(r), at = curve(tw);
+          if (tw <= t) break;
+          let clear = true;
+          for (let i = 0; i <= 8 && clear; i++) {
+            const [cx, cz] = at(i / 8);
+            clear = !carve.some((c) => c.built && !c.prom && ringDist(cx, cz, c.ring) < 0.25);
+          }
+          if (clear) { t = tw; break; }
+        }
+      }
+      const at = curve(t);
       const lerp = (o, f) => q[4 * k + o] + (q[4 * (k + (f > 0 ? 1 : -1)) + o] - q[4 * k + o]) * Math.abs(f);
       const m = Math.max(2, Math.ceil(turn / FILLET.step));
       for (let i = 0; i <= m; i++) {
