@@ -76,7 +76,7 @@ export function nearestWall(walls, x, z, maxDist, index = null) {
     const n = p.length / 4;
     bestD = d;
     best = {
-      wall: wi, x: px, z: pz, nx: -dz, nz: dx, d: (x - px) * -dz + (z - pz) * dx,
+      wall: wi, seg: vi, x: px, z: pz, nx: -dz, nz: dx, d: (x - px) * -dz + (z - pz) * dx,
       deck: p[k + 2] + (p[k + 6] - p[k + 2]) * tc, foot: p[k + 3] + (p[k + 7] - p[k + 3]) * tc, t: tc,
       end: (t <= 0 && vi === 0) || (t >= 1 && vi === n - 2)
     };
@@ -144,14 +144,45 @@ export function wallSnaps(walls, grid, sides = null) {
       if (o === -side && near.get(kk).wall === q.wall) { crosses = true; break; }
     }
     if (!crosses) continue;
-    snaps.set(k, { side, wall: q.wall, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot });
+    snaps.set(k, { side, wall: q.wall, seg: q.seg, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot, back: 0 });
+  }
+  // Where the line bends, the terrain's face between two samples on it (an edge of a triangle) is a chord of the bend,
+  // which stands in front of the masonry where the line turns away from its low side: both samples go back by as much
+  // (at most SAG_MAX, which the coping covers)
+  for (const [k, s] of snaps) {
+    const i = k % w, j = (k - i) / w;
+    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]]) {
+      const ii = i + a, jj = j + b;
+      if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
+      const o = snaps.get(jj * w + ii);
+      if (!o || o.wall !== s.wall || o.seg === s.seg) continue;
+      const sag = chordSag(walls[s.wall].p, s, o);
+      if (sag > s.back) s.back = Math.min(SAG_MAX, sag);
+    }
   }
   return snaps;
 }
 
+const SAG_MAX = 0.45; // m
+
+// How far the chord between two points on a wall line (on segments s.seg & o.seg) stands in front of the vertices
+// between them (on the low side)
+function chordSag(p, s, o) {
+  const [u, v] = s.seg < o.seg ? [s, o] : [o, s];
+  const dx = v.x - u.x, dz = v.z - u.z, l = Math.hypot(dx, dz);
+  if (l < 1e-6) return 0;
+  let sag = 0;
+  for (let k = u.seg + 1; k <= v.seg; k++) {
+    // (the vertex's side of the chord: negative, the chord passes in front of it)
+    const d = ((p[4 * k] - u.x) * -dz + (p[4 * k + 1] - u.z) * dx) / l;
+    if (-d > sag) sag = -d;
+  }
+  return sag;
+}
+
 // Where a snapped sample of height y goes: onto the crest line (high side) or down the battered face, which leans back
-// `batter` m per m, to its own level (low side); RECESS behind the masonry either way
+// `batter` m per m, to its own level (low side); RECESS behind the masonry either way (and further back at a bend)
 export function snapPosition(s, y, batter) {
-  const out = (s.side > 0 ? batter * Math.max(0, s.deck - y) : 0) - RECESS;
+  const out = (s.side > 0 ? batter * Math.max(0, s.deck - y) : 0) - RECESS - (s.back || 0);
   return [s.x + s.nx * out, s.z + s.nz * out];
 }

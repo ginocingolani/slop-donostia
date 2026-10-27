@@ -754,13 +754,6 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
         else if (!Number.isFinite(ground) || y - ground > 0.6) flag = EDGE.open;
         else flag = EDGE.low;
         flags += flag;
-        // there the wall's line runs on round the access along its open sides (low side out) as a hidden wall at the
-        // sand, both sides of it: the terrain stands at the sand under the part (its masonry goes down into it) and
-        // beside it, and a wall line ending at a corner of the access (a landing that is a corner of the promenade) ends
-        // nowhere the terrain would have to slope across
-        if (sandy && flag !== EDGE.cheek && flag !== EDGE.closed && y - sand > 0.05) {
-          wallEdges.push({ a: [bx, bz], b: [ax, az], deck: [sand, sand], foot: [sand, sand], hidden: true });
-        }
       }
       part.e = flags;
     }
@@ -909,11 +902,14 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
       part.base = Math.min(part.y[1], lo, spec.wall && Number.isFinite(sand) ? sand : Infinity) - BASE;
       // (in front of a wall, nothing behind the part's side against it: the promenade stays)
       const back = spec.wall ? landDir : null;
-      carve.push({ ring: part.p, y0: part.y[0], y1: part.y[1], u: part.u, s0: part.s[0], s1: part.s[1], back, built: true, e: part.e });
+      // (in front of a wall the access stands on the sand like a block of masonry: the terrain under it goes down to the
+      // sand, so the ground steps only at the wall's line behind it; a landing that is the promenade's corner stays)
+      const floor = spec.wall && Number.isFinite(sand) && !part.prom ? sand : null;
+      carve.push({ ring: part.p, y0: part.y[0], y1: part.y[1], u: part.u, s0: part.s[0], s1: part.s[1], back, built: true, e: part.e, floor });
     }
     if (spec.wall && Number.isFinite(sand)) {
       for (const part of accParts) {
-        if (!part.overSand) continue;
+        if (part.prom) continue;
         flats.push({ ring: part.p, sand, top: spec.top, back: landDir });
       }
     }
@@ -1157,7 +1153,7 @@ export function carveTerrain(grid, { carve, flats, onBeach, walls }, classes = n
         const e = nearestEdge(c.ring, x, z);
         if (c.e && !'123'.includes(c.e[e])) return;
       }
-      set(k, surface(x, z) - (d < 0 ? 0.2 : 0));
+      set(k, d < 0 ? Math.min(surface(x, z) - 0.2, c.floor ?? Infinity) : surface(x, z));
     });
   }
   // the heaps round the accesses in front of a wall: on the municipal map's beach (or seaward of the parts) within FLAT
