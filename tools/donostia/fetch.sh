@@ -62,6 +62,11 @@ for tile in port:-350:-300 concha-ne:0:150 concha-mid:-500:400 concha-w:-1000:40
   get "$WMS&BBOX=$bbox" "$RAW/ortho/ortho2025-${name}_x${x0}_z${z0}.jpg"
 done
 
+# Aitor Zabaleta's portrait for the banner of the tifo on Anoeta's south stand (bake-tifo.mjs): the Real Sociedad fan
+# zone's screen at the 2026 Copa del Rey final (Goiena.eus, CC BY-SA 4.0, via Wikimedia Commons)
+mkdir -p "$RAW/refs/tifo"
+get https://upload.wikimedia.org/wikipedia/commons/4/44/Reala_Kopa_2026_Zabaleta.jpg "$RAW/refs/tifo/Reala_Kopa_2026_Zabaleta.jpg"
+
 # OpenStreetMap (ODbL): names, landmarks, bridges and street furniture. Committed, like tools/data/osm_*.json upstream.
 # The queries' {{bbox}} (Overpass Turbo's own placeholder, so a query file also runs there over the map view) is the
 # core plus lib.mjs's OSM_MARGIN, which bake-streets.mjs keeps for the radar.
