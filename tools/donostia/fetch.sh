@@ -45,10 +45,27 @@ CARTO=https://www.donostia.eus/ide/LURRALDEA_KARTOGRAFIA-TERRITORIO/KartografiaT
 for layer in ERAIKINA "ERAIKINA LURREAN" EraikinEgitura ARKUPEA ATARIPEA PASABIDEA "BARRUKO PATIOA" "UHARTE PATIOA" \
   EraikinArinak ESTALPEA KIOSKOA AURRIA BEROTEGIA \
   ERREPIDEA "IBILGAILUEN ZONA" AUTOBIDEA BIDEA ESPALOIA "OINEZKOEN ZONA" ESKAILERA KANPO-IGOGAILUA BIDEGORRIA TRENBIDEA \
-  "ZUHAITZ TXORKOA" ZuhaiztiGuneak "LORATEGI EREMUA" "LANDARE HESIA" PARTERREA "SASOIKO LORATEGIA" HONDARTZA; do
+  "ZUHAITZ TXORKOA" ZuhaiztiGuneak "LORATEGI EREMUA" "LANDARE HESIA" PARTERREA "SASOIKO LORATEGIA" HONDARTZA \
+  ARRAPALA KAIA PANTALANA DIKEA KOSTALDEA NASA HORMA KotaPuntuak EZPONDA ZINTARRIA TUNELA; do
   get "$CARTO/$layer.zip" "$RAW/carto/$layer.zip"
 done
 get https://www.donostia.eus/ide/ADMINISTRAZIO_MUGAK-LIMITES_ADMINISTRATIVOS/shp/Auzoak.zip "$RAW/carto/Auzoak.zip"
+
+# Orthophoto 2025 (geoEuskadi WMS; credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi»): 500 m tiles at 12.5 cm/px
+# over the beaches' accesses and the port, named by the local frame of their north-west corner (x east, z south)
+mkdir -p "$RAW/ortho"
+WMS='https://www.geo.euskadi.eus/WMS_ORTOARGAZKIAK?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ORTO_2025&STYLES=&CRS=EPSG:25830&WIDTH=4000&HEIGHT=4000&FORMAT=image/jpeg'
+for tile in port:-350:-300 concha-ne:0:150 concha-mid:-500:400 concha-w:-1000:400 ondarreta:-1400:100 \
+  zurriola-w:900:-900 zurriola-e:1300:-900 aiete:-400:1600 aiete-s:-400:2100; do
+  IFS=: read -r name x0 z0 <<< "$tile"
+  bbox="$((582000 + x0)),$((4797000 - z0 - 500)),$((582000 + x0 + 500)),$((4797000 - z0))"
+  get "$WMS&BBOX=$bbox" "$RAW/ortho/ortho2025-${name}_x${x0}_z${z0}.jpg"
+done
+
+# Aitor Zabaleta's portrait for the banner of the tifo on Anoeta's south stand (bake-tifo.mjs): the Real Sociedad fan
+# zone's screen at the 2026 Copa del Rey final (Goiena.eus, CC BY-SA 4.0, via Wikimedia Commons)
+mkdir -p "$RAW/refs/tifo"
+get https://upload.wikimedia.org/wikipedia/commons/4/44/Reala_Kopa_2026_Zabaleta.jpg "$RAW/refs/tifo/Reala_Kopa_2026_Zabaleta.jpg"
 
 # OpenStreetMap (ODbL): names, landmarks, bridges and street furniture. Committed, like tools/data/osm_*.json upstream.
 # The queries' {{bbox}} (Overpass Turbo's own placeholder, so a query file also runs there over the map view) is the

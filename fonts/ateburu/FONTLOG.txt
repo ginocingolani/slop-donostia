@@ -1,0 +1,64 @@
+FONTLOG for Ateburu
+===================
+
+This file provides detailed information on the Ateburu font software. This information should be distributed along
+with the Ateburu fonts and any derivative works.
+
+
+Basic Font Information
+----------------------
+
+Ateburu is a display typeface in the Basque lettering tradition (letra vasca), drawn from the inscriptions carved in
+relief on the lintels, stelae and slabs of the Basque Country between the 16th and 19th centuries, chiefly as Louis
+Colas drew them in La tombe basque (1923). It is heavy, wide and low in contrast, with short flared serifs. Its
+Basque character rides on a few default letters: the crowned A (a flat bar over the apex and a crossbar dipped into
+a V), the long-legged R, the curved K, the wedge-armed E and F, the spurred G, the open 4, the flat-topped 5, the
+swan-necked 7 and the lozenge interpunct.
+
+It is a capitals face: lowercase codepoints map to the same capitals. It has one variable axis, weight, from 600
+(SemiBold, the master tuned for light text on a dark panel at 12-20 px, with ink traps) to 900 (Black). Static
+instances: SemiBold, Bold, ExtraBold, Black.
+
+The letters are drawn in code (source/glyphs.py, source/geometry.py) and built with build.py, which is
+deterministic. The sources of each identity form are listed in SOURCES.md. No existing font was traced or copied.
+
+Ateburu is a contemporary interpretation of documented inscriptions, not "the authentic Basque letter": the idea of
+one national Basque letter is a 20th-century construction (see README.md).
+
+The name means "door lintel" in Basque (ate + buru). It is a working name.
+
+
+ChangeLog
+---------
+
+2026-10-27 (The Ateburu Project Authors) Ateburu Version 0.100
+- First cut, for review. Glyph set: A-Z (lowercase mapped to capitals), OE, 0-9, A E I O U acute, U dieresis,
+  N tilde, C cedilla, A E O grave, the lozenge middle dot, . , : ; ! ? inverted ! ?, ' ’ ‘ " “ ”, hyphen, en and
+  em dash, ( ) / &, space and no-break space.
+- Two masters, HUD (600) and Black (900); variable font and four static instances; a subset WOFF2 for the Slop
+  Donostia HUD.
+- Spacing by an optical model and 785 kerning pairs, including A-T, T-A, L-T, R-A, R-T, Y-A, A-V, K-O and the
+  Basque digraphs TX, TZ and TS.
+
+Planned for 0.200:
+- The rest of Google Fonts' GF Latin Core set (A circumflex and the other French accents, Catalan L-dot, guillemets,
+  brackets, @ # % * and the rest), case-sensitive punctuation, tabular figures.
+- OpenType: mark/mkmk/ccmp for combining accents; locl (CAT) for l·l; calt for the A's flag direction next to T,
+  V, W, Y and shorter R and K legs before A, T, V, W, Y; dlig for the nexus letters (TX, TZ, TS, TA, MA, AN, ME,
+  NE, ND, TE, TR, DE, LA, AR); ss01 dotted i; ss02 small o after L, T, K, R; ss03 inscription unicase; ss04 Roman
+  A, R, K; ss05 plain figures; ss06 curiosities (8 for G, reversed N and S, barred I).
+- TrueType hinting (ttfautohint) for Windows at small sizes.
+
+
+Acknowledgements
+----------------
+
+If you make modifications be sure to add your name (N), email (E), web-address (if you have one) (W) and description
+(D). This list is in alphabetical order.
+
+N: The Ateburu Project Authors
+W: https://github.com/ginocingolani/slop-donostia
+D: Design, code and build, for the Slop Donostia project; drawn in code with Claude (Anthropic).
+
+Sources: Louis Colas, La Tombe basque (1923, public domain); photographs of carved lintels on Wikimedia Commons
+(reference only). See SOURCES.md.

@@ -240,8 +240,64 @@ function prepareRings(b) {
   return rings;
 }
 
-export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug = false } = {}) {
-  const B = GEO.buildings;
+// Pieces of the stretch [t0, t1] (metres along the wall a -> b) and the height each must start above: a building's
+// `skip` lists stretches of its outline ([ax, az, bx, bz, y]) that a landmark builds itself below y (Infinity: all of
+// it), such as Konstituzio plaza's fronts and the mouths of its passages. A wall with both ends within 0.4 m of a
+// stretch's line is taken: all of it when both ends lie along the stretch (the jogs a front keeps round its piers),
+// the part beside it when it runs on past an end.
+function skipPieces(ax, az, bx, bz, t0, t1, skip) {
+  const L = Math.hypot(bx - ax, bz - az);
+  if (!skip || L < 1e-6) return [[t0, t1, -Infinity]];
+  const ux = (bx - ax) / L, uz = (bz - az) / L;
+  const cuts = [t0, t1], spans = [];
+  for (const [sx, sz, ex, ez, y] of skip) {
+    const sl = Math.hypot(ex - sx, ez - sz);
+    if (sl < 1e-6) continue;
+    const off = (px, pz) => Math.abs((px - sx) * (ez - sz) - (pz - sz) * (ex - sx)) / sl;
+    if (off(ax, az) > 0.4 || off(bx, bz) > 0.4) continue;
+    const along = (px, pz) => ((px - sx) * (ex - sx) + (pz - sz) * (ez - sz)) / sl;
+    const pa = along(ax, az), pb = along(bx, bz);
+    let lo, hi;
+    if (Math.min(pa, pb) >= 0 && Math.max(pa, pb) <= sl) {
+      lo = t0; hi = t1;
+    } else {
+      if (Math.abs(((ex - sx) * uz - (ez - sz) * ux) / sl) > 0.05) continue;
+      const p = (sx - ax) * ux + (sz - az) * uz, q = (ex - ax) * ux + (ez - az) * uz;
+      lo = Math.max(t0, Math.min(p, q)); hi = Math.min(t1, Math.max(p, q));
+    }
+    if (hi - lo < 0.05) continue;
+    spans.push([lo, hi, y]);
+    cuts.push(lo, hi);
+  }
+  if (!spans.length) return [[t0, t1, -Infinity]];
+  cuts.sort((a, b) => a - b);
+  const out = [];
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const a = cuts[k], b = cuts[k + 1];
+    if (b - a < 0.02) continue;
+    const mid = (a + b) / 2;
+    let y = -Infinity;
+    for (const [lo, hi, h] of spans) if (mid > lo && mid < hi) y = Math.max(y, h);
+    const last = out[out.length - 1];
+    if (last && last[2] === y && Math.abs(last[1] - a) < 1e-6) last[1] = b;
+    else out.push([a, b, y]);
+  }
+  return out;
+}
+
+// replace: Map(building index -> record) drawn instead of GEO.buildings[index] (a landmark that keeps a building but
+// changes it: Konstituzio plaza's blocks, their eaves levelled and their fronts on the square left to the landmark);
+// phantoms: records that stand next to the city's buildings (their party walls hidden, their roofs gabled against
+// them) but are never drawn, for a landmark modelled in full whose neighbours stay the city's
+export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug = false, replace = null, phantoms = null } = {}) {
+  const real = GEO.buildings.length;
+  let B = GEO.buildings;
+  if (replace || phantoms) {
+    // (map keeps the holes of a sparse list of buildings, as js/donostia/landmarks/dabadaba.js passes)
+    B = GEO.buildings.map((b, j) => replace?.get(j) || b);
+    B.length = real;
+    (phantoms || []).forEach((p, k) => { B[real + k] = p; });
+  }
   // Walls follow simplified outlines; hidden landmarks leave no rings (and hide no neighbours' walls)
   const ringSets = B.map((b, j) => (hidden.has(j) ? null : prepareRings(b)));
   const shared = sharedEdges(ringSets);
@@ -250,7 +306,7 @@ export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug =
   const infos = new Array(B.length).fill(null);
   B.forEach((b, j) => {
     const rings = ringSets[j];
-    if (!rings) return;
+    if (!rings || j >= real) return;
     const outer = rings[0];
     let perim = 0, partyLen = 0;
     for (let i = 0, n = outer.length / 2; i < n; i++) {
@@ -263,7 +319,7 @@ export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug =
     const area = Math.abs(signedArea(outer)) - rings.slice(1).reduce((s, r) => s + Math.abs(signedArea(r)), 0);
     const [cx, cz] = ringCentroid(outer);
     infos[j] = facadeInfo(b, {
-      index: j, district: GEO.districts[b.district] || '', cx, cz, area, plaza: facesPlaza(outer),
+      index: j, district: GEO.districts[b.district] || '', cx, cz, area, plaza: b.plaza ?? facesPlaza(outer),
       partyShare: perim > 0 ? Math.min(partyLen / perim, 1) : 0, flat: b.roof === 0 || b.top - b.eave < 0.5
     });
     infos[j].cx = cx;
@@ -323,14 +379,16 @@ export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug =
         const q = (i + 1) % n;
         const { L, segs } = segOf[k][i];
         for (const [t0, t1, top, party] of segs) {
-          const y0 = Math.max(b.base, top);
-          if (y0 >= b.eave - 0.05) continue;
           const kind = party && top > -Infinity ? WALL.BLANK : R.jog[i] ? WALL.SOLID : k > 0 ? WALL.REAR : WALL.FRONT;
-          const s0 = t0 / L, s1 = t1 / L;
-          wall(cell.walls,
-            lerp(r[2 * i], r[2 * q], s0), lerp(r[2 * i + 1], r[2 * q + 1], s0),
-            lerp(r[2 * i], r[2 * q], s1), lerp(r[2 * i + 1], r[2 * q + 1], s1),
-            y0, b.eave, b.ground, lerp(R.u0[i], R.u1[i], s0), lerp(R.u0[i], R.u1[i], s1), R.runLen[i], kind);
+          for (const [p0, p1, low] of skipPieces(r[2 * i], r[2 * i + 1], r[2 * q], r[2 * q + 1], t0, t1, b.skip)) {
+            const y0 = Math.max(b.base, top, low);
+            if (y0 >= b.eave - 0.05) continue;
+            const s0 = p0 / L, s1 = p1 / L;
+            wall(cell.walls,
+              lerp(r[2 * i], r[2 * q], s0), lerp(r[2 * i + 1], r[2 * q + 1], s0),
+              lerp(r[2 * i], r[2 * q], s1), lerp(r[2 * i + 1], r[2 * q + 1], s1),
+              y0, b.eave, b.ground, lerp(R.u0[i], R.u1[i], s0), lerp(R.u0[i], R.u1[i], s1), R.runLen[i], kind);
+          }
         }
       }
     });

@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="600" maximum="900" default="600">
+      <labelname xml:lang="en">Weight</labelname>
+    </axis>
+  </axes>
+  <sources>
+    <source filename="masters/Ateburu-HUD.ttf" name="Ateburu HUD" familyname="Ateburu" stylename="HUD">
+      <location>
+        <dimension name="Weight" xvalue="600"/>
+      </location>
+    </source>
+    <source filename="masters/Ateburu-Black.ttf" name="Ateburu Black" familyname="Ateburu" stylename="Black">
+      <location>
+        <dimension name="Weight" xvalue="900"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="Ateburu SemiBold" familyname="Ateburu" stylename="SemiBold" postscriptfontname="Ateburu-SemiBold">
+      <location>
+        <dimension name="Weight" xvalue="600"/>
+      </location>
+    </instance>
+    <instance name="Ateburu Bold" familyname="Ateburu" stylename="Bold" postscriptfontname="Ateburu-Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </instance>
+    <instance name="Ateburu ExtraBold" familyname="Ateburu" stylename="ExtraBold" postscriptfontname="Ateburu-ExtraBold">
+      <location>
+        <dimension name="Weight" xvalue="800"/>
+      </location>
+    </instance>
+    <instance name="Ateburu Black" familyname="Ateburu" stylename="Black" postscriptfontname="Ateburu-Black">
+      <location>
+        <dimension name="Weight" xvalue="900"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>

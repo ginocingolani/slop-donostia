@@ -155,6 +155,7 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
   };
   const walls = [];
   const stats = new Map();
+  let dupes = 0;
   for (const guide of guides) {
     const nodes = resample(guide.pts, guide.closed);
     const hits = nodes.map((P) => {
@@ -237,6 +238,9 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       // curved run)
       const m = pts.length >> 1, p0 = pts[Math.max(0, m - 3)], p1 = pts[Math.min(pts.length - 1, m + 3)];
       if ((-(p1.z - p0.z)) * lowX + (p1.x - p0.x) * lowZ < 0) pts.reverse();
+      // (a run over a wall another run of the same shoreline found already, where the shoreline doubles back round a
+      // buttress or the head of a flight: two lines on one wall would each take some of its samples)
+      if (pts.filter((q) => claimed.has(ck(q.x, q.z)) && nearestWall(walls, q.x, q.z, 1)).length > 0.6 * pts.length) { dupes++; continue; }
       const kept = simplify(pts, 0.08);
       const p = [];
       for (const q of kept) p.push(r2(q.x), r2(q.z), r2(q.deck), r2(q.foot));
@@ -249,7 +253,8 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       stats.set(name, st);
     }
   }
-  log(`shore walls: ${[...stats].map(([k, v]) => `${k} ${v.runs} runs ${(v.length / 1000).toFixed(2)} km`).join(', ')}`);
+  log(`shore walls: ${[...stats].map(([k, v]) => `${k} ${v.runs} runs ${(v.length / 1000).toFixed(2)} km`).join(', ')}; ${dupes} ` +
+    `runs over walls found already dropped`);
   return walls;
 }
 
@@ -269,10 +274,12 @@ const STAIR_STEEP = 1.2; // the steepest a flight is taken to fall (beyond: the 
  * keeps as the ramp the wall was. Each piece's slope is
  * a plane fitted to the 1 m LiDAR inside it, its top & bottom where that plane meets its outline, kept between the
  * wall's promenade (deck) and its foot; a piece that hardly falls is a landing at its own level.
+ * The flights down to the beaches are tools/donostia/beach-access.mjs's: skip(x, z) tells the pieces it took (by the
+ * mean of their outline's vertices).
  * Returns [{ p: [x, z, ...], top, bot, ux, uz (downhill, horizontal), plane: [a, b, c, cx, cz] (y = c + a (x - cx) +
  * b (z - cz)) }].
  */
-export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} }) {
+export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => false, log = () => {} }) {
   const out = [];
   for (const f of loadLayer('c500_ESKAILERA.json').features) {
     for (const r of f.g) {
@@ -283,6 +290,7 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} 
       if (Math.abs(area / 2) < 0.5) continue;
       for (let k = 0; k < r.length; k += 2) { cx += r[k]; cz += r[k + 1]; }
       cx /= n; cz /= n;
+      if (skip(cx, cz)) continue;
       // the wall it comes down from: the nearest to its outline (sampled every metre)
       let wall = null, dist = Infinity;
       for (let i = 0; i < n; i++) {
@@ -343,6 +351,155 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} 
   }
   log(`shore stairs: ${out.length} flights & landings by the walls (${out.filter((s) => s.top === s.bot).length} landings)`);
   return out;
+}
+
+// --- the port's quays where the search finds only scraps ----------------------------------------------------------------
+
+// The search above finds the north basin's north quay only in short runs (boats moored along it, the smear of its edge
+// over the 1 m cells) and the sides of the old port's slipway not at all (they drop by less than WALL_MIN near the top of
+// the ramp, and the slipway's floor is no paving). In these boxes the edges of the municipal map's quays (KAIA) stand as
+// walls wherever the LiDAR falls by QUAY_MIN or more across them: the crest on the map's edge, the quay behind (deck),
+// the water or the slipway's floor in front (foot, the lowest of the LiDAR 1-5 m out: a moored boat does not lift it);
+// the walls the search found along them give way.
+const QUAY_BOXES = [
+  { minX: -40, maxX: 40, minZ: -237, maxZ: -196 }, // the north basin's north quay
+  { minX: -242, maxX: -184, minZ: -164, maxZ: -130 } // the old port's slipway, its two sides
+];
+const QUAY_MIN = 0.8; // m
+const QUAY_RUN = 3; // m: shorter runs are left out
+
+/**
+ * dtm: the 1 m Grid; walls: detectWalls' runs. Returns the walls with the quays' edges in QUAY_BOXES added (and the runs
+ * the search found along them dropped).
+ */
+export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
+  const inAny = (x, z, pad = 0) => QUAY_BOXES.some((b) => x >= b.minX - pad && x <= b.maxX + pad && z >= b.minZ - pad && z <= b.maxZ + pad);
+  const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
+  const runs = [];
+  for (const f of loadLayer('c500_KAIA.json').features) {
+    for (const r of f.g) {
+      if (r.length < 6) continue;
+      // samples every half metre round the ring: { x, z, wall, s (+1: the low side on the ring's left (-tz, tx)) }
+      const pts = [];
+      const n = r.length / 2;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * j], bz = r[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
+        if (len < 1e-6) continue;
+        const tx = (bx - ax) / len, tz = (bz - az) / len, nx = -tz, nz = tx;
+        const m = Math.max(1, Math.round(len / 0.5));
+        for (let q = 0; q < m; q++) {
+          const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
+          const p = { x, z, wall: false };
+          pts.push(p);
+          if (!inAny(x, z, 2)) continue; // (the boxes with 2 m to spare: their corners)
+          const side = (sg, ts) => ts.map((t) => at(x + sg * nx * t, z + sg * nz * t)).filter(Number.isFinite);
+          const plus = side(1, [1.5, 2, 2.5, 3, 3.5, 4]), minus = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]);
+          if (plus.length < 3 || minus.length < 3) continue;
+          const s = median(plus) < median(minus) ? 1 : -1;
+          const deck = median(s > 0 ? minus : plus);
+          const foot = Math.min(...side(s, [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]));
+          if (deck - foot < QUAY_MIN) continue;
+          Object.assign(p, { wall: true, s, deck, foot });
+        }
+      }
+      // runs of wall samples with the low side on one side, round the ring (starting after a gap)
+      const N = pts.length, start = pts.findIndex((p) => !p.wall);
+      if (start < 0) continue;
+      let cur = null;
+      for (let q = 1; q <= N; q++) {
+        const p = pts[(start + q) % N];
+        if (cur && (!p.wall || p.s !== cur[0].s)) { runs.push(cur); cur = null; }
+        if (p.wall) (cur ||= []).push(p);
+      }
+      if (cur) runs.push(cur);
+    }
+  }
+  const added = [];
+  for (const run of runs) {
+    let len = 0;
+    for (let k = 1; k < run.length; k++) len += Math.hypot(run[k].x - run[k - 1].x, run[k].z - run[k - 1].z);
+    if (len < QUAY_RUN) continue;
+    // walked with the low side on the left of travel (-dz, dx), as every wall
+    const pts = run[0].s > 0 ? run : [...run].reverse();
+    const deck = smooth(pts.map((p) => p.deck)), foot = smooth(pts.map((p) => p.foot));
+    const kept = simplify(pts.map((p, k) => ({ x: p.x, z: p.z, deck: deck[k], foot: Math.min(foot[k], deck[k] - QUAY_MIN) })), 0.2);
+    added.push({ t: WALL.quay, b: 0, p: kept.flatMap((p) => [p.x, p.z, p.deck, p.foot].map((v) => Math.round(v * 100) / 100)) });
+  }
+  // runs that one ends where another starts (across the jogs of the map's edge, where the samples look along the jog)
+  // joined into one
+  for (let joined = true; joined;) {
+    joined = false;
+    for (const a of added) {
+      const k = a.p.length;
+      const b = added.find((o) => o !== a && Math.hypot(o.p[0] - a.p[k - 4], o.p[1] - a.p[k - 3]) < 2.5);
+      if (!b) continue;
+      a.p = [...a.p, ...b.p];
+      added.splice(added.indexOf(b), 1);
+      joined = true;
+      break;
+    }
+  }
+  // the runs the search found along these edges give way (split where they come within 2.5 m of one)
+  const near = (x, z) => inAny(x, z, 3) && added.some((w) => {
+    for (let k = 0; k + 4 < w.p.length; k += 4) {
+      const ax = w.p[k], az = w.p[k + 1], dx = w.p[k + 4] - ax, dz = w.p[k + 5] - az, l2 = dx * dx + dz * dz || 1e-12;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      if (Math.hypot(x - ax - t * dx, z - az - t * dz) < 2.5) return true;
+    }
+    return false;
+  });
+  const out = [];
+  let dropped = 0;
+  for (const w of walls) {
+    let cur = [];
+    const flush = () => { if (cur.length >= 8) out.push({ ...w, p: cur }); cur = []; };
+    const lerp = (k, t) => [0, 1, 2, 3].map((o) => w.p[k + o] + (w.p[k + 4 + o] - w.p[k + o]) * t);
+    for (let k = 0; k < w.p.length; k += 4) {
+      if (near(w.p[k], w.p[k + 1])) {
+        dropped++;
+        flush();
+      } else cur.push(...w.p.slice(k, k + 4));
+      if (k + 4 >= w.p.length) break;
+      // (cut where the segment to the next vertex comes within reach of a new run, or leaves it)
+      const len = Math.hypot(w.p[k + 4] - w.p[k], w.p[k + 5] - w.p[k + 1]);
+      let was = near(w.p[k], w.p[k + 1]);
+      for (let s = 0.25; s < len; s += 0.25) {
+        const q = lerp(k, s / len), is = near(q[0], q[1]);
+        if (is && !was) { cur.push(...q); flush(); }
+        if (!is && was) cur.push(...q);
+        was = is;
+      }
+    }
+    flush();
+  }
+  // and joined to what is left of those where one ends within 3 m of the other's start, going on the same way
+  const dir = (p, k0, k1) => { const dx = p[k1] - p[k0], dz = p[k1 + 1] - p[k0 + 1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+  const along = (u, v) => u[0] * v[0] + u[1] * v[1] > 0.5;
+  let spliced = 0;
+  for (const a of added) {
+    for (const end of ['head', 'tail']) {
+      const k = a.p.length;
+      const o = out.find((w) => {
+        if (w.t !== a.t) return false;
+        const m = w.p.length;
+        const [gx, gz] = end === 'head' ? [w.p[m - 4], w.p[m - 3]] : [w.p[0], w.p[1]];
+        const [hx, hz] = end === 'head' ? [a.p[0], a.p[1]] : [a.p[k - 4], a.p[k - 3]];
+        const gap = Math.hypot(hx - gx, hz - gz);
+        if (gap > 3 || gap < 0.05) return gap <= 0.05;
+        const j = end === 'head' ? [(hx - gx) / gap, (hz - gz) / gap] : [(gx - hx) / gap, (gz - hz) / gap];
+        return along(j, dir(w.p, end === 'head' ? m - 8 : 0, end === 'head' ? m - 4 : 4)) &&
+          along(j, dir(a.p, end === 'head' ? 0 : k - 8, end === 'head' ? 4 : k - 4));
+      });
+      if (!o) continue;
+      a.p = end === 'head' ? [...o.p, ...a.p] : [...a.p, ...o.p];
+      out.splice(out.indexOf(o), 1);
+      spliced++;
+    }
+  }
+  log(`port quays: ${added.length} runs along the quays' edges (${added.reduce((s, w) => s + w.p.length / 4, 0)} vertices), ` +
+    `${dropped} vertices of the search's runs along them dropped, ${spliced} joined to what is left of them`);
+  return [...out, ...added];
 }
 
 // --- the shorelines & the places without a wall ----------------------------------------------------------------------

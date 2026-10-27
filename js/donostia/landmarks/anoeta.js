@@ -6,6 +6,8 @@ import {
 import { cityUniforms } from '../../city-uniforms.js';
 import { gridLine } from './kit.js';
 import { Parts, grid, beam } from './geom.js';
+import { primitiveTriangles, textWidth, textTriangles } from './glyphs.js';
+import { buildTifo } from './anoeta-tifo.js';
 
 // js/donostia/landmarks/anoeta.js
 // Anoeta stadium / Reale Arena (1993, rebuilt 2017-2019 when the athletics track was removed and the stands brought to the pitch): an oval bowl wrapped in a translucent blue membrane (ETFE / PTFE panels) with REALE ARENA lettering, a roof ring over the stands, ~40,000 seats.
@@ -31,6 +33,9 @@ import { Parts, grid, beam } from './geom.js';
 // arched primary trusses top out ~41 m up, mostly hidden behind the membrane's crown from the plaza, as in the photos.
 // The OSM outline adds the stairs and ramps up to the concourse doors, widest at the north end (gates 5-6, under the
 // REALE ARENA sign, facing the city).
+//
+// The south stand, the Aitor Zabaleta harmaila, carries the tifo its fans raised at La Cartuja for the 2026 Copa del Rey
+// final: anoeta-tifo.js, built on the bowl's rings below.
 
 const D2R = Math.PI / 180;
 const FRAME = { x: 1253.55, z: 2206.98, angle: 52.92 }; // pitch centre; long axis in degrees from +x (east) to +z (south)
@@ -115,63 +120,6 @@ function rayHit(ring, cx, cz, dx, dz) {
     if (t > 0 && s >= 0 && s <= 1) best = Math.max(best, t);
   }
   return best;
-}
-
-// --- lettering --------------------------------------------------------------------------------------------------------
-
-// Bold sans capitals, cap height 1: ['rect', x0, y0, x1, y1], ['poly', [[x, y], ...]] (convex), and
-// ['ring', cx, cy, outer rx, outer ry, inner rx, inner ry, from°, to°] (an elliptic annulus sector, counter-clockwise)
-const GLYPHS = {
-  A: { w: 0.78, parts: [['poly', [[0, 0], [0.19, 0], [0.48, 1], [0.3, 1]]], ['poly', [[0.59, 0], [0.78, 0], [0.48, 1], [0.3, 1]]], ['rect', 0.18, 0.2, 0.6, 0.35]] },
-  C: { w: 0.76, parts: [['ring', 0.4, 0.5, 0.4, 0.5, 0.22, 0.33, 42, 318]] },
-  D: { w: 0.74, parts: [['rect', 0, 0, 0.18, 1], ['rect', 0, 0, 0.3, 0.17], ['rect', 0, 0.83, 0.3, 1], ['ring', 0.3, 0.5, 0.44, 0.5, 0.26, 0.33, -90, 90]] },
-  E: { w: 0.6, parts: [['rect', 0, 0, 0.18, 1], ['rect', 0, 0.84, 0.6, 1], ['rect', 0, 0.42, 0.54, 0.58], ['rect', 0, 0, 0.6, 0.16]] },
-  I: { w: 0.18, parts: [['rect', 0, 0, 0.18, 1]] },
-  L: { w: 0.56, parts: [['rect', 0, 0, 0.18, 1], ['rect', 0, 0, 0.56, 0.16]] },
-  N: { w: 0.72, parts: [['rect', 0, 0, 0.18, 1], ['rect', 0.54, 0, 0.72, 1], ['poly', [[0, 1], [0.2, 1], [0.72, 0], [0.52, 0]]]] },
-  O: { w: 0.8, parts: [['ring', 0.4, 0.5, 0.4, 0.5, 0.22, 0.33, 0, 360]] },
-  R: { w: 0.7, parts: [['rect', 0, 0, 0.18, 1], ['rect', 0, 0.84, 0.4, 1], ['rect', 0, 0.4, 0.4, 0.56], ['ring', 0.4, 0.7, 0.3, 0.3, 0.14, 0.14, -90, 90], ['poly', [[0.3, 0.42], [0.5, 0.42], [0.72, 0], [0.5, 0]]]] },
-  S: { w: 0.66, parts: [['ring', 0.33, 0.745, 0.33, 0.255, 0.16, 0.085, 25, 270], ['ring', 0.33, 0.255, 0.33, 0.255, 0.16, 0.085, -155, 90]] }
-};
-const TRACKING = 0.12, SPACE = 0.35;
-
-// Triangles of a primitive, in its own 2D units
-function primitiveTriangles(p, emit) {
-  if (p[0] === 'rect') {
-    const [, x0, y0, x1, y1] = p;
-    emit([x0, y0], [x1, y0], [x1, y1]);
-    emit([x0, y0], [x1, y1], [x0, y1]);
-  } else if (p[0] === 'poly') {
-    const v = p[1];
-    for (let k = 1; k + 1 < v.length; k++) emit(v[0], v[k], v[k + 1]);
-  } else {
-    const [, cx, cy, rxo, ryo, rxi, ryi, a0, a1] = p;
-    const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) / 8));
-    for (let k = 0; k < n; k++) {
-      const t0 = (a0 + ((a1 - a0) * k) / n) * D2R, t1 = (a0 + ((a1 - a0) * (k + 1)) / n) * D2R;
-      const o0 = [cx + rxo * Math.cos(t0), cy + ryo * Math.sin(t0)], o1 = [cx + rxo * Math.cos(t1), cy + ryo * Math.sin(t1)];
-      const i0 = [cx + rxi * Math.cos(t0), cy + ryi * Math.sin(t0)], i1 = [cx + rxi * Math.cos(t1), cy + ryi * Math.sin(t1)];
-      emit(i0, o0, o1);
-      emit(i0, o1, i1);
-    }
-  }
-}
-
-function textWidth(text) {
-  let w = 0;
-  for (const ch of text) w += ch === ' ' ? SPACE : GLYPHS[ch].w + TRACKING;
-  return w - TRACKING;
-}
-
-// Lays a string out from x = 0 and hands each triangle (cap height 1) to emit
-function textTriangles(text, emit) {
-  let x = 0;
-  for (const ch of text) {
-    if (ch === ' ') { x += SPACE; continue; }
-    const g = GLYPHS[ch];
-    for (const p of g.parts) primitiveTriangles(p, (a, b, c) => emit([a[0] + x, a[1]], [b[0] + x, b[1]], [c[0] + x, c[1]]));
-    x += g.w + TRACKING;
-  }
 }
 
 // --- TSL helpers (from js/tsl-materials.js) --------------------------------------------------------------------------
@@ -525,5 +473,12 @@ export function build(sites, ctx) {
 
   const group = parts.build('anoeta');
   group.userData.top = P + TRUSS_BOTTOM + TRUSS_DEPTH[1];
+
+  // the tifo on the south stand, the Aitor Zabaleta harmaila (anoeta-tifo.js): cards over the upper tier, the banner
+  // and the flags over the lower one. userData.tifo is its group: hide it to see the stand bare.
+  const tifo = buildTifo({ at, dirOf, rF, rM1, rM2, rBk, yF, yM1, yM2, yBk, arcF, N, rowRise: ROW_RISE });
+  group.add(tifo);
+  group.userData.tifo = tifo;
+  group.userData.update = tifo.userData.update;
   return group;
 }

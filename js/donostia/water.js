@@ -4,6 +4,7 @@ import {
   clamp, pow, dot, normalize, min, max, abs, fract, floor, sin, sqrt, exp, fwidth, select, mx_noise_float, uniform
 } from 'three/tsl';
 import { decodePNGOffThread } from './png.js';
+import { MARINA } from './data-marina.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -20,6 +21,10 @@ import { decodePNGOffThread } from './png.js';
 //   enabled, a sine around it (a 12.4 h tide squeezed into `period` seconds). The LiDAR flew at low tide, so the
 //   intertidal sand already shows at mean sea level. userData.seaLevel is a TSL uniform with the current level for
 //   other shaders (wet sand, hulls), userData.getSeaLevel() the same in JS.
+// - Harbour: inside the port's moles (js/donostia/data-marina.js: its water and its mouth) the water is calm, sheltered
+//   more the further from the mouth: smaller ripples (the reflections sharpen), no surf or swash, and the harbour's
+//   green water, never the turquoise of a sandy shallow (the LiDAR bed in the basins lies at -0.3 m). Off when the
+//   marina's data has no harbour.
 
 const SIZE = 60000;
 const POND_SINK = 0.4; // m: build.mjs sinks pond cells this far below their surveyed surface
@@ -221,6 +226,74 @@ async function loadFields() {
   }
 }
 
+// --- Harbour --------------------------------------------------------------------------------------------------------
+
+// The harbour on a 2 m grid over its water, two fields 0..1: inside (0 outside the moles, 1 once SHELTER_IN m past the
+// mouth's edge: the harbour's own water, its colour and no surf) and shelter (rising on to 1 SHELTER_RUN m past it: how
+// far the swell has died down), both blurred so no outline shows on the water. Plain arrays so it can run in Node.
+// harbour: { ring: [x, z, ...] (the water inside the moles, over their crests), mouth: [x, z, width] }.
+const HARBOUR_RES = 2; // m
+const SHELTER_IN = 20, SHELTER_RUN = 70; // m
+export function harbourShelter(harbour) {
+  const { ring, mouth: [mx, mz, mw] } = harbour;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let k = 0; k < ring.length; k += 2) {
+    minX = Math.min(minX, ring[k]); maxX = Math.max(maxX, ring[k]);
+    minZ = Math.min(minZ, ring[k + 1]); maxZ = Math.max(maxZ, ring[k + 1]);
+  }
+  const x0 = minX - 8, z0 = minZ - 8, w = Math.ceil((maxX - minX + 16) / HARBOUR_RES), h = Math.ceil((maxZ - minZ + 16) / HARBOUR_RES);
+  const inside = (x, z) => {
+    let c = false;
+    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+      if ((ring[i + 1] > z) !== (ring[j + 1] > z) && x < ((ring[j] - ring[i]) * (z - ring[i + 1])) / (ring[j + 1] - ring[i + 1]) + ring[i]) c = !c;
+    }
+    return c;
+  };
+  const smooth = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+  let fields = [new Float32Array(w * h), new Float32Array(w * h)];
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const x = x0 + (i + 0.5) * HARBOUR_RES, z = z0 + (j + 0.5) * HARBOUR_RES;
+    if (!inside(x, z)) continue;
+    const d = Math.hypot(x - mx, z - mz) - mw / 2;
+    fields[0][j * w + i] = smooth(d / SHELTER_IN);
+    fields[1][j * w + i] = smooth(d / SHELTER_RUN);
+  }
+  // two 5 x 5 box passes
+  fields = fields.map((a) => {
+    for (let pass = 0; pass < 2; pass++) {
+      const b = new Float32Array(w * h);
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+        let sum = 0, n = 0;
+        for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+          const ii = i + di, jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
+          sum += a[jj * w + ii];
+          n++;
+        }
+        b[j * w + i] = sum / n;
+      }
+      a = b;
+    }
+    return a;
+  });
+  const data = new Uint8Array(w * h * 2);
+  for (let k = 0; k < w * h; k++) {
+    data[2 * k] = Math.round(fields[0][k] * 255);
+    data[2 * k + 1] = Math.round(fields[1][k] * 255);
+  }
+  return { x0, z0, w, h, res: HARBOUR_RES, data };
+}
+
+function harbourTexture() {
+  if (!MARINA?.harbour) return null;
+  const m = harbourShelter(MARINA.harbour);
+  const tex = new THREE.DataTexture(m.data, m.w, m.h, THREE.RGFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return { tex, x0: m.x0, z0: m.z0, width: m.w * m.res, depth: m.h * m.res };
+}
+
 // --- Material ---------------------------------------------------------------------------------------------------------
 
 // vec3(the floor's bilinear height, the lowest and the highest of the four samples around): at a quay or sea wall the
@@ -266,6 +339,14 @@ function createWaterMaterial(terrain, fieldsTex) {
   const river = select(inContext, fields.g, float(0.0));
   const surf = select(inContext, fields.r, float(1.0)).mul(float(1.0).sub(river));
   const flow = select(inContext, fields.ba.mul(255.0 / 127.0).sub(128.0 / 127.0), vec2(0.0, 0.0));
+  // the harbour: inside its moles (0 open water .. 1 the harbour's own water) and sheltered from the swell (.. 1 deep
+  // inside the port)
+  const hb = harbourTexture();
+  const inHarbour = hb
+    ? select(p.x.greaterThan(hb.x0).and(p.x.lessThan(hb.x0 + hb.width)).and(p.z.greaterThan(hb.z0)).and(p.z.lessThan(hb.z0 + hb.depth)),
+      texture(hb.tex, p.xz.sub(vec2(hb.x0, hb.z0)).div(vec2(hb.width, hb.depth))).rg, vec2(0.0)).toVar()
+    : vec2(0.0);
+  const harbour = inHarbour.x, sheltered = inHarbour.y;
 
   // vec4(mean slope x, mean slope z, unresolved slope variance, crest height)
   const waves = Fn(() => {
@@ -278,7 +359,7 @@ function createWaterMaterial(terrain, fieldsTex) {
     const gust = smoothstep(0.18, 0.82, gustA.mul(0.62).add(gustB.mul(0.38)));
     // the open sea choppiest, La Concha & the port calmer, the river & the ponds calmest
     const shelter = mix(mix(float(0.5), float(1.25), surf), float(0.3), river);
-    const energy = mix(float(0.55), float(1.25), gust).mul(shelter).toVar();
+    const energy = mix(float(0.55), float(1.25), gust).mul(shelter).mul(mix(float(1.0), float(0.28), sheltered)).toVar();
 
     // The river carries the two short layers seaward: two flow-map phases half a period apart, each faded out as it
     // resets
@@ -331,7 +412,7 @@ function createWaterMaterial(terrain, fieldsTex) {
     const runup = sin(time.mul(6.2832).div(period).add(warp.mul(5.0))).mul(0.5).add(0.5);
     const swashDepth = breaker.mul(0.07).add(0.03).mul(runup.mul(0.8).add(0.4));
     const swash = exp(depth.div(swashDepth).negate()).mul(float(0.85).mul(float(1.0).sub(river)));
-    const density = clamp(max(surfFoam, swash), 0.0, 1.0).toVar();
+    const density = clamp(max(surfFoam, swash), 0.0, 1.0).mul(float(1.0).sub(harbour)).toVar();
 
     // Lace: foam breaks up into a web of bubbles and holes, densest at the crest. The noise only runs near the shore
     // (no derivatives or texture reads inside the branch, so it stays legal in non-uniform control flow)
@@ -364,7 +445,8 @@ function createWaterMaterial(terrain, fieldsTex) {
   mat.metalnessNode = clamp(fresnel.mul(1.6), 0.0, 0.9).mul(float(1.0).sub(foam));
 
   mat.colorNode = Fn(() => {
-    const d = depth;
+    // (the harbour's water as deep as its dredged basins, not the LiDAR's shallow bed)
+    const d = max(depth, harbour.mul(6.0));
     // sand seen through a few centimetres of water at the edge, turquoise over the sand, blue-green to deep blue
     const c = mix(vec3(0.27, 0.30, 0.22), vec3(0.04, 0.27, 0.25), smoothstep(0.0, 1.2, d)).toVar();
     c.assign(mix(c, vec3(0.018, 0.115, 0.145), smoothstep(1.5, 7.0, d)));
@@ -377,6 +459,8 @@ function createWaterMaterial(terrain, fieldsTex) {
     const silt = noise2D(p.xz.mul(0.006).add(7.3));
     const greenWater = mix(vec3(0.05, 0.08, 0.045), vec3(0.03, 0.055, 0.035), smoothstep(0.3, 2.5, d)).mul(silt.mul(0.3).add(0.85));
     c.assign(mix(c, greenWater, river));
+    // the harbour: greener and murkier
+    c.assign(mix(c, vec3(0.016, 0.05, 0.04), harbour.mul(0.65)));
     // thin sunlit crests transmit a greener tint (upstream)
     const crestTint = smoothstep(0.6, 2.4, waves.w).mul(0.3).add(1.0);
     return mix(c.mul(crestTint), vec3(0.78, 0.81, 0.8), foam);

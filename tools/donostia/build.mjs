@@ -6,6 +6,7 @@
 //   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
 //   js/donostia/geodata.js             frame, terrain metadata (with the shore walls), buildings, landmark sites &
 //                                      teleports
+//   js/donostia/data-beach-access.js  the stairs & ramps down to the beaches (tools/donostia/beach-access.mjs)
 // --preview writes debug images (hillshade, building heights) into the given folder.
 // Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
@@ -15,12 +16,14 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
-import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
+import { detectWalls, detectStairs, quayEdges, shoreGuides, wallExclusions } from './walls.mjs';
+import { beachAccesses, carveTerrain } from './beach-access.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
+const OUT_ACCESS = path.join(ROOT, 'js', 'donostia', 'data-beach-access.js');
 const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
@@ -594,10 +597,12 @@ function groundClasses(grid, wet) {
 // --- 4c. Shore walls: La Concha's promenade wall, the Paseo Nuevo, the Urumea's & the port's quays ---------------------
 
 // The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
-// LiDAR; here the samples on either side of each wall line that share a triangle across it (wallSnaps, which
+// LiDAR (and along a few of the port's quays, the municipal map's edges); tools/donostia/beach-access.mjs adds the lines
+// behind the stairs & ramps built in front of a wall (which the search leaves out). The samples on either side of each wall line that share a triangle across it (wallSnaps, which
 // js/donostia/terrain.js runs again to move them onto the line) lose the smear: those in front drop to the foot of the
 // wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back up to
-// the promenade's level. Nothing further from a wall changes. Returns GEO.terrain.walls.
+// the promenade's level. Nothing further from a wall changes. Returns { walls (GEO.terrain.walls), access (the beach
+// accesses, beachAccesses()) }.
 function shoreWalls(dtm, grid, classes) {
   const t = performance.now();
   // OSM water at sea level, as the water mask has it (ponds sit above POND_LEVEL)
@@ -615,12 +620,19 @@ function shoreWalls(dtm, grid, classes) {
     return i < 0 || j < 0 || i >= grid.w || j >= grid.h ? -1 : classes[j * grid.w + i];
   };
   const margin = 12;
-  const walls = detectWalls({
+  const searched = detectWalls({
     dtm, classAt, log,
     guides: shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }),
     exclude: wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext: CORE }),
     bounds: { minX: CORE.minX + margin, maxX: CORE.maxX - margin, minZ: CORE.minZ + margin, maxZ: CORE.maxZ - margin }
   });
+  // (and the port's quays where the search finds only scraps: the north basin's north quay, the old slipway's sides)
+  const found = quayEdges({ dtm, walls: searched, loadLayer, log });
+  const buildingRings = ['c500_ERAIKINA.json', 'c500_EraikinArinak.json'].flatMap((f) => loadLayer(f).features.map((b) => b.g[0]));
+  const access = beachAccesses({ dtm, walls: found, buildings: buildingRings, loadLayer, log });
+  // (the hidden runs, where an access standing on the sand meets higher ground, step the terrain like any wall: the
+  // runtime moves the same samples, js/donostia/terrain.js)
+  const walls = access.walls;
   const snaps = wallSnaps(walls, grid);
   const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
   // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
@@ -645,7 +657,8 @@ function shoreWalls(dtm, grid, classes) {
       const q = nearestWall(walls, x, z, PAD, index);
       if (!q || q.end || q.d <= 0) continue;
       const w = walls[q.wall];
-      if (q.d > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
+      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little)
+      if (Math.hypot(x - q.x, z - q.z) > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
       const snapped = snaps.get(k);
       if (grid.data[k] > q.foot + 0.1 || snapped) {
         if (grid.data[k] > q.foot + 0.1) { grid.data[k] = q.foot; lowered++; }
@@ -666,19 +679,21 @@ function shoreWalls(dtm, grid, classes) {
       grid.data[k] = level;
     }
   }
-  log(`shore walls: ${walls.length} runs, ${walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
+  log(`shore walls: ${access.walls.length} runs, ${access.walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
     `samples onto the walls, ${lowered} in front dropped to the foot, ${raised} behind levelled with the promenade ` +
     `(${((performance.now() - t) / 1000).toFixed(1)} s)`);
-  return walls;
+  return { walls: access.walls, access };
 }
 
 // --- 4d. The flights of steps down from the shore walls ------------------------------------------------------------------
 
-// tools/donostia/walls.mjs finds the municipal map's stairs by the walls and fits their slope to the 1 m LiDAR;
-// js/donostia/shore.js builds them as stone steps. The terrain samples inside a flight are kept a little under its
-// slope, so the ramp the grid made of it stays hidden under the steps. Returns GEO.terrain.stairs.
-function shoreStairs(dtm, walls, grid) {
-  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, log });
+// tools/donostia/walls.mjs finds the municipal map's stairs by the walls (but those of the beaches, which
+// tools/donostia/beach-access.mjs builds) and fits their slope to the 1 m LiDAR; js/donostia/shore.js builds them as
+// stone steps. The terrain samples inside a flight are kept a little under its slope, so the ramp the grid made of it
+// stays hidden under the steps; under the beaches' stairs & ramps likewise, and the sand round those in front of a wall
+// comes down to the beach. Returns GEO.terrain.stairs.
+function shoreStairs(dtm, walls, grid, classes, access) {
+  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, skip: access.claimed, log });
   let lowered = 0;
   for (const s of stairs) {
     const [a, b, c, cx, cz] = s.plane;
@@ -689,8 +704,57 @@ function shoreStairs(dtm, walls, grid) {
       if (grid.data[k] > under) { grid.data[k] = under; lowered++; }
     });
   }
-  log(`shore stairs: ${lowered} terrain samples kept under the steps`);
+  const carved = carveTerrain(grid, access, classes, GROUND.beach, GROUND.stairs);
+  log(`shore stairs: ${lowered} terrain samples kept under the steps; ${carved} under & round the beaches' stairs & ramps`);
   return stairs.map(({ plane, ...s }) => s);
+}
+
+// --- 4e. The port's dredged bed ------------------------------------------------------------------------------------------
+
+// The LiDAR has the harbour's water at 0 m and no isobath reaches inside the moles, so the sea floor's fill leaves both
+// basins and the outer harbour at the water's -0.3 m floor (they would dry out below half tide). Inside the marinas (OSM
+// ways 157022675, Kirol portua, and 565482772, Donostia) and HARBOUR (the outer harbour, inside the moles) the water's
+// floor goes down to HARBOUR_BED, below the lowest spring tides (-2.2 m): at once against a quay wall, over
+// HARBOUR_SLOPE from any other shore (the old port's slipway); never above the fill (by the mouth, between the moles'
+// heads, it is already deeper), so the bed meets the bay's floor there.
+const HARBOUR = [-300, -160, -262, -141, -200, -129, -150, -117, -124, -110, -101, -124, -62, -115, -30, -104, 40, -82, 110, -60,
+  140, -52, 165, -40, 165, -285, -300, -285];
+const HARBOUR_WAYS = [157022675, 565482772];
+const HARBOUR_BED = -3; // m
+const HARBOUR_SLOPE = 6; // m from a shore without a wall to the full depth
+function harbourBed(grid, kind, walls) {
+  const rings = [HARBOUR];
+  for (const e of loadLayer('osm_places.json').elements) {
+    if (HARBOUR_WAYS.includes(e.id) && e.geometry) rings.push(e.geometry.flatMap((p) => lonLatToLocal(p.lon, p.lat)));
+  }
+  const index = wallIndex(walls, 16, 4);
+  const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
+  // the water, and the cells below sea level in front of a quay wall (mostly land in the 1 m mask: the wall's smear)
+  const wet = (k) => kind[k] === WATER.sea || kind[k] === WATER.bed;
+  const inside = new Uint8Array(grid.w * grid.h);
+  for (const r of rings) {
+    scanRings([r], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+      const k = j * grid.w + i;
+      if (wet(k)) { inside[k] = 1; return; }
+      if (grid.data[k] > -0.05) return;
+      const q = nearestWall(walls, ...at(k), 3, index);
+      if (q && !q.end && q.d > 0) inside[k] = 1;
+    });
+  }
+  // metres to the nearest cell that is not water (the shore)
+  const toShore = chamfer(grid.w, grid.h, grid.res, (k) => !inside[k] && !wet(k) && kind[k] !== WATER.river);
+  let n = 0;
+  for (let k = 0; k < inside.length; k++) {
+    if (!inside[k]) continue;
+    // (in front of a wall within reach of the shore: the full depth up to its foot)
+    const q = nearestWall(walls, ...at(k), toShore[k] + 2, index);
+    const walled = q && !q.end && q.d > 0;
+    const f = walled ? 1 : Math.min(1, toShore[k] / HARBOUR_SLOPE);
+    const bed = grid.data[k] + (HARBOUR_BED - grid.data[k]) * f;
+    if (bed < grid.data[k] - 0.005) { grid.data[k] = bed; n++; }
+  }
+  log(`harbour: ${n} samples of the basins & the outer harbour (${((n * grid.res * grid.res) / 1e4).toFixed(2)} ha) laid at ` +
+    `${HARBOUR_BED} m or deeper`);
 }
 
 function writeTerrainPNG(grid, blue, file, text) {
@@ -835,7 +899,9 @@ const LANDMARKS = [
   ['bretxa', 'way', 23905020], ['bretxa-merkatua', 'way', 23905055], ['bretxa-plaza', 'way', 119089295],
   ['boulevard-kioskoa', 'way', 184003729], ['tenis-kluba', 'way', 182691330], ['tenis-pistak', 'way', 39244628],
   ['tabakalera', 'relation', 3266749], ['atotxa-dorrea', 'way', 172593495],
-  ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607]
+  ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607],
+  // round 4 (queries/places.overpassql): Aiete's palace and the Kulturetxea's sunken pavilion in its park
+  ['aiete-jauregia', 'way', 56132590], ['aiete-kulturetxea', 'way', 224241887]
 ];
 
 // Each landmark's OSM object, looked up before anything is baked: one missing from the snapshot (a query edited without
@@ -901,7 +967,7 @@ const TELEPORTS = [
   ['urgull', 'Urgull', 'Monte Urgull', [-1.98942, 43.32485], 25, [-1.9830, 43.3140], 0],
   ['kontxa', 'Kontxa pasealekua', 'Paseo de La Concha', [-1.9905, 43.3152], 6, [-1.99948, 43.32139], 12],
   ['udaletxea', 'Alderdi Eder', 'Alderdi Eder', [-1.9876, 43.3207], 10, [-1.98578, 43.32160], 12],
-  ['alde-zaharra', 'Konstituzio plaza', 'Plaza de la Constitución', [-1.98540, 43.32340], 1.7, [-1.98470, 43.32380], 6],
+  ['alde-zaharra', 'Konstituzio plaza', 'Plaza de la Constitución', [-1.985080, 43.323413], 1.7, [-1.98470, 43.32380], 6],
   ['kursaal', 'Kursaal eta Zurriola', 'Kursaal y Zurriola', [-1.9792, 43.3225], 8, [-1.97836, 43.32448], 10],
   ['artzain-ona', 'Artzain Onaren katedrala', 'Catedral del Buen Pastor', [-1.98169, 43.31790], 2, [-1.98169, 43.31689], 30],
   ['orrazia', 'Haizearen orrazia', 'Peine del Viento', [-2.00470, 43.32110], 5, [-2.00555, 43.32169], 3],
@@ -909,7 +975,10 @@ const TELEPORTS = [
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
   ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
   ['dabadaba', 'Dabadaba', 'Sala Dabadaba', [-1.975780, 43.315545], 1.7, [-1.976278, 43.315608], 3],
-  ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
+  ['aiete', 'Aieteko jauregia', 'Palacio de Aiete', [-1.991674, 43.306152], 6, [-1.992012, 43.305579], 9],
+  ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12],
+  // over the pitch's centre, at the tifo on the south stand (js/donostia/landmarks/anoeta-tifo.js)
+  ['aitor-zabaleta', 'Aitor Zabaleta harmaila', 'Grada Aitor Zabaleta', [-1.97362, 43.301421], 28, [-1.973006, 43.300812], 8.5]
 ];
 
 function bakeTeleports(heightAt) {
@@ -984,8 +1053,9 @@ lap('terrain grids');
 fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
-const walls = shoreWalls(dtm, core.grid, coreClasses);
-const stairs = shoreStairs(dtm, walls, core.grid);
+const { walls, access } = shoreWalls(dtm, core.grid, coreClasses);
+const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access);
+harbourBed(core.grid, core.kind, walls);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -1028,6 +1098,13 @@ const js = `// js/donostia/geodata.js — generated by tools/donostia/build.mjs;
   `export const GEO = ${JSON.stringify(GEO)};\n`;
 fs.writeFileSync(OUT_JS, js);
 log(`${path.relative(ROOT, OUT_JS)}: ${(js.length / 1e6).toFixed(2)} MB, ${buildings.length} buildings, ${landmarks.length} landmarks, ${teleports.length} teleports`);
+const accessJs = `// js/donostia/data-beach-access.js — generated by tools/donostia/build.mjs (tools/donostia/beach-access.mjs); do not edit.\n` +
+  `// Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (CC BY-SA 3.0) · Eusko Jaurlaritza / ` +
+  `Gobierno Vasco. geoEuskadi (LiDAR, CC BY 4.0; orthophoto 2025) · © OpenStreetMap contributors (ODbL)\n` +
+  licenceComment('c500', 'geoeuskadi', 'osm') +
+  `export const BEACH_ACCESS = ${JSON.stringify(access.data)};\n`;
+fs.writeFileSync(OUT_ACCESS, accessJs);
+log(`${path.relative(ROOT, OUT_ACCESS)}: ${(accessJs.length / 1e3).toFixed(1)} kB`);
 
 if (PREVIEW) {
   fs.mkdirSync(PREVIEW, { recursive: true });

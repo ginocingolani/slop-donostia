@@ -19,17 +19,23 @@ The steps it runs, in order:
 |---|---|---|
 | `fetch.sh` | the web | `tools/donostia/raw/` (gitignored); `tools/donostia/data/osm_*.json` & `osm_queries.sha256` (committed) |
 | `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed); `raw/bathy/isobaths.json` and the unzipped `raw/dtm/*.asc` (bake-only) |
-| `build.mjs` (with `walls.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls) |
-| `bake-ground.mjs` | `tools/donostia/data/`, the terrain | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
+| `build.mjs` (with `walls.mjs`, `beach-access.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps) |
+| `bake-ground.mjs` | `tools/donostia/data/`, the terrain, the beaches' stairs & ramps | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
-| `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches | `js/donostia/data-shore.js` (the rocks) |
-| `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata | `js/donostia/data-streetscape.js` |
+| `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches, the port's quays (`port.mjs`) | `js/donostia/data-shore.js` (the rocks) |
+| `bake-marina.mjs` (with `port.mjs`) | OSM piers, municipal pontoons, quays & ramps, the shore walls & stairs, the terrain, outlines read off the 2025 orthophoto | `js/donostia/data-marina.js` (pontoons, gangways, quay fittings, the slipway, the harbour's water) |
+| `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata, the beaches' stairs & ramps | `js/donostia/data-streetscape.js` |
 | `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
 | `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
+| `digitise-boats.mjs` (with `jpeg.mjs`; only with `raw/ortho`) | the 2025 orthophoto over the port, OSM marinas & piers, the municipal quays & pontoons, the terrain | `tools/donostia/data/port_boats.json` (committed) |
+| `bake-boats.mjs` | `port_boats.json`, the municipal quays & pontoons, OSM piers | `js/donostia/data-boats.js` |
+| `bake-tifo.mjs` (with `jpeg.mjs`) | the tifo's design (`js/donostia/landmarks/tifo-design.js`); the portrait's photo (`raw/refs/tifo/`, kept as committed without it) | `data/donostia/tifo-banner.png`, `tifo-portrait.png` |
 
 `build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
-`bake-shore.mjs --preview <dir>` and `bake-alderdi.mjs --preview <dir>` also write debug images for checking a rebuild.
+`bake-shore.mjs --preview <dir>`, `bake-marina.mjs --preview <dir>`, `bake-alderdi.mjs --preview <dir>`,
+`digitise-boats.mjs --preview <dir>`, `bake-boats.mjs --preview <dir>` and `bake-tifo.mjs --preview <dir>` also write debug images for checking a
+rebuild.
 
 The OpenStreetMap snapshot is committed and only fetched again when it is missing, when a query changed since it was
 taken (`osm_queries.sha256` records the hash of each query as sent) or with `--refresh-osm`. The queries
@@ -50,8 +56,10 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | 1 m terrain (MDT LiDAR 2017, tiles 064_4..6_1..3 and 040_6_8) | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 1 m isobaths | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, gardens, woodland, beaches, tree pits, bike lanes, railway; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
+| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
+| Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Licences
 
@@ -73,8 +81,15 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/geodata.js` | municipal map, b5m, OSM, the terrain | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-streets.js`, `data-urgull-parts.js` | OSM, municipal map | ODbL 1.0 + CC BY-SA 3.0 |
 | `js/donostia/data-bridges.js`, `data-streetscape.js`, `data-shore.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
+| `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
+| `js/donostia/data-beach-access.js` | municipal map (stairs, ramps, spot heights, beaches, buildings), the LiDAR, read against the 2025 orthophoto and OSM | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
+| `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
+| `js/donostia/landmarks/konstituzio-plaza.js` (the square's plan: the arcades' outline, piers and passages, the library's block) | municipal map | CC BY-SA 3.0 |
+| `data/donostia/tifo-portrait.png` | Goiena.eus's photo via Wikimedia Commons (cropped to his portrait's disc, turned to greys, resampled, contrasted) | CC BY-SA 4.0, credit «Goiena.eus, via Wikimedia Commons» |
+| `data/donostia/tifo-banner.png` | nothing outside: drawn by `bake-tifo.mjs` from the design | as the code (MIT) |
 
 The data was modified: reprojected into the local frame, simplified, clipped, rasterised, resampled and combined as
 described above. Every generated file names its sources and licences: the extracted layers in their `source` field
@@ -100,11 +115,118 @@ map.
   it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
   inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
   piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
-  under the slope, and `shore.js` builds them as solid steps of about 17 cm.
+  under the slope, and `shore.js` builds them as solid steps of about 17 cm. The beaches' stairs are not among them:
+  `beach-access.mjs` builds those (below).
+- Beach accesses (`beach-access.mjs` → `js/donostia/data-beach-access.js`, built by `js/donostia/beach-access.js` in the
+  shore walls' mesh): every way down from the promenades to La Concha, Ondarreta and Zurriola, inventoried by hand in
+  `ACCESS`: each access names the municipal map's stairs (`ESKAILERA`) and ramps (`ARRAPALA`) pieces it is made of, by
+  the mean of their outline's vertices, chained from the top to the sand, read against the 2025 orthophoto (steps,
+  landings, parapets and the railings' shadows) and OSM's steps (direction, step counts, handrails). Levels: the 1:500
+  spot heights (`KotaPuntuak`) where there are some (promenade, landings, the sand at the foot), else the 1 m LiDAR;
+  each chain's fall is shared out over its flights' and ramps' runs, between the anchors. Then, deterministically:
+  each piece's way down (from the piece before to the piece after, squared to its sides), its steps (rises of about
+  16.5 cm, a 3 cm nosing; the last one 12 cm into the sand), and each side of its outline: shared with the next piece,
+  against a building, the head, the foot (open to the sand), open (a 14 cm kerb, and the handrail: white-painted tube
+  at La Concha & Ondarreta, stainless at Zurriola; La Concha's cast-iron railing down the rotunda's, Alderdi Eder's and
+  Ondarreta's ramps), low over the ground beside (the kerb alone), a cheek (a broad flight cut into the promenade) or
+  against ground well above it (a retaining wall line from that ground down to the piece, masonry and coping). The
+  accesses built in front of a sea wall stand on the sand as blocks of masonry: the terrain under them goes down to the
+  sand, the wall runs on behind them (the edge on the promenade's side, spliced onto the shore walls the LiDAR search
+  found, which stops at stairs; a corner of the promenade at a piece's own level is a hidden wall line, behind its
+  body), and the sand heaped against them by the 2 m grid comes down to the beach within 4.5-6.5 m. Where a wall line
+  bends, the samples on it go back by the chord's sagitta (at most 0.45 m, under the coping), so the terrain's face
+  never stands in front of the masonry. The railing of `bake-streetscape.mjs` opens at each access's head and runs
+  down the ramps that carry it; `bake-ground.mjs` gives the pieces' ground the surfaces round them.
+  Inventory (28 accesses built, 116 parts, 616 steps; the Caseta Real's twin flights are La Perla's landmark model):
+
+  | Beach | Accesses |
+  |---|---|
+  | La Concha | flights along the wall: the west end (63 steps), by La Perla's Eguzki (28) and the Café de la Concha (25); double flights from one opening, each to a landing and on to the sand (at x 85, 53; at x 255, 42); the Pico del Loro switchback down the wall and out across the sand (59); the broad flight to the Miramar bastions' terrace (11); La Perla's service steps (12); the flight up to the doors under the clock rotunda (20); the rotunda's two ramps along the wall to landings, on by ramp and by steps (railing down the ramps); Alderdi Eder's twin ramps, walkway and flights (railing) |
+  | Ondarreta | the west ramp along the wall from a landing (40 m, railing), three broad flights cut into the promenade (14, 6 with a ramp beside, 28 in four pieces), the east ramp along the edge, the Pico del Loro's curved flight to its terrace and on down to the rocks (46) |
+  | Zurriola | the dike's flight with a landing (25), the Kursaal's corner flight (10) and ramp, the flights by the Kursaal (14), the 40 m ramp (1023), the flight square to the wall to a half-round landing (22), the 1195 ramp along the wall with its terrace and steps, the wall gap's three flights (17), Sagüés' ramp and flights with landings (58) |
+
+  Left to the sand until photographs show them: two 2 m pieces in the corners between La Perla's octagons and the wall
+  (around (−83, 675) and (0, 628)): no spot height at their tops and only the wall's smear in the LiDAR; 2 m deep under
+  a 5 m drop, they cannot be flights to the promenade (steps up to a door in the wall's base, most likely).
+- The port (`walls.mjs` `quayEdges`, `build.mjs` `harbourBed`, `bake-ground.mjs`): the search finds the north basin's
+  north quay only in scraps and the old port slipway's sides not at all, so in two boxes the municipal map's quay edges
+  (`KAIA`) stand as walls wherever the LiDAR falls 0.8 m or more across them (the quay behind, the water or the
+  slipway's floor in front), replacing and joining the search's runs. The LiDAR has the harbour's water at 0 m and no
+  isobath reaches inside the moles, so both marinas (OSM ways 157022675 and 565482772) and the outer harbour (a ring
+  inside the moles) get a dredged bed of -3 m, below the lowest spring tides (-2.2 m): at once against a quay wall,
+  over 6 m from any other shore, never shallower than the sea floor's fill (by the mouth, between the moles' heads, it
+  is already deeper). In the port every flat unmapped cell is paved as a quay, however far from the water (the old
+  port's square and slipway), a cell beside a quay wall counting its slope on its flat side.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
-  the bed above mean sea level, the OSM bare rock & rocky coastline), never on paving, buildings, beaches, bridges or the
-  Kursaal's podium.
+  the bed above mean sea level, the port's two moles, the OSM bare rock & rocky coastline), never on paving, buildings,
+  beaches, bridges or the Kursaal's podium. The port's moles (OSM breakwaters 859798080 & 859798081, `port.mjs`) get
+  concrete cubes, as the orthophoto shows, on what their outlines hold beyond the municipal quays; no rock lies on the
+  quays (`KAIA`, a cell's margin round them) or down the old port's slipway.
+- The port (`bake-marina.mjs`, `js/donostia/marina.js`): the pontoons' centre lines are the OSM piers (the Kirol
+  portua's walkways, the Donostia marina's comb and quay pontoons), their widths measured on the 2025 orthophoto; the
+  fingers and T-heads are what is left of the municipal map's pontoons (`PANTALANA`) once the walkways are taken out,
+  each fitted with a rectangle and run on to its walkway's edge; the pontoons neither map has are read off the
+  orthophoto (`ORTHO_PONTOONS`). An OSM end drawn onto the quay stops a quarter of a metre off the wall. The decks float
+  at 0.45 m freeboard and ride the tide (the water's `getSeaLevel()`), settling no lower than mean sea level, since the
+  basins' LiDAR bed lies only 0.3 m down. Gangways hang from the quay at the municipal ramps that end by a pontoon, at
+  the quay steps whose bottom step does, and where an OSM walkway meets the wall, pitched to the pontoons' level every
+  frame the tide moves them; each has a gate at its head. Guide piles stand along the walkways (one every ~14 m,
+  alternately either side, never under another deck or against a wall), cleats every 3 m along the berths' edges,
+  service pedestals every 11 m. On the harbour's quay walls (the walls inside `port.mjs`'s `HARBOUR` ring, over water
+  in front and with no pontoon, steps or gangway alongside): a bollard every 12 m, iron rings between them on the old
+  port, a ladder every 36 m, timber strakes on the fishing quay below the Naval Museum. The old port's slipway is the
+  notch the municipal quays (`KAIA`) leave at the foot of Kaiarriba, cut off at its toe, its concrete a quadric fitted to
+  the LiDAR inside it (3 m clear of its smeared edges, outliers dropped) and lifted over the terrain.
+- Calm water in the harbour (`js/donostia/water.js`): `port.mjs`'s `HARBOUR` ring (the water inside the moles, drawn on
+  the orthophoto over their crests) and `MOUTH` give two blurred fields on a 2 m grid: inside (rising to 1 within 20 m
+  past the mouth: the harbour's green water, no surf or swash, its colour never the turquoise of a sandy shallow) and
+  sheltered (rising to 1 within 70 m: the waves down to 28 % of the open sea's, so reflections sharpen). The open sea is
+  unchanged.
+- The port's boats (`digitise-boats.mjs`): the 389 boats moored in the inner basin, the north basin and the old port on
+  the 2025 orthophoto (`raw/ortho/ortho2025-port_x-350_z-300.jpg`, decoded by `jpeg.mjs`, a stdlib baseline JPEG
+  decoder, so the pixels are the same on every machine). The bright, neutral or painted pixels on the basins' water,
+  off everything built, make blobs; a row of boats moored side by side is one blob, cut across its axis at the seams
+  between the hulls by dynamic programming (each piece must be as wide as a hull of its length), the axis chosen among
+  the seams' sharpest, the blob's own, the edge it is moored to and its neighbours'. Each piece's tightest box gives the
+  centre, heading, length & beam, its narrower end the bow, its outline (a long teardrop, widest well aft: a sailboat)
+  and colours the family. What the automatic pass gets wrong (the passenger boats & the catamaran, cut across; the
+  old port's few boats; pale quay edges taken for hulls; a dozen others) is dropped, corrected or added by hand in the
+  script, checked tile by tile against the orthophoto. `bake-boats.mjs` takes 15 cm off every length & beam (the photo's
+  blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
+  is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
+  colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+- Konstituzio plaza (`js/donostia/landmarks/konstituzio-plaza.js`): the square's plan is the municipal map's arcade
+  (`EraikinEgitura` `ARKUPEA`: the covered walks, their back walls, the passages to the four streets and the piers,
+  drawn as notches in the square's edge), embedded in the square's own frame; the arches' rhythm is fitted to those
+  piers (20 on the north and south sides, 9 on the east one between the passages' great arches, the old City Hall's
+  five). Storey heights, the bays, the balconies' numbering (1-49 on the top floor, 50-98 and 99-147 below, from the
+  north side's west end round to the south side's), colours and the library's front were read off Wikimedia Commons
+  photographs of the square (its category, freely licensed); the photographs are references only and nothing derived
+  from their pixels is committed. The blocks round the square stay the city's extrusions with their eaves levelled at
+  the cornice: `buildFacadeCells` (`js/donostia/facade-mesh.js`) takes replaced records (`skip` lists the stretches of
+  an outline a landmark builds itself) and phantom neighbours (never drawn, but they hide party walls).
+- Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
+  the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
+  road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster
+  than a steep street (15 %) out of a cutting at least 2.5 m deep, up to 24 m. Ground that keeps climbing is a
+  hillside, and footbridges land on steps and ramps, so neither is extended (Aiete pasealekua over Berabera: 35 → 45 m).
+  Under a land bridge's deck the municipal map still draws the road on top, in plan. So wherever the ground lies 2.5 m
+  or more below the deck, `bake-ground.mjs` (run after `bake-bridges.mjs`) paints the steep cells as the embankment's
+  grass and turns a bike lane on the flat cells into carriageway.
+- The tifo on Anoeta's south stand (`js/donostia/landmarks/anoeta-tifo.js`, design in `tifo-design.js`), the Aitor
+  Zabaleta harmaila / Grada Aitor Zabaleta, named in 2018 after the Real Sociedad fan killed in Madrid in 1998: the
+  one its fans raised at La Cartuja for the 2026 Copa del Rey final, laid on Anoeta's stand. A card mosaic over the
+  upper tier (blue & white bands, 1909, the ikurriña), the banner with his portrait over the lower tier, flags round
+  it. The portrait (`data/donostia/tifo-portrait.png`) is the one texture to replace, and `bake-tifo.mjs` makes it from
+  any photo: `node tools/donostia/bake-tifo.mjs --photo <file> --circle cx,cy,r --credit "…" --licence "…"` (the disc
+  round his face, in the photo's pixels; `--tones 3|4` posterises it; `--placeholder` leaves a dark disc). Its source
+  now is the only freely licensed image of him found (Wikimedia Commons, Flickr's CC search, the Basque press under CC
+  BY-SA, October 2026): Goiena.eus's photo of the fan zone's screen, licensed CC BY-SA 4.0 by Goiena. What the screen
+  shows, a fan-made medallion from an older photo of him, is a work of its own whose authors and licence the photo
+  does not give; a photo of the banner or a mural at Anoeta, taken by whoever replaces it, or one licensed by its
+  authors or his family, would give the portrait clean rights of its own. Nothing of the press photograph of the
+  Cartuja tifo the design follows is used.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often

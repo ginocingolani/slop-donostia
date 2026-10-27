@@ -18,8 +18,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
+import { BEACH_ACCESS } from '../../js/donostia/data-beach-access.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT = path.join(ROOT, 'data', 'donostia');
@@ -72,6 +74,25 @@ const PARTE_VIEJA = [
 ].flatMap(([lon, lat]) => lonLatToLocal(lon, lat));
 
 const c500 = (file) => loadLayer(file).features.map((f) => f.g.filter((r) => r.length >= 6)).filter((g) => g.length);
+// The pieces of the stairs that tools/donostia/beach-access.mjs builds as the beaches' stairs & ramps (or leaves to the
+// sand: BEACH_ACCESS.claimed, the mean of each outline's vertices) and the accesses' parts take the surfaces round them
+// (FILL, resolved by fillAccesses): the promenade's paving on one side, the sand on the other, as far as the texels
+// that straddle their outlines show
+const claimed = BEACH_ACCESS.claimed || [];
+const isClaimed = (g) => {
+  const r = g[0];
+  let x = 0, z = 0;
+  for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
+  x /= r.length / 2; z /= r.length / 2;
+  for (let k = 0; k < claimed.length; k += 2) if (Math.abs(claimed[k] - x) < 0.02 && Math.abs(claimed[k + 1] - z) < 0.02) return true;
+  return false;
+};
+const unclaimed = (g) => !isClaimed(g);
+const FILL = 31; // a raster id of its own, gone before the edges are found
+const accessPolys = [
+  ...c500('c500_ESKAILERA.json').filter(isClaimed),
+  ...(BEACH_ACCESS.parts || []).map((part) => [part.p])
+];
 
 // Painted in order, later layers win (as GROUND_LAYERS in build.mjs, with more surfaces). `over` limits a layer to
 // cells already holding one of the listed surfaces.
@@ -92,7 +113,8 @@ const LAYERS = [
   { name: 'railway', id: S.rail, polys: c500('c500_TRENBIDEA.json') },
   { name: 'bidegorris', id: S.bike, polys: c500('c500_BIDEGORRIA.json') },
   { name: 'tree pits', id: S.treePit, polys: c500('c500_ZUHAITZ_TXORKOA.json') },
-  { name: 'stairs', id: S.stairs, polys: c500('c500_ESKAILERA.json') },
+  { name: 'stairs', id: S.stairs, polys: c500('c500_ESKAILERA.json').filter(unclaimed) },
+  { name: "the beaches' stairs & ramps", id: FILL, polys: accessPolys },
   { name: 'buildings', id: S.building, polys: [...c500('c500_ERAIKINA.json'), ...c500('c500_EraikinArinak.json')] },
   {
     name: 'arcades & passages', id: S.pedestrian,
@@ -121,6 +143,7 @@ for (const layer of LAYERS) {
 // Under every mapped layer, from the 2 m terrain bake (B channel = GEO.terrain.classes, 7 = water): sea & river beds,
 // and the quays: flat unmapped ground a few metres above the water next to it (the port, the river walls, Sagüés),
 // which the municipal map leaves blank and would otherwise come out as meadow
+const PORT = { minX: -330, maxX: 170, minZ: -270, maxZ: -20 }; // as tools/donostia/walls.mjs
 const terrainFile = fs.readFileSync(path.join(OUT, 'terrain-core.png'));
 const terrainPNG = await decodePNG(terrainFile.buffer.slice(terrainFile.byteOffset, terrainFile.byteOffset + terrainFile.byteLength));
 const TW = terrainPNG.width, TH = terrainPNG.height, TRES = 2;
@@ -144,10 +167,57 @@ const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
   }
   for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) {
     const k = j * TW + i, h = height[k];
-    if (terrainBase[k] || toWater[k] > 15 || h < 1.2 || h > 9) continue;
-    const slope = Math.max(Math.abs(height[k + 1] - height[k - 1]), Math.abs(height[k + TW] - height[k - TW])) / (2 * TRES);
+    // (in the port, all of it however far from the water and down to the foot of the old port's slipway; a cell beside
+    // a quay wall counts its slope on its flat side)
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    const port = x >= PORT.minX && x <= PORT.maxX && z >= PORT.minZ && z <= PORT.maxZ;
+    if (terrainBase[k] || (toWater[k] > 15 && !port) || h < (port ? 0 : 1.2) || h > 9) continue;
+    const across = (a, b) => (port ? Math.min(Math.abs(a - h), Math.abs(h - b)) * 2 : Math.abs(a - b));
+    const slope = Math.max(across(height[k + 1], height[k - 1]), across(height[k + TW], height[k - TW])) / (2 * TRES);
     if (slope < 0.12) terrainBase[k] = S.quay;
   }
+}
+// Under a land bridge's deck (js/donostia/data-bridges.js, so bake-bridges.mjs runs first): the municipal map draws the
+// road on the bridge in plan, so its carriageway and bike lane would be painted down the embankments and across the
+// road below. Where the ground lies UNDER_DECK m or more below the deck, the steep cells are the embankment's grass and
+// a bike lane on the flat ones is the carriageway below. 0: not under a deck; 1: under it, flat; 2: under it, steep
+const UNDER_DECK = 2.5, EMBANKMENT = 0.35;
+const underDeck = new Uint8Array(TW * TH);
+{
+  const { BRIDGES } = await import(pathToFileURL(path.join(HERE, '../../js/donostia/data-bridges.js')).href);
+  const px = terrainPNG.data;
+  const h = (i, j) => ((px[3 * (j * TW + i)] << 8) | px[3 * (j * TW + i) + 1]) / 100 - 100;
+  let cells = 0;
+  for (const b of BRIDGES) {
+    if (b.water) continue;
+    const a = b.axis, half = Math.max(...[b.width].flat()) / 2 + 0.5;
+    let L = 0;
+    const seg = [];
+    for (let k = 2; k < a.length; k += 2) {
+      const l = Math.hypot(a[k] - a[k - 2], a[k + 1] - a[k - 1]);
+      seg.push([a[k - 2], a[k - 1], a[k], a[k + 1], L, l]);
+      L += l;
+    }
+    const xs = a.filter((_, k) => k % 2 === 0), zs = a.filter((_, k) => k % 2 === 1);
+    const i0 = Math.max(1, Math.floor((Math.min(...xs) - half - CORE.minX) / TRES)), i1 = Math.min(TW - 2, Math.ceil((Math.max(...xs) + half - CORE.minX) / TRES));
+    const j0 = Math.max(1, Math.floor((Math.min(...zs) - half - CORE.minZ) / TRES)), j1 = Math.min(TH - 2, Math.ceil((Math.max(...zs) + half - CORE.minZ) / TRES));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+      let best = Infinity, sAt = 0;
+      for (const [ax, az, bx, bz, s0, l] of seg) {
+        const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / (l * l || 1)));
+        const d = Math.hypot(x - ax - t * (bx - ax), z - az - t * (bz - az));
+        if (d < best) { best = d; sAt = s0 + t * l; }
+      }
+      if (best > half || sAt <= 0 || sAt >= L) continue;
+      const deck = b.y[0] + ((b.y[1] - b.y[0]) * sAt) / L;
+      if (h(i, j) > deck - UNDER_DECK) continue;
+      const slope = Math.max(Math.abs(h(i + 1, j) - h(i - 1, j)), Math.abs(h(i, j + 1) - h(i, j - 1))) / (2 * TRES);
+      underDeck[j * TW + i] = slope > EMBANKMENT ? 2 : 1;
+      cells++;
+    }
+  }
+  log(`ground under land bridges: ${cells * TRES * TRES} m² repainted (embankments grass, no bike lanes from the deck)`);
 }
 lap('sources');
 
@@ -196,6 +266,41 @@ function fillPolygon(cls, poly, rowBase, r0, r1, id, over) {
       else for (let c = c0; c <= c1; c++) if (over.includes(cls[base + c])) cls[base + c] = id;
     }
   }
+}
+
+// The beaches' stairs & ramps (FILL) take the surfaces either side of them, along the rows and then the columns, split
+// down the middle; past up to THIN cells of unmapped ground (the gap the municipal map leaves round the stairs)
+function fillAccesses(cls, rows) {
+  const run = (get, set, n) => {
+    let a = 0;
+    while (a < n) {
+      if (get(a) !== FILL) { a++; continue; }
+      let e = a;
+      while (e < n && get(e) === FILL) e++;
+      const look = (k, step) => {
+        let first = -1;
+        for (let t = 0; t < THIN && k >= 0 && k < n; t++, k += step) {
+          const c = get(k);
+          if (c === FILL) return first;
+          if (first < 0) first = c;
+          if (c !== S.natural) return c;
+        }
+        return first;
+      };
+      const before = look(a - 1, -1), after = look(e, 1);
+      if (before >= 0 || after >= 0) {
+        const mid = (a + e) >> 1;
+        for (let k = a; k < e; k++) set(k, (k < mid ? before : after) >= 0 ? (k < mid ? before : after) : Math.max(before, after));
+      }
+      a = e;
+    }
+  };
+  for (let y = 0; y < rows; y++) {
+    const b = y * FW;
+    run((k) => cls[b + k], (k, v) => { cls[b + k] = v; }, FW);
+  }
+  for (let x = 0; x < FW; x++) run((k) => cls[k * FW + x], (k, v) => { cls[k * FW + x] = v; }, rows);
+  for (let k = 0; k < FW * rows; k++) if (cls[k] === FILL) cls[k] = S.natural;
 }
 
 // Slivers of unmapped ground or hedge narrower than ~1.1 m between mapped surfaces (the gaps the municipal polygons
@@ -291,6 +396,20 @@ function columnDistances(feature, rows, out) {
         fillPolygon(cls, poly, rowBase, 0, rows, layer.id, layer.over);
       }
     }
+    // under the land bridges' decks (see underDeck)
+    const fz0 = CORE.minZ - MARGIN / SS;
+    for (let y = 0; y < rows; y++) {
+      const tj = Math.floor((fz0 + (rowBase + y + 0.5) / SS - CORE.minZ) / TRES);
+      if (tj < 0 || tj >= TH) continue;
+      const b = y * FW;
+      for (let x = 0; x < FW; x++) {
+        const ti = Math.floor((fx0 + (x + 0.5) / SS - CORE.minX) / TRES);
+        const u = ti >= 0 && ti < TW ? underDeck[tj * TW + ti] : 0;
+        if (u === 2 && cls[b + x] !== S.building && cls[b + x] !== S.stairs) cls[b + x] = S.natural;
+        else if (u === 1 && cls[b + x] === S.bike) cls[b + x] = S.road;
+      }
+    }
+    fillAccesses(cls, rows);
     clearSlivers(cls, rows);
     // edge cells, on both sides of an edge: any change of surface (f1); a carriageway against a kerbed surface (f2)
     f1.fill(0, 0, FW * rows);

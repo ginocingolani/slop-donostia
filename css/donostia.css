@@ -3,11 +3,19 @@
 /* ------------------------------------------------------------------------------------------------------------------
    Design layer: upstream's quiet glass corners, re-cut in Donostia's own materials. The panels take the Cantabrian
    blue and the limestone white of the city's txuri-urdin; Igeldo sandstone marks whatever is active. Place names are
-   set in the letter of the Basque carved inscriptions (the crowned A of the lintels and stelae), the way the Basque
-   Country letters its fascias, and only the names: controls, numbers and Spanish stay in Inter. The motifs are kept to
+   set in Ateburu, the letter of the Basque carved inscriptions (the crowned A of the lintels and stelae), the way the
+   Basque Country letters its fascias, and only the names: controls, numbers and Spanish stay in Inter. The motifs are kept to
    two, both taken from the stones themselves rather than from folklore: the compass-drawn rosette of the discoidal
    stelae, and the inner rule of a carved cartouche
    ------------------------------------------------------------------------------------------------------------------ */
+/* Ateburu (fonts/ateburu, SIL OFL), drawn for this HUD: its SemiBold, the cut made for light text on these panels at
+   12-20 px, answers every weight the HUD asks for, so the browser never fakes a bold */
+@font-face {
+  font-family: 'Ateburu';
+  src: url('../fonts/ateburu/webfonts/Ateburu-HUD.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
 @font-face {
   font-family: 'Donostia Display';
   src: url('../fonts/donostia-display/DonostiaDisplay-Regular.woff2') format('woff2');
@@ -37,11 +45,11 @@
   --r-panel: 10px;
   --r-ctl: 6px;
 
-  /* Harri (Blancoletters / Type-Ø-Tones) first, wherever a licence has loaded it; Donostia Display otherwise */
-  --font-display: 'Harri', 'Donostia Display', Georgia, serif;
+  /* Ateburu first; Donostia Display (Marcellus with the crowned A) for anything Ateburu does not cover yet */
+  --font-display: 'Ateburu', 'Donostia Display', Georgia, serif;
 }
 
-/* The display lettering is always capitals (as Harri is drawn), opened up, and never set under 12 px */
+/* The display lettering is always capitals (as Ateburu is drawn), opened up, and never set under 12 px */
 
 /* The carved cartouche: a hairline cut just inside the frame */
 .brand,

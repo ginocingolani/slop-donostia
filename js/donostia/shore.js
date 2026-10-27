@@ -3,8 +3,10 @@ import {
   Fn, float, vec2, vec3, attribute, positionWorld, positionGeometry, positionView, normalView, mix, smoothstep, step, floor,
   fract, min, max, abs, sin, dot, fwidth, uniform, time, mx_noise_float
 } from 'three/tsl';
-import { WALL, COPING } from './shore-walls.js';
+import { WALL, COPING, visibleWalls } from './shore-walls.js';
 import { SHORE } from './data-shore.js';
+import { accessGeometry } from './beach-access.js';
+import { BEACH_ACCESS } from './data-beach-access.js';
 
 // js/donostia/shore.js
 // The shore: the masonry of the sea & river walls the terrain now steps down at (GEO.terrain.walls, found in the LiDAR by
@@ -19,9 +21,12 @@ import { SHORE } from './data-shore.js';
 //   per kind and per 1 km tile so whole tiles drop out of view, and each kind culled by distance.
 // The tidal band darkens walls & rocks below the high-water line and weed grows under half tide, after the sea's level
 // (seaLevel: the water's userData.seaLevel uniform, so the tide moves it).
-// - Stairs: the flights of steps down from the walls to the sand (the municipal map's, GEO.terrain.stairs), solid stone
-//   steps cut square to each flight's fall, in the concrete's grey.
-// Draws: one for the walls, one for the stairs, one per rock kind and tile in view; three materials.
+// - The beaches' stairs & ramps (js/donostia/beach-access.js, from data-beach-access.js) in the walls' masonry, in the
+//   walls' mesh.
+// - Stairs: the other flights of steps down from the walls (the municipal map's, GEO.terrain.stairs: the port's quays,
+//   the river's, Santa Klara's), solid stone steps cut square to each flight's fall, in the concrete's grey.
+// Draws: one for the walls & the beaches' stairs, one for the other stairs, one per rock kind and tile in view; three
+// materials.
 
 const TILE = 1024; // m
 
@@ -223,8 +228,17 @@ function wallMaterial(seaLevel) {
   return mat;
 }
 
+// Appends geometry b (the same layout) to a; either may be null
+function mergeInto(a, b) {
+  if (!a || !b) return a || b;
+  const base = a.pos.length / 3;
+  for (const key of ['pos', 'nrm', 'col', 'u', 'mason', 'mortar', 'foot']) for (const v of b[key]) a[key].push(v);
+  for (const i of b.idx) a.idx.push(base + i);
+  return a;
+}
+
 function wallMesh(GEO, terrain, seaLevel) {
-  const g = wallGeometry(GEO.terrain.walls || [], (x, z) => terrain.heightAt(x, z));
+  const g = mergeInto(wallGeometry(visibleWalls(GEO.terrain.walls || []), (x, z) => terrain.heightAt(x, z)), accessGeometry(BEACH_ACCESS));
   if (!g) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));

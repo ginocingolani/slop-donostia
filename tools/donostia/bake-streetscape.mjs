@@ -12,8 +12,10 @@
 //   woods...) and a scale that keeps its crown off the nearest wall.
 // - La Concha's railing: the landward edge of the Kontxa & Ondarreta beach polygons where the promenade (sidewalk or
 //   pedestrian paving) meets them, pulled onto the top of the wall in the LiDAR terrain, open at the heads of OSM's
-//   steps & ramps down to the sand; its pillars & lamp pedestals, the candelabra by the Hotel de Londres and the
-//   rotunda's clock & barometer (OSM's clock, the barometer mirrored across the rotunda's ramps).
+//   steps & ramps down to the sand and of the beaches' stairs & ramps (js/donostia/data-beach-access.js, written by
+//   build.mjs), never over those, and on down the open sides of the ramps that carry it; its pillars & lamp pedestals,
+//   the candelabra by the Hotel de Londres and the rotunda's clock & barometer (OSM's clock, the barometer mirrored
+//   across the rotunda's ramps).
 // - Street lamps & benches from OSM, with a heading (benches face the bay, or away from the wall behind them), and
 //   wall lanterns along the facades of the Parte Vieja, where OSM maps no street lamps.
 
@@ -30,9 +32,10 @@ const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
 const CORE = FRAME.core;
 const PREVIEW = previewDir();
 const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
-const { nearestWall, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
+const { nearestWall, visibleWalls, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
+const { BEACH_ACCESS } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/data-beach-access.js')).href);
 const G = GEO.terrain.classes;
-const WALLS = GEO.terrain.walls || [];
+const WALLS = visibleWalls(GEO.terrain.walls || []); // (not the hidden runs behind the beaches' stairs & ramps)
 
 // Species ids shared with js/donostia/trees-species.js (SPECIES order)
 const SP = { plane: 0, tamarisk: 1, broadleaf: 2, evergreen: 3, pine: 4, palm: 5 };
@@ -584,7 +587,7 @@ function bakeRailings(cuts = []) {
       const sand = terrain.heightAt(x - nx * 3, z - nz * 3);
       const drop = land - sand;
       const ok = land > 2.5 && ((paved >= 2 && drop > 0.6) || (paved + natural >= 2 && drop > 2.5));
-      if (!ok) return null;
+      if (!ok || overAccess(x + nx * 0.5, z + nz * 0.5)) return null;
       // walk inland until the terrain reaches the top of the wall (the 2 m grid smears the drop over a few metres; on a
       // vertical wall this stops at once, on the edge)
       let d = 0;
@@ -678,6 +681,19 @@ function bakeRailings(cuts = []) {
   // smooth out the snapping jitter, then thin
   const out = [], abut = [];
   for (const run of kept) {
+    // (a sample pulled onto the steps or a ramp of an access below: not the promenade's edge)
+    if (run.some((p) => overAccess(p.x, p.z))) {
+      const parts = [];
+      let cur = [];
+      for (const p of run) {
+        if (overAccess(p.x, p.z)) { if (cur.length >= 5) parts.push(cur); cur = []; } else cur.push(p);
+      }
+      if (cur.length >= 5) parts.push(cur);
+      run.length = 0;
+      if (!parts.length) continue;
+      run.push(...parts.shift());
+      for (const q of parts) kept.push(q);
+    }
     abut.push([!!run[0].abut, !!run[run.length - 1].abut]);
     let pts = run.map((s) => [s.x, s.y, s.z]);
     for (let pass = 0; pass < 3; pass++) {
@@ -689,7 +705,34 @@ function bakeRailings(cuts = []) {
     }
     out.push(simplify3(pts, 0.06));
   }
+  // down the ramps that carry it (their open sides; the sea on the (-dz, dx) side of each run)
+  for (const flat of BEACH_ACCESS.barandilla || []) {
+    const pts = [];
+    for (let k = 0; k < flat.length; k += 3) pts.push([flat[k], flat[k + 1], flat[k + 2]]);
+    if (pts.length >= 2) { out.push(pts); abut.push([false, false]); }
+  }
   return { runs: out, abut };
+}
+
+// Inside a part of the beaches' stairs & ramps (by more than 0.1 m)
+function overAccess(x, z) {
+  for (const part of BEACH_ACCESS.parts || []) {
+    const r = part.p;
+    let inside = false;
+    for (let i = 0, j = r.length / 2 - 1; i < r.length / 2; j = i++) {
+      const xi = r[2 * i], zi = r[2 * i + 1], xj = r[2 * j], zj = r[2 * j + 1];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    if (!inside) continue;
+    let d = Infinity;
+    for (let i = 0, j = r.length / 2 - 1; i < r.length / 2; j = i++) {
+      const ax = r[2 * j], az = r[2 * j + 1], dx = r[2 * i] - ax, dz = r[2 * i + 1] - az, l2 = dx * dx + dz * dz || 1e-12;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      d = Math.min(d, Math.hypot(x - ax - t * dx, z - az - t * dz));
+    }
+    if (d > 0.1) return true;
+  }
+  return false;
 }
 
 // Douglas-Peucker on an open 3D polyline
@@ -778,6 +821,13 @@ function railingFeatures(runs) {
   for (const a of accesses) {
     const p = runFrame(runs[a.on.run]).at(a.on.s);
     cuts.push({ x: p.x, z: p.z, r: OPENING_R[a.kind] });
+  }
+  // the heads of the beaches' stairs & ramps (js/donostia/data-beach-access.js)
+  for (const [x, z, r] of BEACH_ACCESS.openings || []) {
+    const on = nearestOnRailings(runs, x, z);
+    if (!on || on.d > 3) continue;
+    const p = runFrame(runs[on.run]).at(on.s);
+    cuts.push({ x: p.x, z: p.z, r });
   }
   // a monument at arc length s on run ri
   const place = (kind, ri, s) => {

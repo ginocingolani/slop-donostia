@@ -42,10 +42,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;display=swap" />
-  <!-- The place names are set in Donostia Display (fonts/donostia-display, SIL OFL). Harri, the Basque display face it
-       stands in for, is commercial and cannot ship in this repo: with a licence, load it here (an Adobe Fonts web
-       project's <link>, or a licensed webfont served from elsewhere) and css/donostia.css picks it up by name. -->
-  <link rel="preload" href="./fonts/donostia-display/DonostiaDisplay-Regular.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- The place names are set in Ateburu (fonts/ateburu, SIL OFL), a Basque display face drawn for this HUD from the
+       carved inscriptions; Donostia Display (fonts/donostia-display, SIL OFL) stays behind it as the fallback. -->
+  <link rel="preload" href="./fonts/ateburu/webfonts/Ateburu-HUD.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./css/style.css" />
   <link rel="stylesheet" href="./css/donostia.css" />
 </head>
@@ -134,12 +133,14 @@
   <div id="credits-popover" class="popover credits" popover aria-label="Data sources">
     <div class="pop-title">Datuak · Datos</div>
     <p>Terrain &amp; sea floor: Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi — LiDAR 2017 MDT &amp; isobaths (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
+    <p>Boats in the port: digitised on the 2025 orthophoto, Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi</p>
     <p>Building heights: b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
     <p>Buildings, streets &amp; ground: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
     <p>Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
     <p>Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
     <p>The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
-    <p>Lettering: Donostia Display, Marcellus by Astigmatic with the crowned A of the Basque inscriptions (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
+    <p>Aitor Zabaleta's portrait on the tifo's banner at Anoeta: from a photo by <a href="https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan" target="_blank" rel="noopener noreferrer">Goiena.eus</a> via <a href="https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>, in greys (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>). The medallion it shows is the supporters’ work</p>
+    <p>Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
     <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
   </div>
 

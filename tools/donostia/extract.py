@@ -40,7 +40,15 @@ C500_LAYERS = [
     'ERREPIDEA', 'IBILGAILUEN ZONA', 'AUTOBIDEA', 'BIDEA', 'ESPALOIA', 'OINEZKOEN ZONA', 'ESKAILERA',
     'KANPO-IGOGAILUA', 'BIDEGORRIA', 'TRENBIDEA', 'ZUHAITZ TXORKOA', 'ZuhaiztiGuneak', 'LORATEGI EREMUA',
     'LANDARE HESIA', 'PARTERREA', 'SASOIKO LORATEGIA', 'HONDARTZA',
+    # the beaches' ramps, the port's quays, pontoons, docks & moles, the coast, slopes, kerbs and tunnels
+    'ARRAPALA', 'KAIA', 'PANTALANA', 'NASA', 'DIKEA', 'KOSTALDEA', 'EZPONDA', 'ZINTARRIA', 'TUNELA',
+    # walls and spot heights, city-wide layers kept only along the shore (SHORE)
+    'HORMA', 'KotaPuntuak',
 ]
+# The shore the walls & spot heights are kept for: La Concha with Ondarreta, Miramar and the port; Zurriola & Sagüés
+SHORE_ONLY = {'HORMA', 'KotaPuntuak'}
+SHORE = [{'minX': -1400, 'maxX': 450, 'minZ': -320, 'maxZ': 950},
+         {'minX': 650, 'maxX': 1750, 'minZ': -950, 'maxZ': -250}]
 
 
 def local(e, n):
@@ -274,13 +282,13 @@ def open_shapefile(zip_path):
         return z.read(shp), dbf, enc
 
 
-def extract_shapefile(zip_path, ext, drop_fields=('Azalera', 'Shape_Leng', 'Shape_Area'), tol=TOLERANCE):
+def extract_shapefile(zip_path, ext, drop_fields=('Azalera', 'Shape_Leng', 'Shape_Area'), tol=TOLERANCE, margin=MARGIN):
     shp, dbf, enc = open_shapefile(zip_path)
     records = read_dbf(dbf, enc)
     features = []
     kind = None
     for (stype, bounds, parts), props in zip(read_shp(shp), records):
-        if stype == 0 or props is None or not touches(bounds, ext):
+        if stype == 0 or props is None or not touches(bounds, ext, margin):
             continue
         props = {k: v for k, v in props.items() if v is not None and k not in drop_fields}
         if stype == 5:
@@ -408,7 +416,15 @@ def main():
         if not os.path.exists(path):
             print(f'missing {path}', file=sys.stderr)
             continue
-        kind, features = extract_shapefile(path, CORE)
+        if layer in SHORE_ONLY:
+            # the spot heights' own coordinates repeat the geometry: only their height (Kota, m) is kept
+            drop = ('Azalera', 'Shape_Leng', 'Shape_Area', 'X_etrs89', 'Y_etrs89')
+            features = []
+            for ext in SHORE:
+                kind, part = extract_shapefile(path, ext, drop_fields=drop, margin=0)
+                features += part
+        else:
+            kind, features = extract_shapefile(path, CORE)
         write(f'c500_{layer.replace(" ", "_")}.json', {'layer': layer, 'kind': kind, 'source': c500, 'features': features})
 
     auzoak = os.path.join(RAW, 'carto', 'Auzoak.zip')

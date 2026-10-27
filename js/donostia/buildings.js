@@ -29,11 +29,12 @@ function toGeometry(part, names) {
   return geo;
 }
 
-export function buildDonostiaBuildings(GEO, { hidden = new Set() } = {}) {
+// hidden: GEO.buildings indices the landmarks replace; replace & phantoms: see buildFacadeCells (facade-mesh.js)
+export function buildDonostiaBuildings(GEO, { hidden = new Set(), replace = null, phantoms = null } = {}) {
   const group = new THREE.Group();
   group.name = 'DonostiaBuildings';
   const triangulate = (contour, holes) => THREE.ShapeUtils.triangulateShape(contour, holes);
-  const { cells, stats } = buildFacadeCells(GEO, { hidden, triangulate });
+  const { cells, stats } = buildFacadeCells(GEO, { hidden, replace, phantoms, triangulate });
   const facadeMat = createFacadeMaterial();
   const roofMat = createRoofMaterial();
   for (const cell of cells.values()) {

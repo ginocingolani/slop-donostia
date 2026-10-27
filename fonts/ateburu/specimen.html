@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ateburu specimen</title>
+<style>
+  @font-face {
+    font-family: 'Ateburu';
+    src: url('webfonts/Ateburu-Variable.woff2') format('woff2');
+    font-weight: 600 900;
+    font-display: block;
+  }
+  :root {
+    --paper: #f3efe6;
+    --ink: #17191c;
+    --muted: #6f6a60;
+    --rule: rgba(23, 25, 28, 0.14);
+    --night: #0c1c2d;
+    --panel: rgba(12, 28, 45, 0.64);
+    --light: #f4efe4;
+    --harri: #dcb574;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 56px 0 28px; border-bottom: 1px solid var(--rule); }
+  h1 {
+    font-family: 'Ateburu', serif; font-weight: 900; font-size: clamp(64px, 12vw, 168px);
+    line-height: 0.95; margin: 0; letter-spacing: 0.01em;
+  }
+  .lede { max-width: 760px; color: var(--muted); margin: 18px 0 0; font-size: 16px; }
+  h2 {
+    font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); margin: 0 0 14px;
+  }
+  section { padding: 36px 0; border-bottom: 1px solid var(--rule); }
+  .ab { font-family: 'Ateburu', serif; }
+  .w600 { font-weight: 600; } .w750 { font-weight: 750; } .w900 { font-weight: 900; }
+  .identity { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .identity figure { margin: 0; border: 1px solid var(--rule); padding: 10px 12px 12px; background: rgba(255,255,255,0.35); }
+  .identity .g { font-family: 'Ateburu', serif; font-size: 96px; line-height: 1.1; text-align: center; }
+  .identity figcaption { font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .sizes { display: grid; gap: 16px; }
+  .panel {
+    background: var(--night); color: var(--light); padding: 18px 20px; border-radius: 10px;
+    background-image: linear-gradient(110deg, #20354a, #3c5568 40%, #6b6450 70%, #1d2b39);
+  }
+  .panel .glass { background: var(--panel); border-radius: 8px; padding: 12px 14px; outline: 1px solid rgba(240,228,204,0.17); outline-offset: -5px; }
+  .line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.06em; margin: 3px 0; line-height: 1.18; }
+  .tag { font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--harri); margin-right: 8px; letter-spacing: 0; }
+  .light .tag { color: #9b7a3c; }
+  .light { padding: 18px 20px; border: 1px solid var(--rule); border-radius: 10px; background: #fbf9f4; }
+  .big { font-size: 96px; line-height: 1.05; letter-spacing: 0.02em; white-space: normal; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .two { grid-template-columns: 1fr; } }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .cell { background: var(--paper); text-align: center; padding: 6px 2px 4px; }
+  .cell .c { font-family: 'Ateburu', serif; font-size: 44px; line-height: 1.25; height: 60px; }
+  .cell .u { font: 9.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+  .controls input[type=range] { width: 220px; }
+  .waterfall .line { letter-spacing: 0.02em; }
+  footer { padding: 28px 0 60px; color: var(--muted); font-size: 13px; }
+  footer p { max-width: 820px; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <h1>Ateburu</h1>
+  <p class="lede">A display face drawn from the carved inscriptions of the Basque Country: the lintels, stelae and
+  slabs of the 16th to 19th centuries, as Louis Colas drew them in <i>La tombe basque</i> (1923). Heavy, wide, low in
+  contrast, with short flared serifs; its Basque identity rides on a handful of letters. Variable weight 600–900.
+  Version 0.100. SIL Open Font License 1.1, no Reserved Font Name.</p>
+</header>
+
+<section class="wrap">
+  <h2>The identity glyphs</h2>
+  <div class="identity">
+    <figure><div class="g w750">A</div><figcaption>Crowned A: a flat bar over the apex, reaching left, and a crossbar that dips into a V (Colas figs. 83, 85, 126, 283).</figcaption></figure>
+    <figure><div class="g w750">R</div><figcaption>Long leg that runs out past the bowl and flicks up (figs. 83, 85, 283; the flick is the 20th-c. sign-painters').</figcaption></figure>
+    <figure><div class="g w750">K</div><figcaption>Curved arm and leg, owned as a modern convention: old Basque spelling rarely used K.</figcaption></figure>
+    <figure><div class="g w750">E</div><figcaption>Wedge-ended arms, the middle one shorter (figs. 83, 85, 127, 283).</figcaption></figure>
+    <figure><div class="g w750">G</div><figcaption>Spurred G with a short bar (figs. 83, 85, 283).</figcaption></figure>
+    <figure><div class="g w750">4</div><figcaption>Open 4, the bar running on past the stem (figs. 126, 281, 541).</figcaption></figure>
+    <figure><div class="g w750">5</div><figcaption>Flat-topped 5 (Anhaux, 1751, fig. 283; fig. 127).</figcaption></figure>
+    <figure><div class="g w750">7</div><figcaption>Swan-necked 7 (figs. 83, 283, 540).</figcaption></figure>
+    <figure><div class="g w750">·</div><figcaption>Lozenge interpunct between words (HAVDA·ERROTA, 1652, fig. 85).</figcaption></figure>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Place names, light on the HUD's dark panel · SemiBold 600, the HUD master</h2>
+  <div class="panel"><div class="glass sizes" id="dark600"></div></div>
+</section>
+
+<section class="wrap">
+  <h2>Place names, dark on light · Black 900</h2>
+  <div class="light sizes" id="light900"></div>
+</section>
+
+<section class="wrap two">
+  <div>
+    <h2>Both masters, light on dark</h2>
+    <div class="panel"><div class="glass">
+      <div class="line ab w600 big">KONTXA</div>
+      <div class="line ab w900 big">KONTXA</div>
+    </div></div>
+  </div>
+  <div>
+    <h2>Both masters, dark on light</h2>
+    <div class="light">
+      <div class="line ab w600 big">URGULL</div>
+      <div class="line ab w900 big">URGULL</div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap waterfall">
+  <h2>Weight</h2>
+  <div class="controls">
+    <label>wght <input type="range" id="wght" min="600" max="900" value="750" step="1"> <output id="wout">750</output></label>
+  </div>
+  <div id="vary" class="ab" style="font-weight:750">
+    <div class="line" style="font-size:72px">HAVDA·ERROTA·1652</div>
+    <div class="line" style="font-size:44px">ANHAVSCO·ERRETOR·ETCHYA·1751</div>
+    <div class="line" style="font-size:28px">PEINE DEL VIENTO · ESTÉRENÇUBY · PLAÇA · CŒUR · COL·LEGI · PINGÜINO</div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Glyph set (v0.1) · lowercase letters map to the same capitals</h2>
+  <div class="grid" id="grid"></div>
+</section>
+
+<section class="wrap two">
+  <div>
+    <h2>Kerning and Basque digraphs</h2>
+    <div class="ab w750" style="font-size:44px; line-height:1.25">
+      AT TA LT RA RT YA AV KO<br>TX TZ TS ATXA ETXEA<br>INTXAURRONDO HAITZ
+    </div>
+  </div>
+  <div>
+    <h2>Confusables at 12–20 px</h2>
+    <div class="panel"><div class="glass">
+      <div class="line ab w600" style="font-size:12px">1 I · 0 O · 5 S · 8 B · R K A · N Ñ</div>
+      <div class="line ab w600" style="font-size:14px">1 I · 0 O · 5 S · 8 B · R K A · N Ñ</div>
+      <div class="line ab w600" style="font-size:16px">1 I · 0 O · 5 S · 8 B · R K A · N Ñ</div>
+      <div class="line ab w600" style="font-size:20px">1 I · 0 O · 5 S · 8 B · R K A · N Ñ</div>
+    </div></div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <p>Ateburu (Basque for a door lintel) is an original design: drawn in code from public-domain sources, chiefly
+  Louis Colas's drawings of dated inscriptions, and from photographs of carved lintels; no existing font was traced or
+  copied. See README.md, SOURCES.md and FONTLOG.txt. Copyright 2026 The Ateburu Project Authors. Licensed under the
+  <a href="OFL.txt">SIL Open Font License 1.1</a>, with no Reserved Font Name.</p>
+  <p>Why "letra vasca" is both old and new: the letterforms are on the stones; the idea of one national Basque letter
+  is a 20th-century construction (Herrera 2004; Järlehed 2012). Ateburu is a contemporary reading of the inscriptions,
+  not "the authentic Basque letter".</p>
+</footer>
+
+<script>
+  const NAMES = [
+    'ALDE ZAHARRA · KONTXA · ONDARRETA · IGELDO · URGULL · ZURRIOLA',
+    'GROS · AMARA · EGIA · INTXAURRONDO · AÑORGA · MIRAMÓN · ATEGORRIETA',
+    'LOIOLA · MARTUTENE · ULIA · AIETE · IBAETA · ALDERDI EDER · KURSAAL',
+    'SAN TELMO · HAIZEAREN ORRAZIA · PEINE DEL VIENTO · ESTÉRENÇUBY · PLAÇA · CŒUR · COL·LEGI · PINGÜINO',
+  ];
+  const SIZES = [12, 14, 16, 20, 32, 96];
+  function fill(el, weight) {
+    for (const size of SIZES) {
+      const lines = size >= 96 ? ['KONTXA · URGULL'] : size >= 32 ? NAMES.slice(0, 2) : NAMES;
+      for (const text of lines) {
+        const d = document.createElement('div');
+        d.className = 'line ab w' + weight + (size >= 96 ? ' big' : '');
+        d.style.fontSize = size + 'px';
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = size + 'px';
+        if (size < 96) d.append(tag);
+        d.append(text);
+        el.append(d);
+      }
+    }
+  }
+  fill(document.getElementById('dark600'), 600);
+  fill(document.getElementById('light900'), 900);
+
+  const SET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZŒ0123456789ÁÉÍÓÚÜÑÇÀÈÒ·.,:;!?¡¿\'’‘"“”-–—()/&';
+  const grid = document.getElementById('grid');
+  for (const ch of SET) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    const c = document.createElement('div');
+    c.className = 'c w750';
+    c.textContent = ch;
+    const u = document.createElement('div');
+    u.className = 'u';
+    u.textContent = 'U+' + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+    cell.append(c, u);
+    grid.append(cell);
+  }
+
+  const wght = document.getElementById('wght');
+  wght.addEventListener('input', () => {
+    document.getElementById('vary').style.fontWeight = wght.value;
+    document.getElementById('wout').textContent = wght.value;
+  });
+</script>
+</body>
+</html>

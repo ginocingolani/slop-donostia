@@ -13,6 +13,8 @@ import { buildVegetation, SHADOW_ONLY_LAYER } from './vegetation.js';
 import { buildStreetscape } from './streetscape.js';
 import { buildBridges } from './bridges.js';
 import { buildShore } from './shore.js';
+import { buildMarina } from './marina.js';
+import { buildBoats } from './boats.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
@@ -34,7 +36,7 @@ const STORAGE_KEY = 'donostia-god-camera';
 
 /**
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
- * the shore's walls & rocks.
+ * the shore's walls & rocks, the port's moorings and its boats.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
@@ -70,17 +72,21 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('landmarks', landmarks.group);
   mark('landmarks');
   status(`Raising ${GEO.buildings.length.toLocaleString('en-US')} buildings…`);
-  add('buildings', buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
+  const { hidden, replace, phantoms } = landmarks;
+  add('buildings', buildDonostiaBuildings(GEO, { hidden, replace, phantoms }));
   mark('buildings');
   status('Planting trees & dressing the streets…');
-  const [vegetation, streetscape, bridges, shore] = await Promise.all([
+  const [vegetation, streetscape, bridges, shore, marina] = await Promise.all([
     buildVegetation(GEO, terrain), buildStreetscape(GEO, terrain), buildBridges(GEO, terrain),
-    buildShore(GEO, terrain, water.userData.seaLevel)
+    buildShore(GEO, terrain, water.userData.seaLevel), buildMarina(GEO, terrain, water)
   ]);
   add('vegetation', vegetation);
   add('streetscape', streetscape);
   add('bridges', bridges);
   add('shore', shore);
+  add('marina', marina);
+  // the boats in the port ride the sea's level (the tide)
+  add('boats', buildBoats(water.userData.seaLevel));
   modules.sky = lighting.sky;
   mark('details');
 
@@ -349,6 +355,12 @@ async function initApp() {
     const device = renderer.backend.device;
     window.slopDebug = {
       THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
+      // the tifo on Anoeta's south stand: slopDebug.tifo(false) hides it, tifo(true) shows it, tifo() toggles
+      tifo(on) {
+        const t = scene.getObjectByName('AnoetaTifo');
+        if (t) t.visible = on ?? !t.visible;
+        return t ? t.visible : null;
+      },
       async bench(n = 60, dt = 1 / 60) {
         let cpu = 0, draws = 0, triangles = 0, inFlight = null;
         await device.queue.onSubmittedWorkDone();

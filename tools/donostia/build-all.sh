@@ -29,12 +29,23 @@ else
     "make one). Keeping the committed terrain-*.png, water.png and geodata.js." >&2
 fi
 # these read build.mjs's outputs
-$NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png
 $NODE "$HERE/bake-bridges.mjs"       # js/donostia/data-bridges.js
+$NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png (after the bridges: the ground under their decks)
 $NODE "$HERE/bake-shore.mjs"         # js/donostia/data-shore.js (rocks of the shore; the walls are build.mjs's)
+$NODE "$HERE/bake-marina.mjs"        # js/donostia/data-marina.js (the port's pontoons, gangways, quay fittings, slipway)
 $NODE "$HERE/bake-streetscape.mjs"   # js/donostia/data-streetscape.js (trees, railing, lamps, benches)
 $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names & districts for the HUD)
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js
 $NODE "$HERE/bake-alderdi.mjs"       # js/donostia/data-alderdi.js (Alderdi Eder's gardens)
+# the port's boats: digitised again from the orthophoto when the raw cache has it, else baked from the committed JSON
+if [ -s "$HERE/raw/ortho/ortho2025-port_x-350_z-300.jpg" ]; then
+  $NODE "$HERE/digitise-boats.mjs"   # tools/donostia/data/port_boats.json
+else
+  echo "digitise-boats.mjs skipped: no orthophoto (tools/donostia/raw/ortho; run with --fetch to get it). Keeping the" \
+    "committed tools/donostia/data/port_boats.json." >&2
+fi
+$NODE "$HERE/bake-boats.mjs"         # js/donostia/data-boats.js (the boats moored in the port)
+# the tifo's banner on Anoeta's south stand: its frame, and Aitor Zabaleta's portrait when the raw cache has its source
+$NODE "$HERE/bake-tifo.mjs"          # data/donostia/tifo-banner.png, tifo-portrait.png
 echo "Donostia data rebuilt"
