@@ -690,12 +690,13 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
       land.set(part, landDir);
       if (part.exit) sand = Math.min(sand, part.y[1] + (part.k === 'f' ? BURY : 0));
     }
-    // the LiDAR's lowest round each part; in front of a wall, a part standing over the sand
+    // the LiDAR's lowest round each part; in front of a wall, the parts but a corner of the promenade stand on the sand
+    // (their floor: build.mjs keeps the terrain under them down there)
     for (const part of accParts) {
       let lo = Infinity;
       for (const [x, z] of boundary(part.p, 0.5)) { const v = lidar(x, z); if (Number.isFinite(v)) lo = Math.min(lo, v); }
       part.lo = lo;
-      part.overSand = spec.wall && Number.isFinite(sand) && lo < part.y[1] - 1;
+      part.floor = spec.wall && Number.isFinite(sand) && !part.prom ? sand : null;
     }
     const wallEdges = [];
     for (const part of accParts) {
@@ -708,13 +709,34 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
         const len = Math.hypot(bx - ax, bz - az) || 1e-9;
         const tx = (bx - ax) / len, tz = (bz - az) / len, nx = tz, nz = -tx; // outward (rings run with positive area)
         const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-        const shared = accParts.some((o) => o !== part && (ringDist(mx, mz, o.p) < 0.4 || ringDist(mx + nx * 0.3, mz + nz * 0.3, o.p) < 0.05));
-        if (shared) { flags += EDGE.closed; continue; }
+        const ya = surfaceAt(part, ax, az), yb = surfaceAt(part, bx, bz), y = Math.max(ya, yb);
+        // a part on the sand against higher ground (a corner of the promenade, the promenade at its top or beside it, as
+        // in a notch of the wall): the terrain steps there as at the wall, the masonry showing where the higher ground
+        // stands above the part's surface, else hidden behind the part's own body (a hidden wall line)
+        const prom = spec.deck ?? spec.top; // the promenade's level
+        const step = (top) => {
+          if (part.floor == null || top < part.floor + 0.3) return;
+          wallEdges.push({ a: [ax, az], b: [bx, bz], deck: [top, top], foot: [part.floor, part.floor], hidden: top < y + 0.5 });
+        };
+        // (the promenade beyond the edge, rather than the sand in front of the wall or the heaps the LiDAR has there)
+        const promBeyond = () => {
+          const out = [0.8, 1.2, 1.6].map((t) => lidar(mx + nx * t, mz + nz * t)).filter(Number.isFinite);
+          return out.length > 0 && Math.max(...out) > prom - 0.6;
+        };
+        const shared = accParts.find((o) => o !== part && (ringDist(mx, mz, o.p) < 0.4 || ringDist(mx + nx * 0.3, mz + nz * 0.3, o.p) < 0.05));
+        if (shared) {
+          flags += EDGE.closed;
+          if (shared.floor == null) step(shared.y[0]);
+          continue;
+        }
         if (buildings.some((b) => pointInRing(mx + nx * 0.35, mz + nz * 0.35, b))) { flags += EDGE.closed; continue; }
         const along = Math.abs(tx * part.u[0] + tz * part.u[1]); // 1: a side of the flight, 0: across it
-        if (part.entry && along < 0.5 && Math.hypot(mx - part.entry[0], mz - part.entry[1]) < len / 2 + 0.3) { flags += EDGE.closed; continue; }
+        if (part.entry && along < 0.5 && Math.hypot(mx - part.entry[0], mz - part.entry[1]) < len / 2 + 0.3) {
+          flags += EDGE.closed;
+          if (promBeyond()) step(Math.max(y, prom));
+          continue;
+        }
         if (part.exit && along < 0.5 && Math.hypot(mx - part.exit[0], mz - part.exit[1]) < len / 2 + 0.3) { flags += EDGE.foot; continue; }
-        const ya = surfaceAt(part, ax, az), yb = surfaceAt(part, bx, bz), y = Math.max(ya, yb);
         // a landing that is the promenade's own corner: the promenade behind, its other sides the sea wall (with a
         // handrail on its coping)
         if (part.prom) {
@@ -731,23 +753,18 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
           wallEdges.push({ a: [ax, az], b: [bx, bz], deck: [deck, deck], foot: [sand, sand] });
           continue;
         }
-        // cut into higher ground (cheeks: the promenade's own wall, from its level down to the part's); otherwise in
-        // front of a wall the ground beside comes down to the sand
-        const beyond = (x, z) => Math.max(...[1.5, 2, 2.5].map((t) => lidar(x + nx * t, z + nz * t)).filter(Number.isFinite), -Infinity);
-        let ground = lidar(mx + nx * 1.2, mz + nz * 1.2);
-        if (spec.cheeks) {
-          const ga = beyond(ax + tx * 0.2, az + tz * 0.2), gb = beyond(bx - tx * 0.2, bz - tz * 0.2);
-          if (Math.min(ga, gb) > y + 0.6) {
-            flags += EDGE.closed;
-            wallEdges.push({ a: [ax, az], b: [bx, bz], deck: [ga, gb], foot: [ya - 0.2, yb - 0.2] });
-            continue;
-          }
+        // in front of a wall, beside the promenade (a notch in the wall): its face, from the promenade down to the sand
+        if (part.floor != null && promBeyond()) {
+          flags += EDGE.closed;
+          step(prom);
+          continue;
         }
-        // (in front of a wall, beside it on the beach, the sand: the LiDAR has the heaps the 2 m grid made of the stairs,
-        // but it falls away within 3 m)
+        // cut into higher ground (a cheek wall up to the flight's top); in front of a wall the ground beside comes down
+        // to the sand (the LiDAR has the heaps the 2 m grid made of the stairs, but they fall away within 3 m)
+        let ground = lidar(mx + nx * 1.2, mz + nz * 1.2);
         const out3 = lidar(mx + nx * 3, mz + nz * 3);
-        const sandy = spec.wall && Number.isFinite(sand) && onBeach(mx + nx * 1.2, mz + nz * 1.2) &&
-          ((Number.isFinite(ground) && ground < y - 0.3) || (Number.isFinite(out3) && out3 < y - 1));
+        const sandy = part.floor != null || (spec.wall && Number.isFinite(sand) && onBeach(mx + nx * 1.2, mz + nz * 1.2) &&
+          ((Number.isFinite(ground) && ground < y - 0.3) || (Number.isFinite(out3) && out3 < y - 1)));
         if (sandy) ground = Math.min(Number.isFinite(ground) ? ground : sand, sand);
         let flag;
         if (Number.isFinite(ground) && ground > y + 0.3) flag = part.k === 'f' ? EDGE.cheek : EDGE.closed;
@@ -1119,7 +1136,7 @@ export function carveTerrain(grid, { carve, flats, onBeach, walls }, classes = n
   const { x0, z0, w, h, res, data } = grid;
   let changed = 0;
   // in front of the walls (on the low side of the nearest within 4 m; by the part's own outline where there is none)
-  const shown = visibleWalls(walls), index = wallIndex(shown, 16, 4);
+  const shown = walls, index = wallIndex(shown, 16, 4);
   const inFront = (ring, back, x, z, y, top) => {
     const q = nearestWall(shown, x, z, 4, index);
     if (q && !q.end) return q.d > 0;

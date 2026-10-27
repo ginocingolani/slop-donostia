@@ -18,7 +18,7 @@ import {
 } from './lib.mjs';
 import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
-import { WALL, wallSnaps, wallIndex, nearestWall, visibleWalls } from '../../js/donostia/shore-walls.js';
+import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
@@ -628,9 +628,9 @@ function shoreWalls(dtm, grid, classes) {
   });
   const buildingRings = ['c500_ERAIKINA.json', 'c500_EraikinArinak.json'].flatMap((f) => loadLayer(f).features.map((b) => b.g[0]));
   const access = beachAccesses({ dtm, walls: found, buildings: buildingRings, loadLayer, log });
-  // (the hidden runs along the accesses' open sides only move the samples at runtime: the terrain's levels there are the
-  // accesses', beachAccesses' carve below)
-  const walls = visibleWalls(access.walls);
+  // (the hidden runs, where an access standing on the sand meets higher ground, step the terrain like any wall: the
+  // runtime moves the same samples, js/donostia/terrain.js)
+  const walls = access.walls;
   const snaps = wallSnaps(walls, grid);
   const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
   // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what

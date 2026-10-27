@@ -147,8 +147,9 @@ export function wallSnaps(walls, grid, sides = null) {
     snaps.set(k, { side, wall: q.wall, seg: q.seg, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot, back: 0 });
   }
   // Where the line bends, the terrain's face between two samples on it (an edge of a triangle) is a chord of the bend,
-  // which stands in front of the masonry where the line turns away from its low side: both samples go back by as much
-  // (at most SAG_MAX, which the coping covers)
+  // which stands in front of the masonry where the line turns away from its low side: both samples go back by as much,
+  // the high side's at most as far as the coping covers, the low side's (under the face) twice as far when the other
+  // one could not go back enough
   for (const [k, s] of snaps) {
     const i = k % w, j = (k - i) / w;
     for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]]) {
@@ -156,14 +157,15 @@ export function wallSnaps(walls, grid, sides = null) {
       if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
       const o = snaps.get(jj * w + ii);
       if (!o || o.wall !== s.wall || o.seg === s.seg) continue;
-      const sag = chordSag(walls[s.wall].p, s, o);
-      if (sag > s.back) s.back = Math.min(SAG_MAX, sag);
+      let sag = chordSag(walls[s.wall].p, s, o);
+      if (s.side > 0 && o.side < 0 && sag > SAG_MAX.high) sag = 2 * sag - SAG_MAX.high;
+      if (sag > s.back) s.back = Math.min(s.side > 0 ? SAG_MAX.low : SAG_MAX.high, sag);
     }
   }
   return snaps;
 }
 
-const SAG_MAX = 0.45; // m
+const SAG_MAX = { high: 0.45, low: 1.5 }; // m
 
 // How far the chord between two points on a wall line (on segments s.seg & o.seg) stands in front of the vertices
 // between them (on the low side)
