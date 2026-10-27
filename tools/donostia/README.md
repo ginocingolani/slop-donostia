@@ -84,6 +84,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
 | `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
+| `js/donostia/landmarks/konstituzio-plaza.js` (the square's plan: the arcades' outline, piers and passages, the library's block) | municipal map | CC BY-SA 3.0 |
 
 The data was modified: reprojected into the local frame, simplified, clipped, rasterised, resampled and combined as
 described above. Every generated file names its sources and licences: the extracted layers in their `source` field
@@ -190,6 +191,16 @@ map.
   blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
   is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
   colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+- Konstituzio plaza (`js/donostia/landmarks/konstituzio-plaza.js`): the square's plan is the municipal map's arcade
+  (`EraikinEgitura` `ARKUPEA`: the covered walks, their back walls, the passages to the four streets and the piers,
+  drawn as notches in the square's edge), embedded in the square's own frame; the arches' rhythm is fitted to those
+  piers (20 on the north and south sides, 9 on the east one between the passages' great arches, the old City Hall's
+  five). Storey heights, the bays, the balconies' numbering (1-49 on the top floor, 50-98 and 99-147 below, from the
+  north side's west end round to the south side's), colours and the library's front were read off Wikimedia Commons
+  photographs of the square (its category, freely licensed); the photographs are references only and nothing derived
+  from their pixels is committed. The blocks round the square stay the city's extrusions with their eaves levelled at
+  the cornice: `buildFacadeCells` (`js/donostia/facade-mesh.js`) takes replaced records (`skip` lists the stretches of
+  an outline a landmark builds itself) and phantom neighbours (never drawn, but they hide party walls).
 - Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
   the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
   road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster
