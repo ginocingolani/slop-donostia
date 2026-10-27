@@ -149,40 +149,42 @@ def profile(contours, ys):
 
 
 YS = list(range(-150, 900, 6))
+ZONE = [y for y in YS if 0 <= y <= G.CAP]
 
 
-def weight_at(y, C=G.CAP):
-    if y < 0 or y > C:
-        return 0.0
-    r = y / C
-    return 0.55 + 0.45 * math.sin(math.pi * min(max(r, 0), 1)) ** 0.5
+def depth_of(m):
+    """How deep into a letter its side's white still counts (from the side's outermost point)"""
+    return m.v(36, 30)
 
 
-def side_area(d, depth):
-    return sum(weight_at(y) * min(max(v, 0), depth) for y, v in zip(YS, d) if v is not None)
-
-
-def side_dist(prof, side, offset):
-    """Distance from the side boundary to the outline at each y, given the body-relative profile and the side bearing
-    (offset). side 'L': boundary at x = -offset (body x 0 is offset from the origin); 'R': boundary at body width +
-    offset, prof values are already 'width - x'"""
-    out = []
-    for p in prof:
+def side_measure(prof, side, depth):
+    """(extreme, mean clipped white inside the side) for a body-relative profile; side 'L' or 'R'"""
+    xs = [p[0] if side == 'L' else p[1] for y, p in zip(YS, prof) if p is not None and 0 <= y <= G.CAP]
+    if not xs:
+        return None, depth
+    xo = min(xs) if side == 'L' else max(xs)
+    total = 0.0
+    for y, p in zip(YS, prof):
+        if not 0 <= y <= G.CAP:
+            continue
         if p is None:
-            out.append(None)
+            total += depth
         else:
-            out.append(offset + (p[0] if side == 'L' else p[1]))
-    return out
+            q = (p[0] - xo) if side == 'L' else (xo - p[1])
+            total += min(q, depth)
+    return xo, total / len(ZONE)
 
 
 def spacing(drawn, tt):
-    """Work out every glyph's side bearings per master: fixed ones from the drawing, the rest by matching the white
-    space at each side (clipped in depth) to that of a serifed stem."""
+    """Every glyph's side bearings per master. Fixed ones come from the drawing. The rest follow the usual optical
+    model: a side's white is its distance to the boundary plus the white inside its own shape (clipped to a shallow
+    depth from its outermost point), and every side gets the same white as a serifed stem (H)."""
     result = {}
     for mi, m in enumerate(MASTERS):
+        D = depth_of(m)
         ref_prof = profile(tt['H'][mi], YS)
-        depth = m.sp + m.v(118, 96)
-        ref_left = side_area(side_dist([(p[0], None) if p else None for p in ref_prof], 'L', m.sp), depth)
+        xo, inside = side_measure(ref_prof, 'L', D)
+        target = (m.sp + xo) + inside            # H's white: its stem side bearing seen from the serif tip, plus
         minimum = m.v(16, 12)
         for name, gs in drawn.items():
             g = gs[mi]
@@ -193,56 +195,41 @@ def spacing(drawn, tt):
                 result.setdefault(name, []).append((g.lsb or 0, g.rsb or 0))
                 continue
             prof = profile(tt[name][mi], YS)
-            lprof = [(p[0], None) if p else None for p in prof]
-            rprof = [(None, g.w - p[1]) if p else None for p in prof]
-
-            def solve(side, pr):
-                lo, hi = -300.0, 400.0
-                for _ in range(40):
-                    mid = (lo + hi) / 2
-                    d = side_dist(pr, side, mid)
-                    if side_area(d, depth) < ref_left:
-                        lo = mid
-                    else:
-                        hi = mid
-                s = (lo + hi) / 2
-                # never closer than `minimum` to the boundary anywhere in the cap band (accents excluded)
-                d = side_dist(pr, side, 0)
-                closest = min(v for y, v in zip(YS, d) if v is not None and -40 <= y <= G.CAP + 40)
-                return max(s, minimum - closest)
-
-            lsb = g.lsb if g.lsb is not None else solve('L', lprof)
-            rsb = g.rsb if g.rsb is not None else solve('R', rprof)
+            band = [p for y, p in zip(YS, prof) if p is not None and -40 <= y <= G.CAP + 40]
+            if g.lsb is not None:
+                lsb = g.lsb
+            else:
+                xo, inside = side_measure(prof, 'L', D)
+                lsb = max(target - inside, minimum) - xo
+                lsb = max(lsb, minimum - min(p[0] for p in band))
+            if g.rsb is not None:
+                rsb = g.rsb
+            else:
+                xo, inside = side_measure(prof, 'R', D)
+                rsb = max(target - inside, minimum) - (g.w - xo)
+                rsb = max(rsb, minimum - min(g.w - p[1] for p in band))
             result.setdefault(name, []).append((lsb, rsb))
     return result
 
 
-def kern_value(m, left_prof, right_prof, ref_gaps, depth2, mingap):
-    """Kern so that the clipped white area between the two glyphs matches the reference pair's (HH) over the same
-    heights (so a period after T is compared with HH's white at the period's own height)"""
-    gaps = [(y, a + b) for y, (a, b) in zip(YS, zip(left_prof, right_prof)) if a is not None and b is not None]
+def pair_white(left_prof, right_prof, depth2):
+    """(optical white, closest approach) between two glyphs from their distance-to-boundary profiles: the closest
+    approach plus the mean white beyond it, clipped at depth2"""
+    gaps = {y: a + b for y, a, b in zip(YS, left_prof, right_prof) if a is not None and b is not None}
     if not gaps:
-        return 0
-    ref_area = sum(weight_at(y) * min(max(ref_gaps[y], 0), depth2) for y, _ in gaps)
-
-    def area(k):
-        return sum(weight_at(y) * min(max(v + k, 0), depth2) for y, v in gaps)
-
-    lo, hi = -400.0, 300.0
-    for _ in range(40):
-        mid = (lo + hi) / 2
-        if area(mid) < ref_area:
-            lo = mid
-        else:
-            hi = mid
-    k = (lo + hi) / 2
-    closest = min(v for y, v in gaps)
-    return max(k, mingap - closest)
+        return None, None
+    closest = min(gaps.values())
+    total = 0.0
+    for y in ZONE:
+        v = gaps.get(y)
+        total += depth2 if v is None else min(v - closest, depth2)
+    return closest + total / len(ZONE), closest
 
 
 KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one'}
-KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'period', 'comma', 'quoteright', 'quotedblright', 'quoteleft', 'quotedblleft',
-                                     'hyphen', 'four', 'seven'}
+KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
+                                     'quotedblright', 'quoteleft', 'quotedblleft', 'hyphen', 'exclam', 'question',
+                                     'parenright', 'four', 'seven'}
 REQUIRED_PAIRS = [('A', 'T'), ('T', 'A'), ('L', 'T'), ('R', 'A'), ('R', 'T'), ('Y', 'A'), ('A', 'V'), ('K', 'O'),
                   ('T', 'X'), ('T', 'Z'), ('T', 'S')]
 CLASSES = {
@@ -252,27 +239,24 @@ CLASSES = {
 
 
 def kerning(drawn, tt, sb):
-    """Pairs among open shapes (and the required ones), valued per master by matching white area; the same pair list in
-    both masters so that the variable font can interpolate them"""
+    """Pairs among open shapes (and the required ones), valued per master: the kern that gives the pair the same
+    optical white as HH, never closer than a minimum gap anywhere. The same pair list in both masters, so the
+    variable font interpolates them."""
     letters = [c for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
-    extra = ['period', 'comma', 'hyphen', 'quoteright', 'quotedblright', 'quoteleft', 'quotedblleft', 'one', 'four',
-             'seven', 'zero']
+    extra = ['period', 'comma', 'colon', 'semicolon', 'periodcentered', 'hyphen', 'quoteright', 'quotedblright',
+             'quoteleft', 'quotedblleft', 'exclam', 'question', 'parenright', 'one', 'four', 'seven', 'zero']
     names = letters + extra
     per_master = []
     for mi, m in enumerate(MASTERS):
+        D2 = 2 * depth_of(m)
         profs = {}
         for n in names:
             prof = profile(tt[n][mi], YS)
             lsb, rsb = sb[n][mi]
             w = drawn[n][mi].w
             profs[n] = ([lsb + p[0] if p else None for p in prof], [rsb + (w - p[1]) if p else None for p in prof])
-        depth2 = 2 * m.sp + m.v(150, 120)
-        ref_gaps = {y: a + b for y, a, b in zip(YS, profs['H'][1], profs['H'][0]) if a is not None and b is not None}
-        # beyond the stem's height (quotes, the comma's tail) the white of the stem's ends carries on
-        top, bottom = ref_gaps[max(ref_gaps)], ref_gaps[min(ref_gaps)]
-        for y in YS:
-            if y not in ref_gaps:
-                ref_gaps[y] = top if y > 0 else bottom
+        target, _ = pair_white(profs['H'][1], profs['H'][0], D2)
+        mingap = m.v(34, 26)
         vals = {}
         for a in names:
             for b in names:
@@ -280,13 +264,18 @@ def kerning(drawn, tt, sb):
                     continue
                 if a in extra and b in extra:
                     continue
-                k = kern_value(m, profs[a][1], profs[b][0], ref_gaps, depth2, m.v(34, 26))
+                white, closest = pair_white(profs[a][1], profs[b][0], D2)
+                if white is None:
+                    continue
+                k = max(target - white, mingap - closest)
+                if 'periodcentered' in (a, b):
+                    k = max(k, 0)  # the lozenge keeps its own space: kerning only keeps legs off it
                 vals[(a, b)] = k
         per_master.append(vals)
     pairs = {}
     for key in per_master[0]:
-        ks = [pm[key] for pm in per_master]
-        if key in REQUIRED_PAIRS or any(abs(k) >= 14 for k in ks):
+        ks = [pm.get(key, 0) for pm in per_master]
+        if key in REQUIRED_PAIRS or any(abs(k) >= 12 for k in ks):
             pairs[key] = [int(round(k / 2) * 2) for k in ks]
     return pairs
 

@@ -290,14 +290,14 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 
 @glyph('C', 0x43, 0x63)
 def C_(m):
-    W = m.v(624, 704)
-    return G(c_shape(m, W, xt=W * m.v(0.735, 0.665), xb=W * m.v(0.770, 0.70)), W, None, None)
+    W = m.v(646, 726)
+    return G(c_shape(m, W, xt=W * m.v(0.735, 0.67), xb=W * m.v(0.770, 0.705)), W, None, None)
 
 
 @glyph('G', 0x47, 0x67)
 def G_(m):
     C = m.C
-    W = m.v(670, 740)
+    W = m.v(686, 756)
     side = m.rside
     yg = m.v(374, 378)          # top of the bar
     gs = side * 0.94            # the beard's width
@@ -362,7 +362,7 @@ def R(m):
     shape = union([stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare), o1, leg])
     shape = diff(shape, c1)
     # the leg's end: cut square to the stroke, then trimmed level at the top so it reads as carved
-    return G(shape, Wb, m.sp, m.v(-58, -66), top=Wb * 0.42)
+    return G(shape, Wb, m.sp, m.v(30, 22), top=Wb * 0.42)
 
 
 @glyph('K', 0x4B, 0x6B)
@@ -387,7 +387,7 @@ def K(m):
     # ink trap where the arm's upper edge meets the stem
     ys = edge_y(inter(arm, rect(s, 0, s + 1, C)), s + 0.5, 'max')
     shape = trap_at(shape, (s, ys), m.trap)
-    return G(shape, W, m.sp, m.v(-40, -44), top=W * 0.36)
+    return G(shape, W, m.sp, m.v(24, 18), top=W * 0.36)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -829,9 +829,9 @@ def period(m):
 
 @glyph('periodcentered', 0xB7)
 def periodcentered(m):
-    """The lozenge interpunct of the inscriptions (HAVDA·ERROTA·SENPERECO, 1652)"""
-    dx, dy = m.v(58, 74), m.v(68, 86)
-    return G(lozenge(dx, m.C / 2, dx, dy), 2 * dx, m.v(46, 38), m.v(46, 38))
+    """The lozenge interpunct of the inscriptions (HAVDA·ERROTA·SENPERECO, 1652): taller than wide, like the cut ones"""
+    dx, dy = m.v(64, 80), m.v(84, 102)
+    return G(lozenge(dx, m.C / 2, dx, dy), 2 * dx, m.v(54, 44), m.v(54, 44))
 
 
 def comma_shape(m, cy):
