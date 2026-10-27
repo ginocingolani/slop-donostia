@@ -35,7 +35,7 @@ const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.
 const { nearestWall, visibleWalls, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
 const { BEACH_ACCESS } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/data-beach-access.js')).href);
 const G = GEO.terrain.classes;
-const WALLS = visibleWalls(GEO.terrain.walls || []); // (not the hidden runs along the beaches' stairs & ramps)
+const WALLS = visibleWalls(GEO.terrain.walls || []); // (not the hidden runs behind the beaches' stairs & ramps)
 
 // Species ids shared with js/donostia/trees-species.js (SPECIES order)
 const SP = { plane: 0, tamarisk: 1, broadleaf: 2, evergreen: 3, pine: 4, palm: 5 };

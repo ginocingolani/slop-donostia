@@ -19,12 +19,12 @@ The steps it runs, in order:
 |---|---|---|
 | `fetch.sh` | the web | `tools/donostia/raw/` (gitignored); `tools/donostia/data/osm_*.json` & `osm_queries.sha256` (committed) |
 | `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed); `raw/bathy/isobaths.json` and the unzipped `raw/dtm/*.asc` (bake-only) |
-| `build.mjs` (with `walls.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls) |
-| `bake-ground.mjs` | `tools/donostia/data/`, the terrain | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
+| `build.mjs` (with `walls.mjs`, `beach-access.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps) |
+| `bake-ground.mjs` | `tools/donostia/data/`, the terrain, the beaches' stairs & ramps | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
 | `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches, the port's quays (`port.mjs`) | `js/donostia/data-shore.js` (the rocks) |
 | `bake-marina.mjs` (with `port.mjs`) | OSM piers, municipal pontoons, quays & ramps, the shore walls & stairs, the terrain, outlines read off the 2025 orthophoto | `js/donostia/data-marina.js` (pontoons, gangways, quay fittings, the slipway, the harbour's water) |
-| `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata | `js/donostia/data-streetscape.js` |
+| `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata, the beaches' stairs & ramps | `js/donostia/data-streetscape.js` |
 | `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
 | `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
@@ -79,6 +79,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-streets.js`, `data-urgull-parts.js` | OSM, municipal map | ODbL 1.0 + CC BY-SA 3.0 |
 | `js/donostia/data-bridges.js`, `data-streetscape.js`, `data-shore.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
 | `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
+| `js/donostia/data-beach-access.js` | municipal map (stairs, ramps, spot heights, beaches, buildings), the LiDAR, read against the 2025 orthophoto and OSM | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
 | `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
@@ -108,7 +109,39 @@ map.
   it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
   inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
   piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
-  under the slope, and `shore.js` builds them as solid steps of about 17 cm.
+  under the slope, and `shore.js` builds them as solid steps of about 17 cm. The beaches' stairs are not among them:
+  `beach-access.mjs` builds those (below).
+- Beach accesses (`beach-access.mjs` → `js/donostia/data-beach-access.js`, built by `js/donostia/beach-access.js` in the
+  shore walls' mesh): every way down from the promenades to La Concha, Ondarreta and Zurriola, inventoried by hand in
+  `ACCESS`: each access names the municipal map's stairs (`ESKAILERA`) and ramps (`ARRAPALA`) pieces it is made of, by
+  the mean of their outline's vertices, chained from the top to the sand, read against the 2025 orthophoto (steps,
+  landings, parapets and the railings' shadows) and OSM's steps (direction, step counts, handrails). Levels: the 1:500
+  spot heights (`KotaPuntuak`) where there are some (promenade, landings, the sand at the foot), else the 1 m LiDAR;
+  each chain's fall is shared out over its flights' and ramps' runs, between the anchors. Then, deterministically:
+  each piece's way down (from the piece before to the piece after, squared to its sides), its steps (rises of about
+  16.5 cm, a 3 cm nosing; the last one 12 cm into the sand), and each side of its outline: shared with the next piece,
+  against a building, the head, the foot (open to the sand), open (a 14 cm kerb, and the handrail: white-painted tube
+  at La Concha & Ondarreta, stainless at Zurriola; La Concha's cast-iron railing down the rotunda's, Alderdi Eder's and
+  Ondarreta's ramps), low over the ground beside (the kerb alone), a cheek (a broad flight cut into the promenade) or
+  against ground well above it (a retaining wall line from that ground down to the piece, masonry and coping). The
+  accesses built in front of a sea wall stand on the sand as blocks of masonry: the terrain under them goes down to the
+  sand, the wall runs on behind them (the edge on the promenade's side, spliced onto the shore walls the LiDAR search
+  found, which stops at stairs; a corner of the promenade at a piece's own level is a hidden wall line, behind its
+  body), and the sand heaped against them by the 2 m grid comes down to the beach within 4.5-6.5 m. Where a wall line
+  bends, the samples on it go back by the chord's sagitta (at most 0.45 m, under the coping), so the terrain's face
+  never stands in front of the masonry. The railing of `bake-streetscape.mjs` opens at each access's head and runs
+  down the ramps that carry it; `bake-ground.mjs` gives the pieces' ground the surfaces round them.
+  Inventory (28 accesses built, 116 parts, 616 steps; the Caseta Real's twin flights are La Perla's landmark model):
+
+  | Beach | Accesses |
+  |---|---|
+  | La Concha | flights along the wall: the west end (63 steps), by La Perla's Eguzki (28) and the Café de la Concha (25); double flights from one opening, each to a landing and on to the sand (at x 85, 53; at x 255, 42); the Pico del Loro switchback down the wall and out across the sand (59); the broad flight to the Miramar bastions' terrace (11); La Perla's service steps (12); the flight up to the doors under the clock rotunda (20); the rotunda's two ramps along the wall to landings, on by ramp and by steps (railing down the ramps); Alderdi Eder's twin ramps, walkway and flights (railing) |
+  | Ondarreta | the west ramp along the wall from a landing (40 m, railing), three broad flights cut into the promenade (14, 6 with a ramp beside, 28 in four pieces), the east ramp along the edge, the Pico del Loro's curved flight to its terrace and on down to the rocks (46) |
+  | Zurriola | the dike's flight with a landing (25), the Kursaal's corner flight (10) and ramp, the flights by the Kursaal (14), the 40 m ramp (1023), the flight square to the wall to a half-round landing (22), the 1195 ramp along the wall with its terrace and steps, the wall gap's three flights (17), Sagüés' ramp and flights with landings (58) |
+
+  Left to the sand until photographs show them: two 2 m pieces in the corners between La Perla's octagons and the wall
+  (around (−83, 675) and (0, 628)): no spot height at their tops and only the wall's smear in the LiDAR; 2 m deep under
+  a 5 m drop, they cannot be flights to the promenade (steps up to a door in the wall's base, most likely).
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
   the bed above mean sea level, the port's two moles, the OSM bare rock & rocky coastline), never on paving, buildings,

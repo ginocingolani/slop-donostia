@@ -13,7 +13,7 @@
 // flights and ramps built in front of a sea wall, the wall line behind them (the wall the LiDAR could not find there,
 // as the stairs were cut out of the search), so the sand in front comes down to the beach.
 
-import { WALL, nearestWall, wallIndex, visibleWalls } from '../../js/donostia/shore-walls.js';
+import { WALL, nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
 import { pointInRing, ringArea, simplifyRing } from './lib.mjs';
 
 const RISE = 0.165; // m: the rise the steps are cut to (each flight's own, between ~0.15 and ~0.18)
@@ -29,15 +29,15 @@ const RAIL_H = 0.85; // m: a handrail's top over the kerb (about 1 m over the no
 // dir: [ux, uz] its way down when the chain cannot tell it (a piece on its own); clip: [ax, az, bx, bz] keeps the part
 // of the outline left of the line a -> b (x east, z south: left is (bz - az, -(bx - ax)))
 // An access: id, beach, type (as in the README's inventory), top (m: the promenade where it starts; deck: the promenade
-// behind the wall where the access starts lower), bot (m: the sand
-// where it ends; else from the spot heights & LiDAR there), wall (built in front of a sea wall: the wall runs on behind
-// it; land: [x, z] towards the promenade where its own outline cannot tell; cheeks: the sides cut into the promenade
-// are walls too (from the promenade down to the steps), not the parts' own cheek walls; trim: [[x0, z0, x1, z1], ...] boxes where the
-// LiDAR's wall search strayed along the stairs' side, dropped; beachEdge: [[x0, z0, x1, z1], ...] stretches of the
-// municipal beach's edge, from its vertex nearest (x0, z0) to the one nearest (x1, z1), that are the wall on from the
-// access where the LiDAR found none), rail ('white': a white painted handrail, 'steel': stainless tube, 'barandilla': La Concha's cast-iron railing,
-// '' none), chains: [[piece, ...], ...] each from the top down; skip: pieces that belong to it but are not built (the
-// 1:500 draws some parapets & handrails as stairs); note: its evidence.
+// behind the wall where the access starts lower), bot (m: the sand where it ends; else from the spot heights & LiDAR
+// there), tops / bots (per chain, where they differ), wall (built in front of a sea wall: it stands on the sand and the
+// wall runs on behind it), land ([x, z] towards the promenade where its own outline cannot tell), trim ([[x0, z0, x1,
+// z1], ...] boxes where the LiDAR's wall search strayed along the stairs' side, dropped), beachEdge ([[x0, z0, x1, z1],
+// ...] stretches of the municipal beach's edge, from its vertex nearest (x0, z0) to the one nearest (x1, z1), that are
+// the wall on from the access where the LiDAR found none), rail ('white': a white painted handrail, 'steel':
+// stainless tube, 'barandilla': La Concha's cast-iron railing, '' none), chains ([[piece, ...], ...] each from the top
+// down), skip (pieces that belong to it but are not built: the 1:500 draws some parapets & handrails as stairs),
+// landmark / unbuilt (left to a landmark's model, or to the sand), note (its evidence).
 const P = (layer, x, z, o = {}) => ({ layer, x, z, ...o });
 const L = (x, z, o = {}) => P('E', x, z, { t: 'L', ...o });
 
@@ -444,7 +444,7 @@ function exitPoint(r, x, z, dx, dz) {
 // --- the bake -------------------------------------------------------------------------------------------------------------
 
 // Edge flags of a part's outline (BEACH_ACCESS.parts[].e, one character per edge): '0' closed (shared with the next
-// part, against the wall behind, a building or the promenade), '1' open side (a stone kerb & the handrail), '2' open
+// part, against the wall behind, a building, the promenade or ground well above it), '1' open side (a stone kerb & the handrail), '2' open
 // but low over the ground beside (the kerb alone), '3' the foot (open to the sand), '4' against higher ground (a cheek
 // wall up to the top level: a broad flight cut into the promenade's edge), '5' the sea wall's (a landing that is the
 // promenade's corner: the wall's coping, and the handrail on it)
@@ -457,8 +457,10 @@ const partKey = (ref) => `${ref.layer}${ref.x},${ref.z},${(ref.clip || []).join(
  * buildings: [rings] (the 1:500 outlines a part may stand against); loadLayer.
  * Returns { data (js/donostia/data-beach-access.js), walls (the shore walls with the lines behind the accesses built in
  * front of a wall spliced in), claimed(x, z) (inside a piece the inventory took: no stairs of walls.mjs there),
- * carve [{ ring, y0, y1, u, s0, s1 } | { ring, sand }] (what build.mjs keeps the terrain under), flats [{ ring, sand }]
- * (round the accesses built in front of a wall, the sand comes down to the beach) }.
+ * carve [{ ring, y0, y1, u, s0, s1, floor } | { ring, sand }] (what build.mjs keeps the terrain under: a part's surface,
+ * or the sand under a part built in front of a wall), flats [{ ring, sand }] (round the accesses built in front of a
+ * wall, the sand comes down to the beach), onBeach(x, z) }. The walls may carry hidden runs (h, js/donostia/shore-walls.js:
+ * where a part on the sand meets higher ground behind its own body).
  */
 export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () => {} }) {
   const pieces = { E: [], A: [] };
@@ -1150,7 +1152,7 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
   const claimed = (x, z) => claimedRings.some((r) => pointInRing(x, z, r));
   log(`beach accesses: ${out.accesses.length} (${out.accesses.filter((a) => a[3]).length} built), ${out.parts.length} parts, ` +
     `${nSteps} steps, ${out.rails.length} handrails, ${out.barandilla.length} runs of railing; ${lines.length} wall lines behind ` +
-    `them (${spliced} joined to the shore walls; ${hidden} hidden segments along the parts' open sides; ${fillets} corners ` +
+    `them (${spliced} joined to the shore walls; ${hidden} hidden segments behind the parts' bodies; ${fillets} corners ` +
     `rounded), ${cut} shore wall ` +
     `vertices over them dropped`);
   return { data: out, walls: merged, claimed, carve, flats, onBeach };
