@@ -7,6 +7,7 @@ import { cityUniforms } from '../../city-uniforms.js';
 import { gridLine } from './kit.js';
 import { Parts, grid, beam } from './geom.js';
 import { primitiveTriangles, textWidth, textTriangles } from './glyphs.js';
+import { buildTifo } from './anoeta-tifo.js';
 
 // js/donostia/landmarks/anoeta.js
 // Anoeta stadium / Reale Arena (1993, rebuilt 2017-2019 when the athletics track was removed and the stands brought to the pitch): an oval bowl wrapped in a translucent blue membrane (ETFE / PTFE panels) with REALE ARENA lettering, a roof ring over the stands, ~40,000 seats.
@@ -469,5 +470,12 @@ export function build(sites, ctx) {
 
   const group = parts.build('anoeta');
   group.userData.top = P + TRUSS_BOTTOM + TRUSS_DEPTH[1];
+
+  // the tifo on the south stand, the Aitor Zabaleta harmaila (anoeta-tifo.js): cards over the upper tier, the banner
+  // and the flags over the lower one. userData.tifo is its group: hide it to see the stand bare.
+  const tifo = buildTifo({ at, dirOf, rF, rM1, rM2, rBk, yF, yM1, yM2, yBk, arcF, N, rowRise: ROW_RISE });
+  group.add(tifo);
+  group.userData.tifo = tifo;
+  group.userData.update = tifo.userData.update;
   return group;
 }

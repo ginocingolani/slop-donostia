@@ -355,6 +355,12 @@ async function initApp() {
     const device = renderer.backend.device;
     window.slopDebug = {
       THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
+      // the tifo on Anoeta's south stand: slopDebug.tifo(false) hides it, tifo(true) shows it, tifo() toggles
+      tifo(on) {
+        const t = scene.getObjectByName('AnoetaTifo');
+        if (t) t.visible = on ?? !t.visible;
+        return t ? t.visible : null;
+      },
       async bench(n = 60, dt = 1 / 60) {
         let cpu = 0, draws = 0, triangles = 0, inFlight = null;
         await device.queue.onSubmittedWorkDone();
