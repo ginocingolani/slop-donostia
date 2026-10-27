@@ -976,7 +976,9 @@ const TELEPORTS = [
   ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
   ['dabadaba', 'Dabadaba', 'Sala Dabadaba', [-1.975780, 43.315545], 1.7, [-1.976278, 43.315608], 3],
   ['aiete', 'Aieteko jauregia', 'Palacio de Aiete', [-1.991674, 43.306152], 6, [-1.992012, 43.305579], 9],
-  ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
+  ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12],
+  // over the pitch's centre, at the tifo on the south stand (js/donostia/landmarks/anoeta-tifo.js)
+  ['aitor-zabaleta', 'Aitor Zabaleta harmaila', 'Grada Aitor Zabaleta', [-1.97362, 43.301421], 28, [-1.973006, 43.300812], 8.5]
 ];
 
 function bakeTeleports(heightAt) {
