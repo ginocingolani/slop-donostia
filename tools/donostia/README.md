@@ -22,14 +22,16 @@ The steps it runs, in order:
 | `build.mjs` (with `walls.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls) |
 | `bake-ground.mjs` | `tools/donostia/data/`, the terrain | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
-| `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches | `js/donostia/data-shore.js` (the rocks) |
+| `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches, the port's quays (`port.mjs`) | `js/donostia/data-shore.js` (the rocks) |
+| `bake-marina.mjs` (with `port.mjs`) | OSM piers, municipal pontoons, quays & ramps, the shore walls & stairs, the terrain, outlines read off the 2025 orthophoto | `js/donostia/data-marina.js` (pontoons, gangways, quay fittings, the slipway, the harbour's water) |
 | `bake-streetscape.mjs` | tree pits, woods, OSM furniture, geodata | `js/donostia/data-streetscape.js` |
 | `bake-streets.mjs` | OSM street names, auzoak | `js/donostia/data-streets.js` |
 | `bake-urgull-parts.mjs`, `bake-funicular.mjs` | OSM landmark parts, funicular & coaster | `js/donostia/data-*.js` |
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
 
 `build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
-`bake-shore.mjs --preview <dir>` and `bake-alderdi.mjs --preview <dir>` also write debug images for checking a rebuild.
+`bake-shore.mjs --preview <dir>`, `bake-marina.mjs --preview <dir>` and `bake-alderdi.mjs --preview <dir>` also write
+debug images for checking a rebuild.
 
 The OpenStreetMap snapshot is committed and only fetched again when it is missing, when a query changed since it was
 taken (`osm_queries.sha256` records the hash of each query as sent) or with `--refresh-osm`. The queries
@@ -50,7 +52,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | 1 m terrain (MDT LiDAR 2017, tiles 064_4..6_1..3 and 040_6_8) | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 1 m isobaths | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses and the port | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses and the port: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
@@ -74,6 +76,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/geodata.js` | municipal map, b5m, OSM, the terrain | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-streets.js`, `data-urgull-parts.js` | OSM, municipal map | ODbL 1.0 + CC BY-SA 3.0 |
 | `js/donostia/data-bridges.js`, `data-streetscape.js`, `data-shore.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
+| `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
 
@@ -104,8 +107,30 @@ map.
   under the slope, and `shore.js` builds them as solid steps of about 17 cm.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
-  the bed above mean sea level, the OSM bare rock & rocky coastline), never on paving, buildings, beaches, bridges or the
-  Kursaal's podium.
+  the bed above mean sea level, the port's two moles, the OSM bare rock & rocky coastline), never on paving, buildings,
+  beaches, bridges or the Kursaal's podium. The port's moles (OSM breakwaters 859798080 & 859798081, `port.mjs`) get
+  concrete cubes, as the orthophoto shows, on what their outlines hold beyond the municipal quays; no rock lies on the
+  quays (`KAIA`, a cell's margin round them) or down the old port's slipway.
+- The port (`bake-marina.mjs`, `js/donostia/marina.js`): the pontoons' centre lines are the OSM piers (the Kirol
+  portua's walkways, the Donostia marina's comb and quay pontoons), their widths measured on the 2025 orthophoto; the
+  fingers and T-heads are what is left of the municipal map's pontoons (`PANTALANA`) once the walkways are taken out,
+  each fitted with a rectangle and run on to its walkway's edge; the pontoons neither map has are read off the
+  orthophoto (`ORTHO_PONTOONS`). An OSM end drawn onto the quay stops a quarter of a metre off the wall. The decks float
+  at 0.45 m freeboard and ride the tide (the water's `getSeaLevel()`), settling no lower than mean sea level, since the
+  basins' LiDAR bed lies only 0.3 m down. Gangways hang from the quay at the municipal ramps that end by a pontoon, at
+  the quay steps whose bottom step does, and where an OSM walkway meets the wall, pitched to the pontoons' level every
+  frame the tide moves them; each has a gate at its head. Guide piles stand along the walkways (one every ~14 m,
+  alternately either side, never under another deck or against a wall), cleats every 3 m along the berths' edges,
+  service pedestals every 11 m. On the harbour's quay walls (the walls inside `port.mjs`'s `HARBOUR` ring, over water
+  in front and with no pontoon, steps or gangway alongside): a bollard every 12 m, iron rings between them on the old
+  port, a ladder every 36 m, timber strakes on the fishing quay below the Naval Museum. The old port's slipway is the
+  notch the municipal quays (`KAIA`) leave at the foot of Kaiarriba, cut off at its toe, its concrete a quadric fitted to
+  the LiDAR inside it (3 m clear of its smeared edges, outliers dropped) and lifted over the terrain.
+- Calm water in the harbour (`js/donostia/water.js`): `port.mjs`'s `HARBOUR` ring (the water inside the moles, drawn on
+  the orthophoto over their crests) and `MOUTH` give two blurred fields on a 2 m grid: inside (rising to 1 within 20 m
+  past the mouth: the harbour's green water, no surf or swash, its colour never the turquoise of a sandy shallow) and
+  sheltered (rising to 1 within 70 m: the waves down to 28 % of the open sea's, so reflections sharpen). The open sea is
+  unchanged.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
