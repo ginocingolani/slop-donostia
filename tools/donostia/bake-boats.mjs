@@ -4,7 +4,8 @@
 // tools/donostia/data/port_boats.json (digitise-boats.mjs, on geoEuskadi's 2025 orthophoto):
 // - Every hull is kept clear of what the port is built of: the municipal map's pontoons, quays, docks & moles
 //   (PANTALANA, KAIA, NASA, DIKEA) and OSM's piers (the north basin's floating pontoon, the ferry landing, and the inner
-//   basin's walkways where the municipal map leaves them out), as js/donostia's marina builds them. A hull that touches
+//   basin's walkways where the municipal map leaves them out), and the marina's decks as bake-marina.mjs built them
+//   (js/donostia/data-marina.js, so that bake runs first). A hull that touches
 //   one slides off it by the least distance (up to 1.5 m), or is trimmed a little; hulls that overlap each other are
 //   eased apart.
 // - The photo's blur widens every hull by about a pixel each side: lengths & beams lose 15 cm.
@@ -16,9 +17,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { HERE, DATA, loadLayer, lonLatToLocal, pointInRing, scanRings, encodePNG, previewDir, licenceComment, log } from './lib.mjs';
 
 const ROOT = path.resolve(HERE, '../..');
+// the pontoons' decks as bake-marina.mjs (run before this bake) builds them: the walkways on OSM's centre lines at the
+// widths measured on the orthophoto, which the outlines below only approximate
+const { MARINA } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/data-marina.js')).href);
 const OUT = path.join(ROOT, 'js/donostia/data-boats.js');
 const PREVIEW = previewDir();
 const SRC = JSON.parse(fs.readFileSync(path.join(DATA, 'port_boats.json'), 'utf8'));
@@ -97,6 +102,8 @@ const grid = (() => {
     const l = Math.hypot(bx - ax, bz - az) || 1, nx = (-(bz - az) / l) * hw, nz = ((bx - ax) / l) * hw;
     scanRings([[ax + nx, az + nz, bx + nx, bz + nz, bx - nx, bz - nz, ax - nx, az - nz]], G.x0, G.z0, G.res, G.w, G.h, mark);
   }
+  // the marina's decks (per piece: four corners x, z, then its kind and finish)
+  for (let k = 0; k < MARINA.decks.length; k += 10) scanRings([MARINA.decks.slice(k, k + 8)], G.x0, G.z0, G.res, G.w, G.h, mark);
   const out = g.slice();
   for (let j = 1; j < G.h - 1; j++) {
     for (let i = 1; i < G.w - 1; i++) {
