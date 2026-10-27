@@ -9,9 +9,10 @@
 //   tumbled concrete cubes.
 // - The Urumea's quay walls: a riprap toe where the LiDAR, flown at low tide, found the bed above mean sea level at the
 //   foot of the wall (GEO.terrain.walls' foot).
+// - The port's two moles (tools/donostia/port.mjs): the concrete cubes on their seaward flanks.
 // - The rest of the rocky coast (OSM natural=bare_rock: Santa Klara, Igeldo, Urgull's west point, Ulia): scattered
 //   boulders along the waterline.
-// Never on paving, a building, a bridge, a beach or the Kursaal's podium. Deterministic: seeded generators and a fixed
+// Never on paving, a building, a bridge, a beach, the Kursaal's podium or the port's quays and slipway. Deterministic: seeded generators and a fixed
 // visiting order.
 
 import fs from 'node:fs';
@@ -20,6 +21,7 @@ import { pathToFileURL } from 'node:url';
 import { HERE, FRAME, loadLayer, lonLatToLocal, osmPolygons, scanRings, encodePNG, previewDir, licenceComment, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 import { WALL, nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
+import { MOLES, slipwayRing } from './port.mjs';
 
 const ROOT = path.resolve(HERE, '../..');
 const OUT = path.join(ROOT, 'js/donostia/data-shore.js');
@@ -94,9 +96,18 @@ const osmAreas = (test) => places.filter((e) => test(e)).flatMap(osmPolygons);
 const DIKE = 400267149;
 const dike = mask();
 for (const rings of osmAreas((e) => e.id === DIKE && e.tags?.man_made === 'breakwater')) paint(dike, rings);
-// rocky ground: OSM breakwaters (the Paseo Nuevo's apron, the port's moles) & bare rock
+// rocky ground: OSM breakwaters (the Paseo Nuevo's apron) & bare rock; the port's moles have cubes of their own (below)
 const rocky = mask();
-for (const rings of osmAreas((e) => e.tags?.man_made === 'breakwater' || e.tags?.natural === 'bare_rock')) paint(rocky, rings);
+for (const rings of osmAreas((e) => (e.tags?.man_made === 'breakwater' && !MOLES.includes(e.id)) || e.tags?.natural === 'bare_rock')) paint(rocky, rings);
+// The port (tools/donostia/port.mjs): its moles' seaward flanks, what their OSM outlines hold beyond the paved quays
+// (the municipal map's KAIA), are banks of concrete cubes; no loose rock on the quays or down the old port's slipway
+const portQuays = mask();
+for (const f of loadLayer('c500_KAIA.json').features) paint(portQuays, f.g.filter((r) => r.length >= 6));
+const slipway = slipwayRing(loadLayer);
+if (slipway) paint(portQuays, [slipway]);
+const moles = mask();
+for (const rings of osmAreas((e) => MOLES.includes(e.id) && e.tags?.man_made === 'breakwater')) paint(moles, rings);
+const portQuaysNear = dilate(portQuays, 1);
 // no rocks: buildings, the beaches, the Kursaal (its podium & terraces) and the bridges
 const blocked = mask();
 for (const file of ['c500_ERAIKINA.json', 'c500_EraikinArinak.json', 'c500_HONDARTZA.json']) {
@@ -122,7 +133,7 @@ const kursaal = mask();
 for (const site of GEO.landmarks) if (/^kursaal/.test(site.id) && site.footprint) paint(kursaal, [site.footprint]);
 const kursaalNear = dilate(kursaal, 6);
 const PAVED = new Set([G.road, G.sidewalk, G.pedestrian, G.bike, G.stairs, G.rail, G.building, G.beach, G.garden]);
-const free = (k) => !blockedNear[k] && !kursaalNear[k] && !PAVED.has(terrain.classes[k]);
+const free = (k) => !blockedNear[k] && !kursaalNear[k] && !portQuaysNear[k] && !PAVED.has(terrain.classes[k]);
 
 // the coastline, for the natural rocky shore
 const coastNear = mask();
@@ -201,6 +212,19 @@ zones.push({
   },
   make: (rnd) => {
     const s = 1.9 + rnd() * 0.35;
+    return { kind: KIND.cube, sx: s, sy: s * (0.95 + rnd() * 0.1), sz: s, embed: 0.2 + rnd() * 0.25, tilt: 0.55 };
+  }
+});
+// the port's moles: their banks of concrete cubes, as on the Zurriola dike, up the flank to below the west mole's upper
+// walkway (~9.7 m)
+zones.push({
+  name: 'port moles', seed: 29, coverage: 0.78,
+  cell: (k, x, z, y) => {
+    if (!moles[k] || portQuaysNear[k] || blockedNear[k] || y < -1.6 || y > 8.5 || PAVED.has(terrain.classes[k])) return null;
+    return { d: 99 };
+  },
+  make: (rnd) => {
+    const s = 1.9 + rnd() * 0.45;
     return { kind: KIND.cube, sx: s, sy: s * (0.95 + rnd() * 0.1), sz: s, embed: 0.2 + rnd() * 0.25, tilt: 0.55 };
   }
 });
