@@ -269,10 +269,12 @@ const STAIR_STEEP = 1.2; // the steepest a flight is taken to fall (beyond: the 
  * keeps as the ramp the wall was. Each piece's slope is
  * a plane fitted to the 1 m LiDAR inside it, its top & bottom where that plane meets its outline, kept between the
  * wall's promenade (deck) and its foot; a piece that hardly falls is a landing at its own level.
+ * The flights down to the beaches are tools/donostia/beach-access.mjs's: skip(x, z) tells the pieces it took (by the
+ * mean of their outline's vertices).
  * Returns [{ p: [x, z, ...], top, bot, ux, uz (downhill, horizontal), plane: [a, b, c, cx, cz] (y = c + a (x - cx) +
  * b (z - cz)) }].
  */
-export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} }) {
+export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => false, log = () => {} }) {
   const out = [];
   for (const f of loadLayer('c500_ESKAILERA.json').features) {
     for (const r of f.g) {
@@ -283,6 +285,7 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, log = () => {} 
       if (Math.abs(area / 2) < 0.5) continue;
       for (let k = 0; k < r.length; k += 2) { cx += r[k]; cz += r[k + 1]; }
       cx /= n; cz /= n;
+      if (skip(cx, cz)) continue;
       // the wall it comes down from: the nearest to its outline (sampled every metre)
       let wall = null, dist = Infinity;
       for (let i = 0; i < n; i++) {

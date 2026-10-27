@@ -21,6 +21,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
+import { BEACH_ACCESS } from '../../js/donostia/data-beach-access.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT = path.join(ROOT, 'data', 'donostia');
@@ -73,6 +74,17 @@ const PARTE_VIEJA = [
 ].flatMap(([lon, lat]) => lonLatToLocal(lon, lat));
 
 const c500 = (file) => loadLayer(file).features.map((f) => f.g.filter((r) => r.length >= 6)).filter((g) => g.length);
+// The pieces of the stairs that tools/donostia/beach-access.mjs builds as the beaches' stairs & ramps (or leaves to the
+// sand) keep the ground of the layers under them (BEACH_ACCESS.claimed: the mean of each outline's vertices)
+const claimed = BEACH_ACCESS.claimed || [];
+const unclaimed = (g) => {
+  const r = g[0];
+  let x = 0, z = 0;
+  for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
+  x /= r.length / 2; z /= r.length / 2;
+  for (let k = 0; k < claimed.length; k += 2) if (Math.abs(claimed[k] - x) < 0.02 && Math.abs(claimed[k + 1] - z) < 0.02) return false;
+  return true;
+};
 
 // Painted in order, later layers win (as GROUND_LAYERS in build.mjs, with more surfaces). `over` limits a layer to
 // cells already holding one of the listed surfaces.
@@ -93,7 +105,7 @@ const LAYERS = [
   { name: 'railway', id: S.rail, polys: c500('c500_TRENBIDEA.json') },
   { name: 'bidegorris', id: S.bike, polys: c500('c500_BIDEGORRIA.json') },
   { name: 'tree pits', id: S.treePit, polys: c500('c500_ZUHAITZ_TXORKOA.json') },
-  { name: 'stairs', id: S.stairs, polys: c500('c500_ESKAILERA.json') },
+  { name: 'stairs', id: S.stairs, polys: c500('c500_ESKAILERA.json').filter(unclaimed) },
   { name: 'buildings', id: S.building, polys: [...c500('c500_ERAIKINA.json'), ...c500('c500_EraikinArinak.json')] },
   {
     name: 'arcades & passages', id: S.pedestrian,

@@ -9,12 +9,33 @@
 // face) with, at each vertex, the level of the promenade behind (deck) and of the ground at its foot measured by the
 // LiDAR (foot). The low side lies on the (-dz, dx) side of the direction of travel (dx, dz), as for the railing.
 
+// A wall may carry h: [first, last + 1, ...], runs of its segments that are hidden: the terrain steps there as at any wall,
+// but the masonry is a beach access's own (js/donostia/beach-access.js) and the railing never stands on it; see
+// visibleWalls().
+//
 // Wall types (masonry): La Concha & Ondarreta's sandstone ashlar, the Paseo Nuevo's rubble with a parapet, the Urumea's
 // dark quay walls, the port's dressed stone, Zurriola's concrete-and-stone promenade wall
 export const WALL = { concha: 0, paseo: 1, river: 2, quay: 3, zurriola: 4 };
 // How far the coping (js/donostia/shore.js) stands above the promenade on each type of wall (m): La Concha's railing
 // stands on it; the Paseo Nuevo's is the parapet's
 export const COPING = { [WALL.concha]: 0.14, [WALL.paseo]: 0.95, [WALL.river]: 0.16, [WALL.quay]: 0.05, [WALL.zurriola]: 0.08 };
+
+// The walls with masonry: every wall split where it runs hidden (h), as { t, b, p } (shore.js draws these, the railing
+// stands on them)
+export function visibleWalls(walls) {
+  const out = [];
+  for (const w of walls) {
+    if (!w.h || !w.h.length) { out.push(w); continue; }
+    const n = w.p.length / 4;
+    let k = 0;
+    for (let r = 0; r <= w.h.length; r += 2) {
+      const end = r < w.h.length ? w.h[r] : n - 1; // visible segments k .. end - 1
+      if (end > k) out.push({ t: w.t, b: w.b, p: w.p.slice(4 * k, 4 * (end + 1)) });
+      if (r < w.h.length) k = w.h[r + 1];
+    }
+  }
+  return out;
+}
 
 // Samples of a terrain grid this far from a wall line (m) are looked at: every sample within reach of a triangle that
 // crosses the wall (a quad's diagonal) is moved onto it

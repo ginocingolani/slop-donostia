@@ -6,6 +6,7 @@
 //   data/donostia/water.png            swell exposure, river & seaward flow on the context grid (js/donostia/water.js)
 //   js/donostia/geodata.js             frame, terrain metadata (with the shore walls), buildings, landmark sites &
 //                                      teleports
+//   js/donostia/data-beach-access.js  the stairs & ramps down to the beaches (tools/donostia/beach-access.mjs)
 // --preview writes debug images (hillshade, building heights) into the given folder.
 // Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
@@ -16,11 +17,13 @@ import {
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
 import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
-import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
+import { beachAccesses, carveTerrain } from './beach-access.mjs';
+import { WALL, wallSnaps, wallIndex, nearestWall, visibleWalls } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
+const OUT_ACCESS = path.join(ROOT, 'js', 'donostia', 'data-beach-access.js');
 const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
@@ -594,10 +597,12 @@ function groundClasses(grid, wet) {
 // --- 4c. Shore walls: La Concha's promenade wall, the Paseo Nuevo, the Urumea's & the port's quays ---------------------
 
 // The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
-// LiDAR; here the samples on either side of each wall line that share a triangle across it (wallSnaps, which
+// LiDAR; tools/donostia/beach-access.mjs adds the lines behind the stairs & ramps built in front of a wall (which the
+// search leaves out). The samples on either side of each wall line that share a triangle across it (wallSnaps, which
 // js/donostia/terrain.js runs again to move them onto the line) lose the smear: those in front drop to the foot of the
 // wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back up to
-// the promenade's level. Nothing further from a wall changes. Returns GEO.terrain.walls.
+// the promenade's level. Nothing further from a wall changes. Returns { walls (GEO.terrain.walls), access (the beach
+// accesses, beachAccesses()) }.
 function shoreWalls(dtm, grid, classes) {
   const t = performance.now();
   // OSM water at sea level, as the water mask has it (ponds sit above POND_LEVEL)
@@ -615,12 +620,17 @@ function shoreWalls(dtm, grid, classes) {
     return i < 0 || j < 0 || i >= grid.w || j >= grid.h ? -1 : classes[j * grid.w + i];
   };
   const margin = 12;
-  const walls = detectWalls({
+  const found = detectWalls({
     dtm, classAt, log,
     guides: shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }),
     exclude: wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext: CORE }),
     bounds: { minX: CORE.minX + margin, maxX: CORE.maxX - margin, minZ: CORE.minZ + margin, maxZ: CORE.maxZ - margin }
   });
+  const buildingRings = ['c500_ERAIKINA.json', 'c500_EraikinArinak.json'].flatMap((f) => loadLayer(f).features.map((b) => b.g[0]));
+  const access = beachAccesses({ dtm, walls: found, buildings: buildingRings, loadLayer, log });
+  // (the hidden runs along the accesses' open sides only move the samples at runtime: the terrain's levels there are the
+  // accesses', beachAccesses' carve below)
+  const walls = visibleWalls(access.walls);
   const snaps = wallSnaps(walls, grid);
   const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
   // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
@@ -666,19 +676,21 @@ function shoreWalls(dtm, grid, classes) {
       grid.data[k] = level;
     }
   }
-  log(`shore walls: ${walls.length} runs, ${walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
+  log(`shore walls: ${access.walls.length} runs, ${access.walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
     `samples onto the walls, ${lowered} in front dropped to the foot, ${raised} behind levelled with the promenade ` +
     `(${((performance.now() - t) / 1000).toFixed(1)} s)`);
-  return walls;
+  return { walls: access.walls, access };
 }
 
 // --- 4d. The flights of steps down from the shore walls ------------------------------------------------------------------
 
-// tools/donostia/walls.mjs finds the municipal map's stairs by the walls and fits their slope to the 1 m LiDAR;
-// js/donostia/shore.js builds them as stone steps. The terrain samples inside a flight are kept a little under its
-// slope, so the ramp the grid made of it stays hidden under the steps. Returns GEO.terrain.stairs.
-function shoreStairs(dtm, walls, grid) {
-  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, log });
+// tools/donostia/walls.mjs finds the municipal map's stairs by the walls (but those of the beaches, which
+// tools/donostia/beach-access.mjs builds) and fits their slope to the 1 m LiDAR; js/donostia/shore.js builds them as
+// stone steps. The terrain samples inside a flight are kept a little under its slope, so the ramp the grid made of it
+// stays hidden under the steps; under the beaches' stairs & ramps likewise, and the sand round those in front of a wall
+// comes down to the beach. Returns GEO.terrain.stairs.
+function shoreStairs(dtm, walls, grid, classes, access) {
+  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, skip: access.claimed, log });
   let lowered = 0;
   for (const s of stairs) {
     const [a, b, c, cx, cz] = s.plane;
@@ -689,7 +701,8 @@ function shoreStairs(dtm, walls, grid) {
       if (grid.data[k] > under) { grid.data[k] = under; lowered++; }
     });
   }
-  log(`shore stairs: ${lowered} terrain samples kept under the steps`);
+  const carved = carveTerrain(grid, access, classes, GROUND.beach, GROUND.stairs);
+  log(`shore stairs: ${lowered} terrain samples kept under the steps; ${carved} under & round the beaches' stairs & ramps`);
   return stairs.map(({ plane, ...s }) => s);
 }
 
@@ -987,8 +1000,8 @@ lap('terrain grids');
 fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
-const walls = shoreWalls(dtm, core.grid, coreClasses);
-const stairs = shoreStairs(dtm, walls, core.grid);
+const { walls, access } = shoreWalls(dtm, core.grid, coreClasses);
+const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -1031,6 +1044,13 @@ const js = `// js/donostia/geodata.js — generated by tools/donostia/build.mjs;
   `export const GEO = ${JSON.stringify(GEO)};\n`;
 fs.writeFileSync(OUT_JS, js);
 log(`${path.relative(ROOT, OUT_JS)}: ${(js.length / 1e6).toFixed(2)} MB, ${buildings.length} buildings, ${landmarks.length} landmarks, ${teleports.length} teleports`);
+const accessJs = `// js/donostia/data-beach-access.js — generated by tools/donostia/build.mjs (tools/donostia/beach-access.mjs); do not edit.\n` +
+  `// Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (CC BY-SA 3.0) · Eusko Jaurlaritza / ` +
+  `Gobierno Vasco. geoEuskadi (LiDAR, CC BY 4.0; orthophoto 2025) · © OpenStreetMap contributors (ODbL)\n` +
+  licenceComment('c500', 'geoeuskadi', 'osm') +
+  `export const BEACH_ACCESS = ${JSON.stringify(access.data)};\n`;
+fs.writeFileSync(OUT_ACCESS, accessJs);
+log(`${path.relative(ROOT, OUT_ACCESS)}: ${(accessJs.length / 1e3).toFixed(1)} kB`);
 
 if (PREVIEW) {
   fs.mkdirSync(PREVIEW, { recursive: true });

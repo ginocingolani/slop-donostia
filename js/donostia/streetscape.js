@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
+import { BEACH_ACCESS } from './data-beach-access.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
@@ -16,6 +17,8 @@ import { STREETSCAPE } from './data-streetscape.js';
 //   steps in front of the Hotel de Londres; the rotunda's obelisks, clock & barometer, with their arms of globes
 // - OSM's street lamps (a dark cast-iron post under a four-sided lantern) and benches (wooden slats on iron frames)
 // - lanterns on iron brackets along the lanes of the Parte Vieja, where OSM maps no street lamps
+// - the handrails of the beaches' stairs & ramps (js/donostia/data-beach-access.js) on the kerbs of their open sides: a
+//   tube on posts with a middle rail, painted white at La Concha & Ondarreta, stainless at Zurriola
 // Lamps glow at dusk & night with cityUniforms.uInteriorGlow (emissive + bloom), each over a soft pool of light on the
 // ground; no real lights. Everything is instanced or merged: 9 draws.
 // buildStreetscape(GEO, terrain) -> Promise<Object3D | null>; its userData.update(dt, elapsed, camera) culls the small
@@ -38,6 +41,9 @@ const STONE = [0.43, 0.42, 0.39, 0.85]; // the grey plinth, pillars and the cand
 const PAINTED_STONE = [0.74, 0.74, 0.71, 0.7]; // the lamp pedestals, whitewashed
 const LIMESTONE = [0.6, 0.58, 0.53, 0.8]; // the obelisks
 const DIAL = [0.86, 0.86, 0.84, 0.35];
+const STAINLESS = [0.5, 0.52, 0.53, 0.3];
+const RAIL = { white: WHITE_IRON, steel: STAINLESS };
+const HANDRAIL = { r: 0.024, mid: 0.45, midR: 0.014, post: 0.045, drop: 0.85, every: 1.4 }; // m
 
 // --- geometry helpers ---------------------------------------------------------------------------------------------------
 
@@ -271,7 +277,7 @@ const MONUMENT_INSET = [0.5, 1.2, 1.2]; // the candelabra's & obelisks' axes sta
 // along one, the sea lies towards (-dz, dx)), their posts ([s cm, type: 0 a pillar, 1 a lamp pedestal, 2 a monument's
 // face, where the ironwork stops against it]) and the monuments ([kind, x, y, z cm, heading deg]):
 // { solid (merged, painted), ironwork (the strip), globes [[x, y, z, r]], pools [[x, z, r]] }
-function barandillaGeometries(runs, postLists, monuments) {
+function barandillaGeometries(runs, postLists, monuments, handrails = []) {
   const solid = new Builder(), globes = [], pools = [];
   const strip = { pos: [], nrm: [], uv: [], idx: [] };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -393,6 +399,34 @@ function barandillaGeometries(runs, postLists, monuments) {
     }
     obelisk(solid, m, globes, kind === 2);
     pools.push([x - sx * 2.5, z - sz * 2.5, 7]);
+  }
+  // the handrails of the beaches' stairs & ramps: posts down to the kerb, a tube on top, a thinner rail between
+  for (const { t, p: flat } of handrails) {
+    const paint = RAIL[t] || WHITE_IRON;
+    const pts = [];
+    for (let k = 0; k < flat.length; k += 3) pts.push(V(flat[k], flat[k + 1], flat[k + 2]));
+    if (pts.length < 2) continue;
+    const tube = (dy, r) => {
+      for (let k = 0; k + 1 < pts.length; k++) {
+        const a = pts[k].clone(), b = pts[k + 1].clone();
+        a.y += dy; b.y += dy;
+        const d = V().subVectors(b, a), len = d.length();
+        if (len < 1e-3) continue;
+        const m = M4().compose(V().addVectors(a, b).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(UP, d.normalize()), V(1, 1, 1));
+        solid.add(new THREE.CylinderGeometry(r, r, len + 2 * r, 6, 1, true), paint, m);
+      }
+    };
+    tube(0, HANDRAIL.r);
+    tube(-HANDRAIL.mid, HANDRAIL.midR);
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const a = pts[k], b = pts[k + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+      const n = Math.max(1, Math.ceil(len / HANDRAIL.every));
+      for (let q = k === 0 ? 0 : 1; q <= n; q++) {
+        const p = a.clone().lerp(b, q / n);
+        const [g, mm] = box(HANDRAIL.post, HANDRAIL.drop, HANDRAIL.post, 0, -HANDRAIL.drop, 0);
+        solid.add(g, paint, M4().makeTranslation(p.x, p.y, p.z).multiply(mm));
+      }
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(strip.pos, 3));
@@ -592,7 +626,8 @@ export async function buildStreetscape(GEO, terrain) {
   // their globes
   const promenade = [];
   if (data.railings.length) {
-    const { solid, ironwork, globes, pools: lit } = barandillaGeometries(data.railings, data.railingPosts || [], data.monuments || []);
+    const { solid, ironwork, globes, pools: lit } = barandillaGeometries(data.railings, data.railingPosts || [], data.monuments || [],
+      BEACH_ACCESS.rails || []);
     const solidMesh = new THREE.Mesh(solid, paint);
     solidMesh.name = 'Barandilla';
     const ironMesh = new THREE.Mesh(ironwork, createIronworkMaterial());
