@@ -223,7 +223,7 @@ def Z(m):
     return G(union([
         bar(m.v(14, 16), W - m.v(10, 12), C - h, C, left=(0, m.wdrop, m.wlen)),
         bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen)),
-        polygon([(0, h - 2), (hw, h - 2), (W - m.v(10, 12), C - h + 2), (W - m.v(10, 12) - hw, C - h + 2)]),
+        polygon([(0, 0), (hw, 0), (W - m.v(10, 12), C), (W - m.v(10, 12) - hw, C)]),
     ]), W, None, None)
 
 
@@ -277,11 +277,6 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
         yi2 = inner_top(xt - bw)
         parts.append(polygon([(xt + 30, yi_t + 50), (xt + 30, yi_t - bl), (xt, yi_t - bl), (xt - bw, yi2 + 5),
                               (xt - bw, yi2 + 50)]))
-        # the outer corner rises a touch: the terminal reads as cut square, not worn
-        bw2 = m.v(64, 70)
-        yo, yo2 = outer_top(xt), outer_top(xt - bw2)
-        parts.append(polygon([(xt + 30, yo - 50), (xt - bw2, yo2 - 50), (xt - bw2, yo2 - 4), (xt, yo + 8),
-                              (xt + 30, yo + 8)]))
     if beak_bottom:
         bl, bw = m.v(28, 30), m.v(36, 42)
         yi2 = inner_bot(xb - bw)
@@ -685,9 +680,9 @@ def two(m):
 @glyph('three', 0x33)
 def three(m):
     C, o = m.C, m.o
-    W = m.v(530, 590)
+    W = m.v(530, 594)
     a, b = m.v(60, 92), m.v(46, 68)
-    ym = m.v(400, 400)
+    ym = m.v(398, 384)
     up = [
         hobby((a * 0.9, C * 0.73), (0.2, 1), (W * 0.48, C + o - b), (1, 0)),
         hobby((W * 0.48, C + o - b), (1, 0), (W * 0.90 - a, (C + ym) / 2 + 10), (0, -1)),
@@ -698,7 +693,7 @@ def three(m):
         hobby((W - a, ym * 0.48), (0, -1), (W * 0.47, -o + b), (-1, 0)),
         hobby((W * 0.47, -o + b), (-1, 0), (a * 0.9, C * 0.21), (-0.2, 1)),
     ]
-    s1 = stroke(up, a, b, knots=[(0, 0.92), (1, 1.0), (3, 0.92)], name='3a')
+    s1 = stroke(up, a, b, knots=[(0, 0.92), (1, 1.0), (2, m.v(0.96, 0.86)), (3, 0.92)], name='3a')
     s2 = stroke(low, a, b, knots=[(0, 0.92), (1, 1.02), (3, 0.92)], name='3b')
     body = union([s1, s2])
     body = diff(body, rect(-200, C * 0.55, a * 0.5, C + 200))
@@ -715,7 +710,7 @@ def four(m):
     yb = m.v(170, 166)               # bottom of the bar
     gap = m.v(30, 28)
     st = stem(xs, xs + s, 0, C * 0.92, m.serif, tl=False, tr=False, flare_l=m.flare, flare_r=m.flare)
-    st = union([st, polygon([(xs, C * 0.92 - 2), (xs + s, C * 0.92 - 2), (xs + s, C * 0.92 + m.v(30, 36)), (xs, C * 0.92)])])
+    st = union([st, polygon([(xs, C * 0.92 - 30), (xs + s, C * 0.92 - 30), (xs + s, C * 0.92 + m.v(30, 36)), (xs, C * 0.92)])])
     bar_ = bar(0, W, yb, yb + h, right=(m.wdrop * 0.5, m.wdrop * 0.5, m.wlen * 0.6))
     dw = m.thin / math.sin(math.atan2(C - yb, xs - gap - m.v(110, 140)))
     top_r = xs - gap
@@ -791,10 +786,10 @@ def seven(m):
         hobby(p1, (-0.62, -1), p2, (0, -1), tension=1.0),
         line_cubic(p2, (xf, -40)),
     ]
-    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 0.98)], name='7')
+    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 1.0)], name='7')
     neck = diff(neck, rect(-200, -300, W + 200, 0))
     neck = diff(neck, rect(-200, C, W + 200, C + 300))
-    foot = stem(xf - a * 0.98, xf + a * 0.98, 0, m.v(130, 140), m.serif, tl=False, tr=False)
+    foot = stem(xf - a, xf + a, 0, m.v(130, 140), m.serif, tl=False, tr=False)
     return G(union([top, neck, foot]), W, None, None)
 
 
@@ -936,10 +931,10 @@ def question_path(m, W):
     sp = [
         hobby((a * 0.9, C * 0.70), (0.1, 1), (W * 0.50, C + o - b), (1, 0)),
         hobby((W * 0.50, C + o - b), (1, 0), (W - a, C * 0.70), (0, -1)),
-        hobby((W - a, C * 0.70), (0, -1), (xs, C * 0.40), (-0.18, -1), tension=1.0),
+        hobby((W - a, C * 0.70), (0, -1), (xs, C * 0.40), (0, -1), tension=1.0),
         line_cubic((xs, C * 0.40), (xs, 2 * dy + m.v(76, 80))),
     ]
-    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 0.92), (4, 0.82)], name='?')
+    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 0.86), (4, 0.86)], name='?')
     body = diff(body, rect(-200, C * 0.55, a * 0.5, C + 200))
     return union([body, lozenge(xs, dy - 4, dx, dy)])
 
@@ -947,13 +942,13 @@ def question_path(m, W):
 @glyph('question', 0x3F)
 def question(m):
     W = m.v(470, 530)
-    return G(question_path(m, W), W, None, None)
+    return G(question_path(m, W), W, m.v(40, 32), m.v(40, 32))
 
 
 @glyph('questiondown', 0xBF)
 def questiondown(m):
     W = m.v(470, 530)
-    return G(rotate180(question_path(m, W), W / 2, m.C / 2), W, None, None)
+    return G(rotate180(question_path(m, W), W / 2, m.C / 2), W, m.v(40, 32), m.v(40, 32))
 
 
 @glyph('hyphen', 0x2D)
@@ -991,13 +986,13 @@ def paren_path(m):
 @glyph('parenleft', 0x28)
 def parenleft(m):
     p, W = paren_path(m)
-    return G(p, W, m.v(56, 46), m.v(24, 18))
+    return G(p, W, m.v(58, 48), m.v(34, 30))
 
 
 @glyph('parenright', 0x29)
 def parenright(m):
     p, W = paren_path(m)
-    return G(mirror_x(p, W / 2), W, m.v(24, 18), m.v(56, 46))
+    return G(mirror_x(p, W / 2), W, m.v(34, 30), m.v(58, 48))
 
 
 @glyph('slash', 0x2F)

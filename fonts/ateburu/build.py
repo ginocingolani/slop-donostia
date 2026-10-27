@@ -42,10 +42,10 @@ from fontTools.otlLib.builder import buildStatTable  # noqa: E402
 from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: E402
 from fontTools.ttLib import TTFont, newTable  # noqa: E402
 from fontTools.varLib import build as varlib_build  # noqa: E402
-from fontTools.varLib.instancer import instantiateVariableFont  # noqa: E402
 
 import geometry  # noqa: E402
 import glyphs as G  # noqa: E402
+import qa  # noqa: E402
 
 FAMILY = 'Ateburu'  # the working name: rename here (and in the file names below) if the family is renamed
 VERSION = '0.100'
@@ -81,11 +81,11 @@ def draw_all():
 
 
 def outlines(drawn):
-    """name -> per master TrueType contours (compatible)"""
+    """name -> geometry.Outline (compatible exact outlines of both masters), None for empty glyphs"""
     out, errors = {}, []
     for name, gs in drawn.items():
         if gs[0].path is None:
-            out[name] = [[] for _ in MASTERS]
+            out[name] = None
             continue
         try:
             out[name] = geometry.make_compatible(name, [g.path for g in gs])
@@ -217,11 +217,6 @@ def spacing(drawn, tt):
     return result
 
 
-# overrides applied on top of the automatic spacing: (name, master index or None for both, 'lsb'|'rsb', delta)
-SPACING_TWEAKS = {
-}
-
-
 def kern_value(m, left_prof, right_prof, ref_gaps, depth2, mingap):
     """Kern so that the clipped white area between the two glyphs matches the reference pair's (HH) over the same
     heights (so a period after T is compared with HH's white at the period's own height)"""
@@ -324,40 +319,42 @@ def tt_glyph(contours, dx):
 
 
 def glyph_order():
-    order = ['.notdef']
-    order += [n for n in G.GLYPHS]
-    order += [c[0] for c in G.COMPOSITES]
-    return order
+    return ['.notdef'] + list(G.GLYPHS) + [c[0] for c in G.COMPOSITES]
 
 
-def notdef(m):
-    w, h = m.v(500, 540), G.CAP
-    t = m.v(60, 90)
-    outer = geometry.rect(40, 0, 40 + w, h)
-    inner = geometry.rect(40 + t, t, 40 + w - t, h - t)
-    return geometry.diff(outer, inner), w + 80
+def notdef_outline():
+    paths = []
+    for m in MASTERS:
+        w, h, t = m.v(500, 540), G.CAP, m.v(60, 90)
+        paths.append(geometry.diff(geometry.rect(0, 0, w, h), geometry.rect(t, t, w - t, h - t)))
+    return geometry.make_compatible('.notdef', paths)
 
 
-def build_master(mi, drawn, tt, sb, kern):
-    m = MASTERS[mi]
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def build_font(t, weight, names, drawn, outl, sb, kern):
+    """A complete TrueType font at interpolation position t (0 = HUD master, 1 = Black master): outlines interpolated
+    exactly and rounded once, side bearings, anchors and kerning interpolated"""
     order = glyph_order()
-    glyf, hmtx, cmap = {}, {}, {}
-    nd_path, nd_adv = notdef(m)
-    nd = geometry.make_compatible('.notdef', [nd_path, nd_path])[0]
-    glyf['.notdef'] = tt_glyph(nd, 0)
-    hmtx['.notdef'] = nd_adv
-    anchors = {}
+    glyf, hmtx, cmap, anchors = {}, {}, {}, {}
+    nd = notdef_outline()
+    glyf['.notdef'] = tt_glyph(nd.at(t), 40)
+    hmtx['.notdef'] = int(round(lerp(500, 540, t))) + 80
     for name, gs in drawn.items():
-        g = gs[mi]
-        lsb, rsb = sb[name][mi]
+        g0, g1 = gs[0], gs[-1]
+        lsb = lerp(sb[name][0][0], sb[name][-1][0], t)
+        rsb = lerp(sb[name][0][1], sb[name][-1][1], t)
+        w = lerp(g0.w, g1.w, t)
         lsb_i = int(round(lsb))
-        if g.adv is not None:
+        if g0.adv is not None:
             glyf[name] = TTGlyphPen(None).glyph()
-            hmtx[name] = int(round(g.adv))
+            hmtx[name] = int(round(lerp(g0.adv, g1.adv, t)))
         else:
-            glyf[name] = tt_glyph(tt[name][mi], lsb_i)
-            hmtx[name] = int(round(lsb_i + g.w + rsb))
-        anchors[name] = (lsb_i + g.top, lsb_i + g.bottom)
+            glyf[name] = tt_glyph(outl[name].at(t), lsb_i)
+            hmtx[name] = int(round(lsb_i + w + rsb))
+        anchors[name] = (lsb_i + lerp(g0.top, g1.top, t), lsb_i + lerp(g0.bottom, g1.bottom, t))
         for u in G.GLYPHS[name][0]:
             cmap[u] = name
     for name, uni, base, mark in G.COMPOSITES:
@@ -386,24 +383,17 @@ def build_master(mi, drawn, tt, sb, kern):
         metrics[name] = (hmtx[name], getattr(g, 'xMin', 0) if g.numberOfContours else 0)
     fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT, lineGap=0)
-    style = m.name
-    fb.setupNameTable({
-        'copyright': COPYRIGHT, 'familyName': f'{FAMILY} {style}', 'styleName': 'Regular',
-        'uniqueFontIdentifier': f'{VERSION};{VENDOR};{FAMILY}-{style}', 'fullName': f'{FAMILY} {style}',
-        'version': f'Version {VERSION}', 'psName': f'{FAMILY}-{style}', 'designer': 'The Ateburu Project Authors',
-        'licenseDescription': LICENSE, 'licenseInfoURL': LICENSE_URL,
-        'typographicFamily': FAMILY, 'typographicSubfamily': style,
-    })
+    fb.setupNameTable(names)
     ymax = max(getattr(glyf_t[n], 'yMax', 0) for n in order if glyf_t[n].numberOfContours)
     ymin = min(getattr(glyf_t[n], 'yMin', 0) for n in order if glyf_t[n].numberOfContours)
-    fb.setupOS2(usWeightClass=m.wght, fsType=0, achVendID=VENDOR, sTypoAscender=ASCENT, sTypoDescender=DESCENT,
+    fb.setupOS2(usWeightClass=weight, fsType=0, achVendID=VENDOR, sTypoAscender=ASCENT, sTypoDescender=DESCENT,
                 sTypoLineGap=0, usWinAscent=max(ASCENT, ymax), usWinDescent=max(-DESCENT, -ymin), sxHeight=G.CAP,
                 sCapHeight=G.CAP, fsSelection=0x80, ulUnicodeRange1=0b11, ulCodePageRange1=1,
                 usDefaultChar=0, usBreakChar=32, version=4)
-    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=int(m.v(60, 80)))
+    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=int(round(lerp(60, 80, t))))
     fb.setupHead(unitsPerEm=UPM, fontRevision=float(VERSION), created=TIMESTAMP, modified=TIMESTAMP)
     fb.font['head'].flags |= 0x0008  # integer scaling
-    fb.addOpenTypeFeatures(kern_fea(kern, mi))
+    fb.addOpenTypeFeatures(kern_fea({k: [int(round(lerp(v[0], v[-1], t)))] for k, v in kern.items()}, 0))
     gasp = newTable('gasp')
     gasp.version = 1
     gasp.gaspRange = {0xFFFF: 0x000F}
@@ -417,59 +407,34 @@ def kern_fea(kern, mi):
         lines.append(f'@L_{k} = [{" ".join(members)}];')
         lines.append(f'@R_{k} = [{" ".join(members)}];')
     lines.append('feature kern {')
-    lines.append('  lookupflag 0;')
-    # glyph pairs first would override classes; all our pairs are class or single-glyph pairs on bases
     for (a, b), vals in sorted(kern.items()):
         la = f'@L_{a}' if a in CLASSES else a
         rb = f'@R_{b}' if b in CLASSES else b
-        if a in CLASSES or b in CLASSES:
-            lines.append(f'  enum pos {la} {rb} {vals[mi]};' if False else f'  pos {la} {rb} {vals[mi]};')
-        else:
-            lines.append(f'  pos {la} {rb} {vals[mi]};')
+        lines.append(f'  pos {la} {rb} {vals[mi]};')
     lines.append('} kern;')
     return '\n'.join(lines) + '\n'
 
 
-def check_outlines(font, name):
-    """Direction (outer clockwise), no overlapping contours, no zero-area contours"""
-    problems = []
-    gs = font.getGlyphSet()
-    glyf_t = font['glyf']
-    for gname in font.getGlyphOrder():
-        g = glyf_t[gname]
-        if g.numberOfContours <= 0:
-            continue
-        path = pathops.Path()
-        pen = path.getPen(glyphSet=gs)
-        gs[gname].draw(pen)
-        simplified = pathops.simplify(path, clockwise=True)
-        if abs(abs(path.area) - abs(simplified.area)) > 1.0:
-            problems.append(f'{name} {gname}: overlapping contours ({path.area:.0f} vs {simplified.area:.0f})')
-        # direction: compare each contour's winding with the simplified one
-        if not path.clockwise and path.area:
-            problems.append(f'{name} {gname}: first contour not clockwise')
-    return problems
-
-
-def set_names(font, style, weight):
-    """Names of a static instance (RIBBI family + typographic family/subfamily)"""
-    name = font['name']
+def names_for(style, weight, variable=False):
+    """RIBBI family/subfamily plus typographic names (16/17) for anything that is not Regular or Bold"""
     ribbi = style in ('Regular', 'Bold')
-    fam = FAMILY if ribbi else f'{FAMILY} {style}'
-    sub = style if ribbi else 'Regular'
-    for rec in list(name.names):
-        if rec.nameID in (1, 2, 3, 4, 6, 16, 17, 25) or rec.nameID >= 256:
-            name.removeNames(nameID=rec.nameID)
-    name.setName(fam, 1, 3, 1, 0x409)
-    name.setName(sub, 2, 3, 1, 0x409)
-    name.setName(f'{VERSION};{VENDOR};{FAMILY}-{style}', 3, 3, 1, 0x409)
-    name.setName(f'{FAMILY} {style}', 4, 3, 1, 0x409)
-    name.setName(f'{FAMILY}-{style}', 6, 3, 1, 0x409)
-    if not ribbi:
-        name.setName(FAMILY, 16, 3, 1, 0x409)
-        name.setName(style, 17, 3, 1, 0x409)
+    return {
+        'copyright': COPYRIGHT,
+        'familyName': FAMILY if ribbi else f'{FAMILY} {style}',
+        'styleName': style if ribbi else 'Regular',
+        'uniqueFontIdentifier': f'{VERSION};{VENDOR};{FAMILY}-{"Variable" if variable else style}',
+        'fullName': f'{FAMILY} {style}',
+        'version': f'Version {VERSION}',
+        'psName': f'{FAMILY}-{style}',
+        'designer': 'The Ateburu Project Authors',
+        'licenseDescription': LICENSE,
+        'licenseInfoURL': LICENSE_URL,
+        **({} if ribbi else {'typographicFamily': FAMILY, 'typographicSubfamily': style}),
+    }
+
+
+def finish_static(font, style):
     os2 = font['OS/2']
-    os2.usWeightClass = weight
     os2.fsSelection = 0x80 | (0x20 if style == 'Bold' else 0) | (0x40 if style == 'Regular' else 0)
     font['head'].macStyle = 0x01 if style == 'Bold' else 0
 
@@ -504,14 +469,10 @@ def build_variable(master_paths):
     for rec in list(name.names):
         if rec.nameID in (1, 2, 3, 4, 6, 16, 17):
             name.removeNames(nameID=rec.nameID)
-    name.setName(f'{FAMILY} SemiBold', 1, 3, 1, 0x409)
-    name.setName('Regular', 2, 3, 1, 0x409)
-    name.setName(f'{VERSION};{VENDOR};{FAMILY}-Variable', 3, 3, 1, 0x409)
-    name.setName(f'{FAMILY} SemiBold', 4, 3, 1, 0x409)
-    name.setName(f'{FAMILY}-SemiBold', 6, 3, 1, 0x409)
-    name.setName(FAMILY, 16, 3, 1, 0x409)
-    name.setName('SemiBold', 17, 3, 1, 0x409)
-    name.setName(f'{FAMILY}', 25, 3, 1, 0x409)  # variations PostScript name prefix
+    for nid, val in ((1, f'{FAMILY} SemiBold'), (2, 'Regular'), (3, f'{VERSION};{VENDOR};{FAMILY}-Variable'),
+                     (4, f'{FAMILY} SemiBold'), (6, f'{FAMILY}-SemiBold'), (16, FAMILY), (17, 'SemiBold'),
+                     (25, FAMILY)):
+        name.setName(val, nid, 3, 1, 0x409)
     buildStatTable(vf, [dict(tag='wght', name='Weight', values=[
         dict(value=w, name=s, flags=0) for s, w in INSTANCES])], elidedFallbackName=2)
     vf['OS/2'].usWeightClass = 600
@@ -522,20 +483,22 @@ def main():
     drawn = draw_all()
     if geometry.STROKE_ERRORS:
         print('stroke fitting error > 1.5 units:', geometry.STROKE_ERRORS)
-    tt = outlines(drawn)
+    outl = outlines(drawn)
+    tt = {name: ([o.at(m.t) for m in MASTERS] if o else [[] for _ in MASTERS]) for name, o in outl.items()}
     sb = spacing(drawn, tt)
-    for name, master, side, delta in SPACING_TWEAKS.values() if isinstance(SPACING_TWEAKS, dict) else []:
-        pass
     kern = kerning(drawn, tt, sb)
 
     os.makedirs(OUT_MASTERS, exist_ok=True)
-    master_paths, problems = [], []
-    for mi, m in enumerate(MASTERS):
-        font = build_master(mi, drawn, tt, sb, kern)
+    master_paths, problems, qa_notes = [], [], {}
+    for m in MASTERS:
+        names = {**names_for(m.name, m.wght), 'familyName': f'{FAMILY} {m.name}', 'styleName': 'Regular'}
+        font = build_font(m.t, m.wght, names, drawn, outl, sb, kern)
         p = os.path.join(OUT_MASTERS, f'{FAMILY}-{m.name}.ttf')
         font.save(p)
         master_paths.append(p)
-        problems += check_outlines(TTFont(p), m.name)
+        errs, notes = qa.check_font(TTFont(p))
+        problems += [f'{m.name} {e}' for e in errs]
+        qa_notes[m.name] = notes
     if problems:
         raise SystemExit('outline problems:\n  ' + '\n  '.join(problems))
 
@@ -545,11 +508,18 @@ def main():
 
     os.makedirs(OUT_STATIC, exist_ok=True)
     os.makedirs(OUT_WEB, exist_ok=True)
+    statics = []
     for style, w in INSTANCES:
-        inst = instantiateVariableFont(TTFont(OUT_VF), {'wght': w})
-        inst.recalcTimestamp = False
-        set_names(inst, style, w)
-        inst.save(os.path.join(OUT_STATIC, f'{FAMILY}-{style}.ttf'))
+        t = (w - MASTERS[0].wght) / (MASTERS[-1].wght - MASTERS[0].wght)
+        font = build_font(t, w, names_for(style, w), drawn, outl, sb, kern)
+        finish_static(font, style)
+        p = os.path.join(OUT_STATIC, f'{FAMILY}-{style}.ttf')
+        font.save(p)
+        statics.append(p)
+        errs, notes = qa.check_font(TTFont(p))
+        if errs:
+            raise SystemExit(f'outline problems in {style}:\n  ' + '\n  '.join(errs))
+        qa_notes[style] = notes
 
     web = TTFont(OUT_VF)
     web.recalcTimestamp = False
@@ -576,12 +546,13 @@ def main():
         'kerning_pairs': len(kern),
         'spacing': {n: [[round(a), round(b)] for a, b in v] for n, v in sb.items()},
         'kerning': {f'{a} {b}': v for (a, b), v in sorted(kern.items())},
+        'outline_notes': qa_notes,
     }
     with open(REPORT, 'w') as f:
         json.dump(report, f, indent=1, sort_keys=True)
         f.write('\n')
-    for p in [*master_paths, OUT_VF, *[os.path.join(OUT_STATIC, f'{FAMILY}-{s}.ttf') for s, _ in INSTANCES],
-              os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'), os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2')]:
+    for p in [*master_paths, OUT_VF, *statics, os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'),
+              os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2')]:
         print(f'{os.path.relpath(p, HERE)}: {os.path.getsize(p)} bytes')
 
 

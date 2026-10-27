@@ -476,7 +476,11 @@ def _scale_at(knots, u):
         return knots[0][1]
     for (ua, sa), (ub, sb) in zip(knots, knots[1:]):
         if u <= ub:
-            return sa + (sb - sa) * (u - ua) / (ub - ua) if ub > ua else sb
+            if ub <= ua:
+                return sb
+            t = (u - ua) / (ub - ua)
+            # smoothstep: the width changes without a break in its slope, so the outline has none either
+            return sa + (sb - sa) * t * t * (3 - 2 * t)
     return knots[-1][1]
 
 
@@ -791,7 +795,7 @@ def make_compatible(name, master_paths, max_err=0.6):
     # boolean slivers: contours of (almost) no area
     raw = [[_merge_collinear(c) for c in m if abs(signed_area(c)) > 40] for m in raw]
     err = None
-    for tiny in (1.5, 0.0):
+    for tiny in (2.5, 0.0):
         masters = [[_drop_tiny(c, tiny) for c in m] for m in raw] if tiny else raw
         try:
             return _compatible(name, masters, max_err)
@@ -971,6 +975,7 @@ def _compatible(name, masters, max_err):
 
     # cubics → quadratics, compatibly across masters
     out = [[] for _ in aligned]
+    smooth_all = []
     for ci in range(n):
         tt = [[] for _ in aligned]
         for si in range(len(aligned[0][ci])):
@@ -984,7 +989,112 @@ def _compatible(name, masters, max_err):
                     tt[k].append((True, q[0]))
                     for p in q[1:-1]:
                         tt[k].append((False, p))
+        smooth = _smooth_points(tt)
         for k in range(len(aligned)):
-            pts = [(on, (int(round(p[0])), int(round(p[1])))) for on, p in tt[k]]
-            out[k].append(pts)
-    return out
+            out[k].append(tt[k])
+        smooth_all.append(smooth)
+    return Outline(out, smooth_all)
+
+
+class Outline:
+    """One glyph's compatible outlines: per master, contours of exact (float) TrueType points [(on, (x, y))], and per
+    contour the indices of its smooth on-curve points. at(t) interpolates between the first and last master and
+    rounds to integers keeping smooth points smooth."""
+
+    def __init__(self, masters, smooth):
+        self.masters, self.smooth = masters, smooth
+
+    def exact(self, t):
+        a, b = self.masters[0], self.masters[-1]
+        return [[(on, (p[0] + (q[1][0] - p[0]) * t, p[1] + (q[1][1] - p[1]) * t)) for (on, p), q in zip(ca, cb)]
+                for ca, cb in zip(a, b)]
+
+    def at(self, t):
+        out = []
+        for c, smooth in zip(self.exact(t), self.smooth):
+            pts = [(on, (int(round(p[0])), int(round(p[1])))) for on, p in c]
+            out.append(_keep_smooth(c, pts, smooth))
+        return out
+
+
+def _smooth_points(tt):
+    """Indices of on-curve points that are smooth (tangent continuous within 2°) in every master"""
+    n = len(tt[0])
+    keep = []
+    for i in range(n):
+        if not tt[0][i][0]:
+            continue
+        ok = True
+        for pts in tt:
+            p, a, b = pts[i][1], pts[i - 1][1], pts[(i + 1) % n][1]
+            if pts[i - 1][0] and pts[(i + 1) % n][0]:
+                ok = False  # a corner between two lines is never "smooth"
+                break
+            d1, d2 = sub(p, a), sub(b, p)
+            if length(d1) < 1e-6 or length(d2) < 1e-6:
+                ok = False
+                break
+            cross = (d1[0] * d2[1] - d1[1] * d2[0]) / (length(d1) * length(d2))
+            if abs(cross) > 0.035 or dot(d1, d2) <= 0:
+                ok = False
+                break
+        if ok:
+            keep.append(i)
+    return keep
+
+
+def _keep_smooth(exact, pts, smooth):
+    """After rounding to integers, put the off-curve neighbours of each smooth point back on its tangent line. An
+    off-curve point between two smooth points goes to the crossing of both tangents; then the integer grid around the
+    ideal position is searched for the least angular error, so rounding leaves no visible kinks"""
+    pts = list(pts)
+    n = len(pts)
+    cons = {}
+    for i in smooth:
+        p = pts[i][1]
+        ia, ib = (i - 1) % n, (i + 1) % n
+        if pts[ia][0]:
+            d = unit(sub(p, pts[ia][1]))
+        elif pts[ib][0]:
+            d = unit(sub(pts[ib][1], p))
+        else:
+            d = unit(sub(exact[ib][1], exact[ia][1]))
+        if not pts[ia][0]:
+            cons.setdefault(ia, []).append((p, d, -1))
+        if not pts[ib][0]:
+            cons.setdefault(ib, []).append((p, d, 1))
+    for j, cs in cons.items():
+        e = exact[j][1]
+        ideal = e
+        if len(cs) == 1:
+            q, d, _ = cs[0]
+            ideal = add(q, mul(d, dot(sub(e, q), d)))
+        else:
+            (q1, d1, _), (q2, d2, _) = cs[:2]
+            den = d1[0] * d2[1] - d1[1] * d2[0]
+            if abs(den) > 1e-6:
+                t = ((q2[0] - q1[0]) * d2[1] - (q2[1] - q1[1]) * d2[0]) / den
+                x = add(q1, mul(d1, t))
+                if length(sub(x, e)) < 6:
+                    ideal = x
+        best = None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                c = (int(round(ideal[0])) + dx, int(round(ideal[1])) + dy)
+                err = 0.0
+                ok = True
+                for q, d, sign in cs:
+                    v = sub(c, q)
+                    lv = length(v)
+                    if lv < 1e-6 or sign * dot(v, d) <= 0:
+                        ok = False
+                        break
+                    err += abs((v[0] * d[1] - v[1] * d[0]) / lv)
+                if not ok:
+                    continue
+                err += 0.002 * length(sub(c, e))
+                if best is None or err < best[0]:
+                    best = (err, c)
+        if best:
+            pts[j] = (False, best[1])
+    return pts
