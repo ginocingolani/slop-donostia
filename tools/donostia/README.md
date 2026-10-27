@@ -148,6 +148,11 @@ map.
   blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
   is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
   colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+- Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
+  the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
+  road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster
+  than a steep street (15 %) out of a cutting at least 2.5 m deep, up to 24 m. Ground that keeps climbing is a
+  hillside, and footbridges land on steps and ramps, so neither is extended (Aiete pasealekua over Berabera: 35 → 45 m).
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often

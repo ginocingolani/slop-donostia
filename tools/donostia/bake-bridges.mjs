@@ -319,6 +319,10 @@ function styleOf(members, overWater, known) {
 
 // Spans of the bridges the table doesn't know: modern girders ~32 m
 const SPAN = { modern: 32, railgirder: 32, footbridge: 30, viaduct: 32, girder: 32 };
+// A land bridge's deck runs on past an end of its OSM way, in LAND_STEP m steps up to LAND_REACH m, while the ground
+// beyond still climbs faster than LAND_GRADE (a steep street's grade) and comes out of a cutting at least LAND_CUT m
+// deep; a run under LAND_MIN m is the terrain's noise
+const LAND_STEP = 2, LAND_REACH = 24, LAND_GRADE = 0.15, LAND_MIN = 4, LAND_CUT = 2.5;
 
 // Exterior lifts of the 1:500 map: a footbridge ending at one doesn't come down to the ground there
 const LIFTS = loadLayer('c500_KANPO-IGOGAILUA.json').features.map((f) => {
@@ -356,7 +360,7 @@ for (const members of groups.values()) {
   const centre = (lo + hi) / 2, width = hi - lo;
   const known = knownOf(members);
   // the centre line: the reference way resampled between sMin & sMax and shifted to the middle of the deck
-  const length = sMax - sMin;
+  let length = sMax - sMin;
   const steps = Math.max(1, Math.ceil(length / 6));
   const axis = [];
   for (let q = 0; q <= steps; q++) {
@@ -401,6 +405,32 @@ for (const members of groups.values()) {
     }
   }
   const overWater = w1 > w0;
+
+  // A road or railway bridge whose OSM way stops short of where it lands: beyond that end the terrain (bare earth, no
+  // decks) is still climbing out of the cutting under the deck. The deck runs on along its end's heading to where the
+  // ground levels off to a road's grade, so it neither ends in mid-air nor takes its level from the cutting's slope.
+  // Ground that keeps climbing past LAND_REACH is a hillside, not a cutting; footbridges land on steps & ramps
+  if (!overWater && !known && carries(ref)) {
+    for (const end of [0, 1]) {
+      const [x, z, tx, tz] = pointAt(simple, end ? length : 0);
+      if (liftNear(x, z)) continue;
+      const out = end ? 1 : -1;
+      const ground = (d) => {
+        const ys = [-0.3, 0, 0.3].map((o) => heightAt(x + tx * out * d - tz * o * width, z + tz * out * d + tx * o * width));
+        return ys.sort((p, q) => p - q)[1];
+      };
+      let d = 0, levels = false;
+      while (d < LAND_REACH) {
+        if (ground(d + LAND_STEP) - ground(d) <= LAND_GRADE * LAND_STEP) { levels = true; break; }
+        d += LAND_STEP;
+      }
+      if (!levels || d < LAND_MIN || ground(d) - ground(0) < LAND_CUT) continue;
+      const k = end ? simple.length - 1 : 0;
+      simple[k] = [simple[k][0] + tx * out * d, simple[k][1] + tz * out * d];
+      length += d;
+      log(`${members.map((m) => m.t.name).find(Boolean) || `way ${ref.id}`}: deck runs on ${d} m past its ${end ? 'end' : 'start'} to where the ground levels off`);
+    }
+  }
 
   // the banks a few metres outside both edges (build.mjs squares the water off under the deck): a bridge askew to the
   // current stands its piers parallel to the banks, not square to its deck. skew = metres along the deck per metre to
