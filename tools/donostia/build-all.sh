@@ -29,8 +29,8 @@ else
     "make one). Keeping the committed terrain-*.png, water.png and geodata.js." >&2
 fi
 # these read build.mjs's outputs
-$NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png
 $NODE "$HERE/bake-bridges.mjs"       # js/donostia/data-bridges.js
+$NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png (after the bridges: the ground under their decks)
 $NODE "$HERE/bake-shore.mjs"         # js/donostia/data-shore.js (rocks of the shore; the walls are build.mjs's)
 $NODE "$HERE/bake-marina.mjs"        # js/donostia/data-marina.js (the port's pontoons, gangways, quay fittings, slipway)
 $NODE "$HERE/bake-streetscape.mjs"   # js/donostia/data-streetscape.js (trees, railing, lamps, benches)

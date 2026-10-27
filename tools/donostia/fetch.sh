@@ -56,7 +56,7 @@ get https://www.donostia.eus/ide/ADMINISTRAZIO_MUGAK-LIMITES_ADMINISTRATIVOS/shp
 mkdir -p "$RAW/ortho"
 WMS='https://www.geo.euskadi.eus/WMS_ORTOARGAZKIAK?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=ORTO_2025&STYLES=&CRS=EPSG:25830&WIDTH=4000&HEIGHT=4000&FORMAT=image/jpeg'
 for tile in port:-350:-300 concha-ne:0:150 concha-mid:-500:400 concha-w:-1000:400 ondarreta:-1400:100 \
-  zurriola-w:900:-900 zurriola-e:1300:-900 aiete:-400:1600; do
+  zurriola-w:900:-900 zurriola-e:1300:-900 aiete:-400:1600 aiete-s:-400:2100; do
   IFS=: read -r name x0 z0 <<< "$tile"
   bbox="$((582000 + x0)),$((4797000 - z0 - 500)),$((582000 + x0 + 500)),$((4797000 - z0))"
   get "$WMS&BBOX=$bbox" "$RAW/ortho/ortho2025-${name}_x${x0}_z${z0}.jpg"

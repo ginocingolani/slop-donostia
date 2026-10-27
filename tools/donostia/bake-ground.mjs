@@ -18,6 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 
@@ -148,6 +149,48 @@ const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
     const slope = Math.max(Math.abs(height[k + 1] - height[k - 1]), Math.abs(height[k + TW] - height[k - TW])) / (2 * TRES);
     if (slope < 0.12) terrainBase[k] = S.quay;
   }
+}
+// Under a land bridge's deck (js/donostia/data-bridges.js, so bake-bridges.mjs runs first): the municipal map draws the
+// road on the bridge in plan, so its carriageway and bike lane would be painted down the embankments and across the
+// road below. Where the ground lies UNDER_DECK m or more below the deck, the steep cells are the embankment's grass and
+// a bike lane on the flat ones is the carriageway below. 0: not under a deck; 1: under it, flat; 2: under it, steep
+const UNDER_DECK = 2.5, EMBANKMENT = 0.35;
+const underDeck = new Uint8Array(TW * TH);
+{
+  const { BRIDGES } = await import(pathToFileURL(path.join(HERE, '../../js/donostia/data-bridges.js')).href);
+  const px = terrainPNG.data;
+  const h = (i, j) => ((px[3 * (j * TW + i)] << 8) | px[3 * (j * TW + i) + 1]) / 100 - 100;
+  let cells = 0;
+  for (const b of BRIDGES) {
+    if (b.water) continue;
+    const a = b.axis, half = Math.max(...[b.width].flat()) / 2 + 0.5;
+    let L = 0;
+    const seg = [];
+    for (let k = 2; k < a.length; k += 2) {
+      const l = Math.hypot(a[k] - a[k - 2], a[k + 1] - a[k - 1]);
+      seg.push([a[k - 2], a[k - 1], a[k], a[k + 1], L, l]);
+      L += l;
+    }
+    const xs = a.filter((_, k) => k % 2 === 0), zs = a.filter((_, k) => k % 2 === 1);
+    const i0 = Math.max(1, Math.floor((Math.min(...xs) - half - CORE.minX) / TRES)), i1 = Math.min(TW - 2, Math.ceil((Math.max(...xs) + half - CORE.minX) / TRES));
+    const j0 = Math.max(1, Math.floor((Math.min(...zs) - half - CORE.minZ) / TRES)), j1 = Math.min(TH - 2, Math.ceil((Math.max(...zs) + half - CORE.minZ) / TRES));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+      let best = Infinity, sAt = 0;
+      for (const [ax, az, bx, bz, s0, l] of seg) {
+        const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / (l * l || 1)));
+        const d = Math.hypot(x - ax - t * (bx - ax), z - az - t * (bz - az));
+        if (d < best) { best = d; sAt = s0 + t * l; }
+      }
+      if (best > half || sAt <= 0 || sAt >= L) continue;
+      const deck = b.y[0] + ((b.y[1] - b.y[0]) * sAt) / L;
+      if (h(i, j) > deck - UNDER_DECK) continue;
+      const slope = Math.max(Math.abs(h(i + 1, j) - h(i - 1, j)), Math.abs(h(i, j + 1) - h(i, j - 1))) / (2 * TRES);
+      underDeck[j * TW + i] = slope > EMBANKMENT ? 2 : 1;
+      cells++;
+    }
+  }
+  log(`ground under land bridges: ${cells * TRES * TRES} m² repainted (embankments grass, no bike lanes from the deck)`);
 }
 lap('sources');
 
@@ -289,6 +332,19 @@ function columnDistances(feature, rows, out) {
         if (poly.minZ > zBottom) break;
         if (poly.maxZ < zTop) continue;
         fillPolygon(cls, poly, rowBase, 0, rows, layer.id, layer.over);
+      }
+    }
+    // under the land bridges' decks (see underDeck)
+    const fz0 = CORE.minZ - MARGIN / SS;
+    for (let y = 0; y < rows; y++) {
+      const tj = Math.floor((fz0 + (rowBase + y + 0.5) / SS - CORE.minZ) / TRES);
+      if (tj < 0 || tj >= TH) continue;
+      const b = y * FW;
+      for (let x = 0; x < FW; x++) {
+        const ti = Math.floor((fx0 + (x + 0.5) / SS - CORE.minX) / TRES);
+        const u = ti >= 0 && ti < TW ? underDeck[tj * TW + ti] : 0;
+        if (u === 2 && cls[b + x] !== S.building && cls[b + x] !== S.stairs) cls[b + x] = S.natural;
+        else if (u === 1 && cls[b + x] === S.bike) cls[b + x] = S.road;
       }
     }
     clearSlivers(cls, rows);
