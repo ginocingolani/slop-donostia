@@ -205,7 +205,7 @@ function flagGeometry() {
   return base(pos, nrm, tex, kinds, index);
 }
 
-function instanced(geo, rows, name, sphere) {
+function instanced(geo, rows, sphere) {
   const n = rows.length / 8;
   const a = new Float32Array(n * 4), b = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
@@ -265,7 +265,7 @@ export function buildTifo(stand) {
     }
   }
   const material = tifoMaterial();
-  const cardMesh = new THREE.Mesh(instanced(cardGeometry(), cards, 'cards', sphere), material);
+  const cardMesh = new THREE.Mesh(instanced(cardGeometry(), cards, sphere), material);
   cardMesh.name = 'AnoetaTifo_cards';
 
   // the banner over the lower tier: BANNER.width along every row, from just above the front to just below the top
@@ -319,7 +319,7 @@ export function buildTifo(stand) {
         0.92 + hash(i, 18) * 0.16, (hash(i, 19) - 0.5) * 0.3);
     }
   }
-  const flagMesh = new THREE.Mesh(instanced(flagGeometry(), flags, 'flags', sphere), material);
+  const flagMesh = new THREE.Mesh(instanced(flagGeometry(), flags, sphere), material);
   flagMesh.name = 'AnoetaTifo_flags';
 
   for (const mesh of [cardMesh, banner, flagMesh]) {

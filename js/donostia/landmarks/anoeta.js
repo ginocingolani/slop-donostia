@@ -33,6 +33,9 @@ import { buildTifo } from './anoeta-tifo.js';
 // arched primary trusses top out ~41 m up, mostly hidden behind the membrane's crown from the plaza, as in the photos.
 // The OSM outline adds the stairs and ramps up to the concourse doors, widest at the north end (gates 5-6, under the
 // REALE ARENA sign, facing the city).
+//
+// The south stand, the Aitor Zabaleta harmaila, carries the tifo its fans raised at La Cartuja for the 2026 Copa del Rey
+// final: anoeta-tifo.js, built on the bowl's rings below.
 
 const D2R = Math.PI / 180;
 const FRAME = { x: 1253.55, z: 2206.98, angle: 52.92 }; // pitch centre; long axis in degrees from +x (east) to +z (south)
