@@ -1,5 +1,5 @@
 {
- "glyphs": 76,
+ "glyphs": 77,
  "kerning": {
   "A C": [
    -112,
@@ -3145,24 +3145,29 @@
  "kerning_pairs": 785,
  "outline_notes": {
   "Black": [
-   "cedillacomb: kink of 2.4\u00b0 at (-38, -171)"
+   "ampersand: extreme without a point near (662, 114)",
+   "ampersand: kink of 5.2\u00b0 at (672, 131)",
+   "cedillacomb: kink of 3.8\u00b0 at (34, -98)",
+   "cedillacomb: kink of 2.4\u00b0 at (-19, -171)"
   ],
   "Bold": [
    "K: extreme without a point near (639, 20)",
    "five: kink of 3.8\u00b0 at (290, 365)",
-   "cedillacomb: kink of 1.9\u00b0 at (34, -98)"
+   "cedillacomb: kink of 3.8\u00b0 at (35, -97)"
   ],
   "ExtraBold": [
    "K: extreme without a point near (663.0, 114.0)",
    "A: 2.8-unit stub at (415, 589)",
    "three: kink of 1.7\u00b0 at (192, 333)",
-   "cedillacomb: kink of 1.8\u00b0 at (34, -98)"
+   "cedillacomb: kink of 3.6\u00b0 at (35, -98)"
   ],
   "HUD": [
-   "cedillacomb: kink of 2.6\u00b0 at (-50, -172)"
+   "cedillacomb: kink of 3.6\u00b0 at (35, -97)",
+   "cedillacomb: kink of 2.6\u00b0 at (-31, -171)"
   ],
   "SemiBold": [
-   "cedillacomb: kink of 2.6\u00b0 at (-50, -172)"
+   "cedillacomb: kink of 3.6\u00b0 at (35, -97)",
+   "cedillacomb: kink of 2.6\u00b0 at (-31, -171)"
   ]
  },
  "spacing": {
@@ -3316,6 +3321,16 @@
     18
    ]
   ],
+  "OE": [
+   [
+    41,
+    49
+   ],
+   [
+    18,
+    33
+   ]
+  ],
   "P": [
    [
     66,
@@ -3439,11 +3454,11 @@
   "ampersand": [
    [
     37,
-    10
+    24
    ],
    [
-    17,
-    9
+    16,
+    18
    ]
   ],
   "cedillacomb": [

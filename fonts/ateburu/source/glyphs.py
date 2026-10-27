@@ -1006,24 +1006,27 @@ def slash(m):
 
 @glyph('ampersand', 0x26)
 def ampersand(m):
+    """A Roman ampersand whose tail ends in the same upturned flick as the legs of R and K"""
     C, o = m.C, m.o
-    W = m.v(700, 770)
+    W = m.v(706, 778)
     a, b = m.v(56, 86), m.v(44, 62)
     pts = [
-        ((W * 0.90, C * 0.50), (-0.22, -1)),     # the arm's end
-        ((W * 0.40, -o + b), (-1, 0)),           # bottom of the bowl
-        ((a, C * 0.24), (0, 1)),                 # its left side
-        ((W * 0.62 - a * 0.6, C * 0.78), (0, 1)),  # rising through the crossing to the loop's right side
-        ((W * 0.40, C + o - b), (-1, 0)),        # the loop's top
-        ((W * 0.16 + a * 0.6, C * 0.78), (0, -1)),  # its left side
-        ((W * 0.86, b - o * 0.5), (1, -0.02)),   # falling through the crossing to the tail on the baseline
+        ((W * 0.90, C * 0.52), (-0.20, -1)),         # the arm's end, cut level
+        ((W * 0.42, -o + b), (-1, 0)),               # bottom of the bowl
+        ((a, C * 0.25), (0, 1)),                     # its left side
+        ((W * 0.40, C * 0.50), (0.78, 1)),           # rising through the crossing
+        ((W * 0.60 - a * 0.5, C * 0.79), (0, 1)),    # the loop's right side
+        ((W * 0.38, C + o - b), (-1, 0)),            # its top
+        ((W * 0.12 + a * 0.5, C * 0.79), (0, -1)),   # its left side
+        ((W * 0.50, C * 0.36), (0.64, -1)),          # falling through the crossing
+        ((W * 0.80, b - o * 0.6), (1, 0)),           # along the baseline
+        ((W + m.v(20, 24), b + m.v(30, 34)), (0.82, 0.58)),  # the flick
     ]
     sp = [hobby(p, tp, q, tq) for (p, tp), (q, tq) in zip(pts, pts[1:])]
-    body = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.02), (2.6, 0.92), (3, 0.82), (4, 0.80), (5, 0.84),
-                                   (5.6, 1.02), (6, 0.92)], name='&')
-    # the arm ends level (cut square)
-    body = diff(body, rect(W * 0.70, C * 0.50, W + 200, C * 0.62))
-    return G(body, W, None, None)
+    body = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.02), (3, 0.98), (4, 0.84), (5, 0.80), (6, 0.84),
+                                   (7, 1.0), (8, 0.98), (9, 0.80)], name='&')
+    body = diff(body, rect(W * 0.70, C * 0.52, W + 200, C * 0.66))
+    return G(body, W, None, m.v(24, 18))
 
 
 @glyph('space', 0x20, 0xA0)
@@ -1064,30 +1067,29 @@ def dieresis(m):
 
 @glyph('tildecomb.case')
 def tilde(m):
+    """A flat, compact tilde, heavy enough to survive at 12 px on a dark panel"""
     y0 = accent_base(m)
-    a, b = m.v(34, 44), m.v(34, 44)
-    w = m.v(310, 340)
-    amp = m.v(44, 46)
+    a, b = m.v(44, 54), m.v(42, 52)
+    w = m.v(330, 366)
+    amp = m.v(46, 46)
     x0 = -w / 2 + a
     sp = [
-        hobby((x0, y0 + b + 4), (0.55, 1), (-w * 0.18, y0 + b + amp), (1, 0)),
-        hobby((-w * 0.18, y0 + b + amp), (1, 0), (w * 0.18, y0 + b), (1, 0)),
-        hobby((w * 0.18, y0 + b), (1, 0), (-x0, y0 + b + amp - 4), (0.55, 1)),
+        hobby((x0, y0 + b + 2), (0.55, 1), (-w * 0.17, y0 + b + amp), (1, 0)),
+        hobby((-w * 0.17, y0 + b + amp), (1, 0), (w * 0.17, y0 + b), (1, 0)),
+        hobby((w * 0.17, y0 + b), (1, 0), (-x0, y0 + b + amp - 2), (0.55, 1)),
     ]
-    return G(stroke(sp, a, b, name='tilde'), 0, 0, 0)
+    return G(stroke(sp, a, b, knots=[(0, 0.9), (1, 1.0), (2, 1.0), (3, 0.9)], name='tilde'), 0, 0, 0)
 
 
 @glyph('cedillacomb')
 def cedilla(m):
-    a, b = m.v(28, 36), m.v(26, 34)
+    a, b = m.v(32, 40), m.v(28, 36)
+    r = m.v(68, 76)
     sp = [
-        line_cubic((0, 20), (0, -40)),
-        hobby((0, -40), (0, -1), (m.v(70, 76), -100), (1, -0.15)),
-        hobby((m.v(70, 76), -100), (1, -0.15), (-m.v(70, 76), -172), (-1, 0.1)),
+        hobby((-6, 34), (0.12, -1), (r, -96), (0.05, -1)),
+        hobby((r, -96), (0.05, -1), (-m.v(62, 66), -176 + b), (-1, -0.08)),
     ]
-    sp = [hobby((-6, 30), (0.1, -1), (m.v(64, 70), -92), (0.2, -1)),
-          hobby((m.v(64, 70), -92), (0.2, -1), (-m.v(70, 76), -176 + b), (-1, -0.05))]
-    return G(stroke(sp, a, b, knots=[(0, 1.0), (1, 1.05), (2, 0.86)], name='cedilla'), 0, 0, 0)
+    return G(stroke(sp, a, b, knots=[(0, 1.0), (1, 1.04), (2, 0.86)], name='cedilla'), 0, 0, 0)
 
 
 # accented capitals: base + mark (name, unicode, base, mark, which anchor)
@@ -1122,3 +1124,26 @@ def trap_at(shape, near, depth, mouth=0.5):
     d_in = unit(sub(prev[-2] if length(sub(prev[-2], v)) > 1e-6 else prev[0], v))   # back along the previous segment
     d_out = unit(sub(nxt[1] if length(sub(nxt[1], v)) > 1e-6 else nxt[-1], v))      # along the next segment
     return diff(shape, ink_trap(v, d_in, d_out, depth, mouth))
+
+
+@glyph('OE', 0x152, 0x153)
+def OE(m):
+    """The left half of an O whose bars run straight into an E (no overshoot: the bowl meets flat arms)"""
+    C, s, h = m.C, m.stem, m.hair
+    rb = m.v(330, 372)                      # the bowl's half width
+    bowl = ring(rb, C / 2, rb, C / 2, m.rside, h, k_out=0.585, k_in=0.56)
+    bowl = inter(bowl, rect(-100, -100, rb + 1, C + 100))
+    sw = s * 0.92
+    arm = m.v(300, 340)
+    W = rb + sw + arm
+    hm = h * 0.94
+    ym = m.v(372, 370)
+    shape = union([
+        bowl,
+        rect(rb - 1, 0, rb + sw, C),
+        bar(rb + sw / 2, W, C - h, C, right=(0, m.wdrop, m.wlen)),
+        bar(rb + sw / 2, W - arm * 0.16, ym - hm / 2, ym + hm / 2,
+            right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8)),
+        bar(rb + sw / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen)),
+    ])
+    return G(shape, W, None, None, top=W * 0.48)
