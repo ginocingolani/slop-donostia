@@ -1222,6 +1222,27 @@ export function build(sites, ctx) {
     }
   }
 
+  // the café terrace before the east side's arcade (photographs from the library's balconies and across the square:
+  // a row of square white parasols over tables and chairs); terraces come and go, so only this one, the steadiest
+  const CANVAS = rgb(0xeeece6), ALU = rgb(0x9a9c9e), SEAT = rgb(0x2b2d2f);
+  for (const v of [13.2, 16.8, 20.4, 24.0]) {
+    const u = 49.6;
+    const y = groundAt(...toWorld(u, v)) - G + 0.03;
+    const put = (g, col, fin) => paint.add(g.translate(u, y, v), [...col, fin], M);
+    put(new THREE.ConeGeometry(2.3, 0.55, 4, 1, true).rotateY(Math.PI / 4).translate(0, 2.65, 0), CANVAS, 0.8);
+    put(new THREE.ConeGeometry(2.3, 0.01, 4, 1, true).rotateX(Math.PI).rotateY(Math.PI / 4).translate(0, 2.37, 0), CANVAS, 0.8);
+    put(new THREE.CylinderGeometry(0.03, 0.03, 2.9, 5).translate(0, 1.45, 0), ALU, FINISH.metal + 0.4);
+    for (const [du, dv] of [[-0.85, -0.85], [0.85, 0.85], [-0.85, 0.85], [0.85, -0.85]]) {
+      put(new THREE.CylinderGeometry(0.32, 0.32, 0.03, 10).translate(du, 0.74, dv), ALU, FINISH.metal + 0.35);
+      put(new THREE.CylinderGeometry(0.025, 0.025, 0.72, 4).translate(du, 0.36, dv), ALU, FINISH.metal + 0.4);
+      for (const s of [-1, 1]) {
+        put(new THREE.BoxGeometry(0.42, 0.04, 0.42).translate(du + s * 0.55, 0.45, dv), SEAT, 0.6);
+        put(new THREE.BoxGeometry(0.04, 0.42, 0.42).translate(du + s * 0.76, 0.66, dv), SEAT, 0.6);
+        for (const e of [-0.17, 0.17]) put(new THREE.BoxGeometry(0.36, 0.43, 0.025).translate(du + s * 0.55, 0.215, dv + e), ALU, FINISH.metal + 0.5);
+      }
+    }
+  }
+
   // the paving: the square and the walks, draped on the ground
   const plazaW = [], walkW = [];
   for (let k = 0; k < PLAZA.length; k += 2) plazaW.push(...toWorld(PLAZA[k], PLAZA[k + 1]));
