@@ -111,17 +111,18 @@ const SLABS = [[H.arcadeTop, H.F1, 0.6], [10.32, H.F2, 0.5], [13.92, H.F3, 0.5]]
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Palettes [wall, dressing (frames, quoins, plaques), fill (shutters, doors, frames)], sRGB picked by eye
-export const PAL = { white: 0, sand: 1, ochre: 2, library: 3, grey: 4, plaster: 5, salmon: 6, dark: 7, tile: 8 };
+export const PAL = { white: 0, sand: 1, yellow: 2, library: 3, grey: 4, plaster: 5, salmon: 6, dark: 7, tile: 8, charcoal: 9 };
 const PALETTES = [
-  [0xeeebe2, 0xdc9c24, 0x9a94a8], // the blocks' white render, yellow frames & plaques, lilac-grey shutters
+  [0xeeebe2, 0xdc9c24, 0x8e9499], // the blocks' white render, yellow frames & plaques, blue-grey shutters
   [0xc8a465, 0xd6b47a, 0x4a3b2e], // golden sandstone of the arcades, dark timber
-  [0xd99a35, 0xc8a465, 0x9a94a8], // ochre render of the bays over the passages, sandstone dressings
-  [0xc2ab84, 0xd1bd99, 0x5e6b76], // the library's pale sandstone, blue-grey window frames
-  [0x8d8e8b, 0x777874, 0x4f5052], // grey paint: the cornices and consoles
+  [0xdc9c24, 0xc8a465, 0x8e9499], // the yellow paint of the balconies' edges and the fillet under the cornice
+  [0xbfae92, 0xcbbda3, 0x5e6b76], // the library's grey-tan sandstone, blue-grey window frames
+  [0x80878a, 0x6f7578, 0x4f5052], // grey paint: the cornices
   [0xe9e3d6, 0xddd5c4, 0x8c8478], // the arcades' white ceilings
   [0xd49b7c, 0xc8a465, 0x2a2622], // the arcades' salmon back walls over a sandstone dado, dark shop frames
   [0x5d625e, 0x707570, 0x2d2f30], // the library's dark inscription stone
-  [0x96553f, 0x7e4636, 0x5a3328] // Roman tile (the library's and the passages' roofs)
+  [0x96553f, 0x7e4636, 0x5a3328], // Roman tile (the library's and the passages' roofs)
+  [0x4d4f4f, 0x5c5e5e, 0x3a3b3b] // the dark consoles under the balconies
 ];
 // What fills an opening: glass, a French window with louvred shutters, a shop front, a door, an iron grille
 export const FILL = { glass: 0, shutters: 1, shop: 2, door: 3, grille: 4 };
@@ -223,7 +224,7 @@ export function plazaFacadeMaterial() {
   const rightShut = select(hw.lessThan(0.16), float(1), select(hw.lessThan(0.23), float(0), select(hw.lessThan(0.3), float(1), float(0))));
   const shutHere = select(px.lessThan(0.0), leftShut, rightShut).mul(shutters);
   // two shutter colours on the blocks: lilac-grey and, on a third of the windows, a pale blue-grey
-  const shutCol = mix(fillCol, vec3(0.42, 0.5, 0.58), step(0.68, hw3).mul(step(palette, 2.5)));
+  const shutCol = fillCol.mul(mix(float(0.9), float(1.08), hw3));
   const slat = fract(h.div(0.065));
   const slats = mix(float(0.88), smoothstep(0.05, 0.6, slat).mul(0.3).add(0.72), fine(0.02));
   const leafX = fract(dx.div(max(halfW, 0.05)));
@@ -284,7 +285,7 @@ export function plazaFacadeMaterial() {
   const nRaw = select(numBase.greaterThan(0.0), numBase.add(bayIdx), numBase.negate().sub(bayIdx));
   const n = max(nRaw, 0.0);
   const count = float(1).add(step(9.5, n)).add(step(99.5, n));
-  const plY0 = head.add(0.2), plH = 0.3, plHalf = 0.55;
+  const plY0 = head.add(0.17), plH = 0.3, plHalf = 0.5;
   const inPlaque = hasNum.mul(step(dx, plHalf)).mul(step(plY0, h)).mul(step(h, plY0.add(plH)));
   const pitch = 0.118;
   const tx = px.add(count.mul(pitch * 0.5));
@@ -298,8 +299,8 @@ export function plazaFacadeMaterial() {
   const atlasUV = vec2(dv.mul(64).add(6.0).add(fx.mul(52.0)).div(1024.0), ty);
   const ink = texture(digitAtlas(), atlasUV).r.mul(inText).mul(inPlaque);
 
-  const dressing = clamp(frame.add(inPlaque), 0.0, 1.0);
-  let wall = mix(wallCol, dressCol, dressing).mul(grain).mul(float(1).add(tone));
+  let wall = mix(wallCol, dressCol, frame).mul(grain).mul(float(1).add(tone));
+  wall = mix(wall, mix(dressCol, vec3(0.5, 0.26, 0.03), 0.3).mul(grain), inPlaque);
   wall = mix(wall, vec3(0.3, 0.27, 0.22), plinthStone);
   wall = mix(wall, dressCol.mul(grain), dado);
   wall = wall.mul(float(1).sub(joints.mul(0.3)).sub(vous.mul(0.3)).sub(ringEdge.mul(0.25)).sub(frameEdge.mul(0.2)));
@@ -348,10 +349,10 @@ const PLAIN = style();
 // The ironwork: balcony railings and the library's balustrades on alpha-to-coverage strips
 // ---------------------------------------------------------------------------------------------------------------------
 
-// uv = (metres along, metres up from the slab); rk = (kind: 0 iron railing / 1 stone balustrade, the decorated posts'
+// uv = (metres along, metres up from the slab); rk = (kind: 0 iron railing / 1 balustrade, the decorated posts'
 // spacing, their offset). The iron railings (photographed in detail): a bottom rail, bars every 11 cm, a frieze of
-// rings under the handrail and, between the windows, a post of stacked rings; the balustrades: turned balusters
-// between a plinth and a rail
+// rings under the handrail and, between the windows, a post of stacked rings; the library's balustrades: turned
+// balusters painted blue-grey between a plinth and a rail
 let railMaterial = null;
 function railingMaterial() {
   if (railMaterial) return railMaterial;
@@ -386,12 +387,12 @@ function railingMaterial() {
     const balD = min(max(qb.sub(r), max(float(0.15).sub(y), y.sub(0.84))), min(abs(y.sub(0.075)).sub(0.075), abs(y.sub(0.92)).sub(0.08)));
     const stone = cover(balD);
     const c = select(kind.greaterThan(0.5), stone, iron);
-    // far off, the bars' mean
-    const far = smoothstep(0.003, 0.012, pix);
-    const mean = select(kind.greaterThan(0.5), float(1.0), select(y.greaterThan(0.8), float(0.85), float(0.55)));
+    // far off, the mean coverage (the balusters, five times stouter than the bars, keep their shapes further)
+    const far = select(kind.greaterThan(0.5), smoothstep(0.02, 0.06, pix), smoothstep(0.003, 0.012, pix));
+    const mean = select(kind.greaterThan(0.5), float(0.7), select(y.greaterThan(0.8), float(0.85), float(0.55)));
     return mix(c, mean, far).mul(step(0.0, y)).mul(step(y, 1.0));
   })();
-  const ironCol = vec3(0.035, 0.038, 0.044), stoneCol = vec3(0.33, 0.37, 0.41);
+  const ironCol = vec3(0.035, 0.038, 0.044), stoneCol = vec3(0.3, 0.36, 0.42);
   mat.colorNode = vec4(select(kind.greaterThan(0.5), stoneCol, ironCol), coverage);
   mat.maskShadowNode = coverage.greaterThan(0.4);
   mat.name = 'KonstituzioRailings';
@@ -471,7 +472,7 @@ function pavingMaterial() {
   const aId = vec2(floor(au), arow);
   const ajx = float(0.5).sub(abs(fract(au).sub(0.5))).mul(0.8), ajy = float(0.5).sub(abs(fract(v.div(0.6)).sub(0.5))).mul(0.6);
   const ajoint = float(1).sub(smoothstep(0.004, 0.012, min(ajx, ajy)));
-  const slate = mix(vec3(0.08, 0.072, 0.064), vec3(0.12, 0.11, 0.098), hash(aId, 7.0)).mul(float(1).sub(ajoint.mul(0.35).mul(fadeJ)));
+  const slate = mix(vec3(0.17, 0.165, 0.155), vec3(0.22, 0.213, 0.2), hash(aId, 7.0)).mul(float(1).sub(ajoint.mul(0.35).mul(fadeJ)));
   const grain = mx_noise_float(positionWorld.mul(3.1)).mul(0.05).add(1.0);
   mat.colorNode = mix(plaza, slate, arcade).mul(grain);
   mat.roughnessNode = mix(float(0.82), float(0.66), arcade);
@@ -728,8 +729,9 @@ function bandAlong(m, mat, line, s0, s1, y0, y1, proj, st = PLAIN, inset = 0.05)
 // ---------------------------------------------------------------------------------------------------------------------
 
 const SAND = (flags = 0) => style({ palette: PAL.sand, flags: FLAG.ashlar | flags });
-const OCHRE = style({ palette: PAL.ochre });
+const YELLOW = style({ palette: PAL.yellow });
 const GREY = style({ palette: PAL.grey });
+const CONSOLE = style({ palette: PAL.charcoal });
 
 // The arcade's arches along a side: [s0, s1, spring], from the pier centres
 function sideArches(side, line) {
@@ -780,7 +782,7 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
       const y0 = f === 0 ? H.arcadeTop : SLABS[f][0], y1 = f === 2 ? H.frieze : SLABS[f + 1][0];
       const st = numbered
         ? style({ bay: P, sill, head, half, palette: PAL.white, flags: FLAG.frame, num: side.num[2 - f] })
-        : style({ bay: b - a, sill, head, half: half * 0.95, palette: PAL.ochre, flags: FLAG.frame });
+        : style({ bay: b - a, sill, head, half: half * 0.95, palette: PAL.white, flags: FLAG.frame });
       wallAlong(m, line, a, b, y0, y1, st, numbered ? { origin: n0, len: numLen } : { origin: a, len: b - a });
     });
   }
@@ -795,24 +797,24 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
     return Math.min(Math.max(s, lo), hi);
   };
   SLABS.forEach(([y0, y1, proj]) => {
-    bandAlong(m, F, line, 0, line.L, y0, y1, proj, OCHRE);
+    bandAlong(m, F, line, 0, line.L, y0, y1, proj, YELLOW);
     const s0 = trimEnd(0, proj), s1 = trimEnd(line.L, proj);
     // the railings' ring posts stand between the windows, over the piers
     rails.add(line.at(s0, proj - 0.05), line.at(s1, proj - 0.05), y1, { post: P, offset: n0, s0 });
   });
   for (let s = 0.36; s < line.L - 0.2; s += P / 4) {
-    bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, GREY);
+    bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, CONSOLE);
   }
   const bayCentres = [];
   for (let k = 0; k < side.n; k++) bayCentres.push(n0 + (k + 0.5) * (numLen / side.n));
   for (const [a, b] of pieces) bayCentres.push((a + b) / 2);
   for (const sc of bayCentres) {
     for (const f of [1, 2]) {
-      for (const dxs of [-0.95, 0.95]) bandAlong(m, F, line, sc + dxs - 0.06, sc + dxs + 0.06, SLABS[f][0] - 0.3, SLABS[f][0], 0.36, GREY);
+      for (const dxs of [-0.95, 0.95]) bandAlong(m, F, line, sc + dxs - 0.06, sc + dxs + 0.06, SLABS[f][0] - 0.3, SLABS[f][0], 0.36, CONSOLE);
     }
   }
   // the yellow frieze, the grey cornice: fascia, modillions, corona
-  bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, OCHRE);
+  bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, YELLOW);
   bandAlong(m, F, line, 0, line.L, H.cornice, 17.95, 0.16, GREY);
   for (let s = 0.25; s < line.L - 0.1; s += 0.48) bandAlong(m, F, line, s - 0.065, s + 0.065, 17.95, 18.22, 0.52, GREY);
   bandAlong(m, F, line, 0, line.L, 18.22, 18.38, 0.84, GREY);
@@ -834,17 +836,19 @@ function buildRecess(m, rails, rec, yBot) {
   for (const [a, b] of gaps(0, line.L, [arch])) bandAlong(m, F, line, a, b, 5.45, 5.62, 0.06, SAND());
   ROWS.forEach(([sill, head, half], f) => {
     const y0 = f === 0 ? H.arcadeTop : SLABS[f][0], y1 = f === 2 ? H.frieze : SLABS[f + 1][0];
-    wallAlong(m, line, 0, line.L, y0, y1, style({ bay: line.L / 2, sill, head, half: half * 0.95, palette: PAL.ochre, flags: FLAG.frame }));
+    wallAlong(m, line, 0, line.L, y0, y1, style({ bay: line.L / 2, sill, head, half: half * 0.95, palette: PAL.white, flags: FLAG.frame }));
   });
   SLABS.forEach(([y0, y1, proj]) => {
-    bandAlong(m, F, line, 0, line.L, y0, y1, proj, OCHRE);
+    bandAlong(m, F, line, 0, line.L, y0, y1, proj, YELLOW);
     rails.add(line.at(proj, proj - 0.05), line.at(line.L - proj, proj - 0.05), y1, { post: line.L / 2, offset: 0, s0: proj });
   });
-  for (let s = 0.36; s < line.L - 0.2; s += 0.72) bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, GREY);
-  bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, OCHRE);
+  for (let s = 0.36; s < line.L - 0.2; s += 0.72) bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, CONSOLE);
+  bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, YELLOW);
   bandAlong(m, F, line, 0, line.L, H.cornice, 17.95, 0.16, GREY);
   for (let s = 0.25; s < line.L - 0.1; s += 0.48) bandAlong(m, F, line, s - 0.065, s + 0.065, 17.95, 18.22, 0.52, GREY);
   bandAlong(m, F, line, 0, line.L, 18.22, 18.38, 0.84, GREY);
+  // sandstone pilasters up the corners where it meets the side and the library
+  for (const sp of [0.3, line.L - 0.3]) bandAlong(m, F, line, sp - 0.3, sp + 0.3, H.arcadeTop, H.cornice, 0.06, SAND());
   return { line, arches: [arch] };
 }
 
@@ -942,8 +946,8 @@ function dormer(m, zinc, line, sc, rise, run) {
 // The library (the old City Hall)
 // ---------------------------------------------------------------------------------------------------------------------
 
-const LIB = { corbels: 5.62, slab: 6.35, floor: 6.6, bal1: 7.55, win1: [6.6, 10.0, 0.62], bal2: 11.1, floor2: 11.5,
-  win2: [11.5, 14.0, 0.6], capital: 14.85, architrave: 15.3, frieze: 15.75, bed: 16.5, cornice: 17.5, attic: 18.15,
+const LIB = { corbels: 5.62, slab: 6.35, floor: 6.6, bal1: 7.55, win1: [6.6, 10.0, 0.62], bal2: 11.35, floor2: 11.7,
+  win2: [11.7, 14.45, 0.6], capital: 14.85, architrave: 15.3, frieze: 15.75, bed: 16.5, cornice: 17.5, attic: 18.15,
   attic2: 18.75, clockBlock: 19.3 };
 const COLUMN_D = 1.05;
 
@@ -991,9 +995,6 @@ function buildLibrary(m, rails, paint, ctx, yBot) {
     bandAlong(m, F, line, c - 1.25, c + 1.25, LIB.bal2, LIB.floor2, 0.78, plain);
     for (const o of [-1.05, -0.35, 0.35, 1.05]) bandAlong(m, F, line, c + o - 0.09, c + o + 0.09, LIB.bal2 - 0.42, LIB.bal2, 0.6, plain);
     rails.add(line.at(c - 1.2, 0.72), line.at(c + 1.2, 0.72), LIB.floor2, { kind: 1, h: 0.9 });
-    // the window heads' cornices
-    bandAlong(m, F, line, c - 0.85, c + 0.85, LIB.win1[1] + 0.2, LIB.win1[1] + 0.36, 0.14, plain);
-    bandAlong(m, F, line, c - 0.85, c + 0.85, LIB.win2[1] + 0.2, LIB.win2[1] + 0.34, 0.12, plain);
   });
 
   // the walls round the rest of the block: the returns on the square, the street sides (windows on three floors)
@@ -1101,13 +1102,13 @@ function buildStrips(m, rails) {
     const ln = { L, t: [d[0] / L, d[1] / L], n: nrm, at: (s, off = 0) => [best.a[0] + d[0] / L * s + nrm[0] * off, best.a[1] + d[1] / L * s + nrm[1] * off] };
     ROWS.forEach(([sill, head, half], f) => {
       const y0 = f === 0 ? MOUTH_TOP : SLABS[f][0], y1 = f === 2 ? H.frieze : SLABS[f + 1][0];
-      wallAlong(m, ln, 0, L, y0, y1, style({ bay: L, sill: sill + 0.3, head, half: half * 0.9, palette: PAL.ochre, flags: FLAG.frame }));
+      wallAlong(m, ln, 0, L, y0, y1, style({ bay: L, sill: sill + 0.3, head, half: half * 0.9, palette: PAL.white, flags: FLAG.frame }));
     });
     bandAlong(m, F, ln, 0, L, H.frieze, H.eave - 0.05, 0.25, GREY);
     // the strip's sides on its neighbours (the city's block, the library's roof), plain to the eaves
     const edges = [0, 1, 2, 3].map((k) => [[r[2 * k], r[2 * k + 1]], [r[(2 * k + 2) % 8], r[(2 * k + 3) % 8]]])
       .sort((p, q) => p[0][0] + p[1][0] - q[0][0] - q[1][0]);
-    for (const [a, b] of edges.slice(1, 3)) m.wall(F, a, b, 0.1, MOUTH_TOP, H.eave, OCHRE);
+    for (const [a, b] of edges.slice(1, 3)) m.wall(F, a, b, 0.1, MOUTH_TOP, H.eave, style({ palette: PAL.white }));
     void rails;
     m.geom(F, hipRoof(r, H.eave, 1.7, 2.6), style({ palette: PAL.tile, flags: FLAG.tiles }));
   }
