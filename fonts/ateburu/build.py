@@ -24,7 +24,6 @@ glyph's masters are incompatible or an outline has the wrong direction or overla
 SIL Open Font License 1.1, no Reserved Font Name: see OFL.txt. Copyright 2026 The Ateburu Project Authors.
 """
 import json
-import math
 import os
 import sys
 
@@ -32,7 +31,6 @@ sys.dont_write_bytecode = True  # no __pycache__ next to the sources
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, 'source'))
 
-import pathops  # noqa: E402
 from fontTools import subset  # noqa: E402
 from fontTools.designspaceLib import (AxisDescriptor, DesignSpaceDocument, InstanceDescriptor,  # noqa: E402
                                       SourceDescriptor)
@@ -103,12 +101,10 @@ def outlines(drawn):
 def flatten(contour, steps=10):
     """TrueType contour [(on, (x, y))] → polygon points"""
     pts = contour
-    n = len(pts)
     # rotate to an on-curve start
     k = next(i for i, (on, _) in enumerate(pts) if on)
     pts = pts[k:] + pts[:k]
     poly = []
-    i = 0
     cur = pts[0][1]
     poly.append(cur)
     offs = []

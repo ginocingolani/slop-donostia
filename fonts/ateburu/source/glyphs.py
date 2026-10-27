@@ -127,24 +127,6 @@ def bowl(m, x0, y0, y1, xr, side=None, top=None, k=0.60, kin=0.58):
     return outer.path(), inner.path()
 
 
-def oval_point(cx, cy, rx, ry, k, x, upper=True):
-    """y of an oval() at a given x (numerically, on its upper or lower half)"""
-    from geometry import bez
-    if upper:
-        arcs = [((cx + rx, cy), (cx + rx, cy + ry * k), (cx + rx * k, cy + ry), (cx, cy + ry)),
-                ((cx, cy + ry), (cx - rx * k, cy + ry), (cx - rx, cy + ry * k), (cx - rx, cy))]
-    else:
-        arcs = [((cx - rx, cy), (cx - rx, cy - ry * k), (cx - rx * k, cy - ry), (cx, cy - ry)),
-                ((cx, cy - ry), (cx + rx * k, cy - ry), (cx + rx, cy - ry * k), (cx + rx, cy))]
-    best = None
-    for a in arcs:
-        for i in range(401):
-            p = bez(a, i / 400)
-            if best is None or abs(p[0] - x) < abs(best[0] - x):
-                best = p
-    return best[1]
-
-
 # ---------------------------------------------------------------------------------------------------------------------
 # straight letters
 
@@ -296,7 +278,6 @@ def C_(m):
 
 @glyph('G', 0x47, 0x67)
 def G_(m):
-    C = m.C
     W = m.v(686, 756)
     side = m.rside
     yg = m.v(374, 378)          # top of the bar
@@ -593,7 +574,6 @@ def J(m):
     hook = diff(c.path(), rect(-100, yt, W / 2, C + 100))
     top = stem(W - s, W, yu, C, m.serif, bl=False, br=False)
     # the hook's end is cut level and flares a little outward, like a serif
-    x_in = edge_x(hook, yt - 1, 'max') if False else s
     flare = polygon([(-m.v(14, 16), yt), (s * 0.5, yt), (s * 0.5, yt - 40), (2, yt - m.v(80, 90))])
     return G(union([hook, top, flare]), W, None, m.sp, top=W * 0.6)
 
