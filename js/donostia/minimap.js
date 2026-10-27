@@ -10,7 +10,7 @@
 
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 // the HUD's inscription letter (css/donostia.css --font-display), for the full map's auzo names
-const DISPLAY_FONT = 'Harri, "Donostia Display", Georgia, serif';
+const DISPLAY_FONT = 'Ateburu, "Donostia Display", Georgia, serif';
 const WATER = 7;
 const RADAR_SCALE = 0.32; // radar pixels per metre near the ground; it zooms out as the camera climbs
 const FULL_MIN_ZOOM = 0.03;

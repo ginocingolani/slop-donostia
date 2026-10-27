@@ -23,11 +23,12 @@ The face this one stands in for is [Harri](https://www.blancoletters.com/typefac
 commercial. Its EULA forbids sharing the font software or giving third parties access to it, so its files can never
 be committed here or served from this repository's GitHub Pages.
 
-With a licence, `css/donostia.css` already asks for it first (`--font-display: 'Harri', 'Donostia Display', …`):
+The HUD now leads with [Ateburu](../ateburu/README.md), an OFL face drawn for it, and keeps Donostia Display as its
+fallback. With a licence, Harri can still be put first in `--font-display` in `css/donostia.css`:
 
 - **Adobe Fonts.** With a Creative Cloud plan, create a web project with Harri. Then add its stylesheet `<link>` (from
   `use.typekit.net`) to `index.html` where the comment by the font preload says. The files stay on Adobe's servers.
 - **A Blancoletters web licence.** Serve the licensed webfont from a host you control (the licence covers one domain
   and a number of monthly page views), and add its `@font-face` there.
 
-Without either, or for anyone who forks this, the HUD falls back to Donostia Display.
+Without either, or for anyone who forks this, the HUD uses Ateburu, then Donostia Display.
