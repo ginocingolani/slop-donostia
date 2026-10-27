@@ -14,6 +14,7 @@ import { buildStreetscape } from './streetscape.js';
 import { buildBridges } from './bridges.js';
 import { buildShore } from './shore.js';
 import { buildMarina } from './marina.js';
+import { buildBoats } from './boats.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
@@ -35,7 +36,7 @@ const STORAGE_KEY = 'donostia-god-camera';
 
 /**
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
- * the shore's walls & rocks, the port's moorings.
+ * the shore's walls & rocks, the port's moorings and its boats.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
@@ -83,6 +84,8 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('bridges', bridges);
   add('shore', shore);
   add('marina', marina);
+  // the boats in the port ride the sea's level (the tide)
+  add('boats', buildBoats(water.userData.seaLevel));
   modules.sky = lighting.sky;
   mark('details');
 
