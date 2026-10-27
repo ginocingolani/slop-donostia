@@ -75,16 +75,24 @@ const PARTE_VIEJA = [
 
 const c500 = (file) => loadLayer(file).features.map((f) => f.g.filter((r) => r.length >= 6)).filter((g) => g.length);
 // The pieces of the stairs that tools/donostia/beach-access.mjs builds as the beaches' stairs & ramps (or leaves to the
-// sand) keep the ground of the layers under them (BEACH_ACCESS.claimed: the mean of each outline's vertices)
+// sand: BEACH_ACCESS.claimed, the mean of each outline's vertices) and the accesses' parts take the surfaces round them
+// (FILL, resolved by fillAccesses): the promenade's paving on one side, the sand on the other, as far as the texels
+// that straddle their outlines show
 const claimed = BEACH_ACCESS.claimed || [];
-const unclaimed = (g) => {
+const isClaimed = (g) => {
   const r = g[0];
   let x = 0, z = 0;
   for (let k = 0; k < r.length; k += 2) { x += r[k]; z += r[k + 1]; }
   x /= r.length / 2; z /= r.length / 2;
-  for (let k = 0; k < claimed.length; k += 2) if (Math.abs(claimed[k] - x) < 0.02 && Math.abs(claimed[k + 1] - z) < 0.02) return false;
-  return true;
+  for (let k = 0; k < claimed.length; k += 2) if (Math.abs(claimed[k] - x) < 0.02 && Math.abs(claimed[k + 1] - z) < 0.02) return true;
+  return false;
 };
+const unclaimed = (g) => !isClaimed(g);
+const FILL = 31; // a raster id of its own, gone before the edges are found
+const accessPolys = [
+  ...c500('c500_ESKAILERA.json').filter(isClaimed),
+  ...(BEACH_ACCESS.parts || []).map((part) => [part.p])
+];
 
 // Painted in order, later layers win (as GROUND_LAYERS in build.mjs, with more surfaces). `over` limits a layer to
 // cells already holding one of the listed surfaces.
@@ -106,6 +114,7 @@ const LAYERS = [
   { name: 'bidegorris', id: S.bike, polys: c500('c500_BIDEGORRIA.json') },
   { name: 'tree pits', id: S.treePit, polys: c500('c500_ZUHAITZ_TXORKOA.json') },
   { name: 'stairs', id: S.stairs, polys: c500('c500_ESKAILERA.json').filter(unclaimed) },
+  { name: "the beaches' stairs & ramps", id: FILL, polys: accessPolys },
   { name: 'buildings', id: S.building, polys: [...c500('c500_ERAIKINA.json'), ...c500('c500_EraikinArinak.json')] },
   {
     name: 'arcades & passages', id: S.pedestrian,
@@ -253,6 +262,41 @@ function fillPolygon(cls, poly, rowBase, r0, r1, id, over) {
   }
 }
 
+// The beaches' stairs & ramps (FILL) take the surfaces either side of them, along the rows and then the columns, split
+// down the middle; past up to THIN cells of unmapped ground (the gap the municipal map leaves round the stairs)
+function fillAccesses(cls, rows) {
+  const run = (get, set, n) => {
+    let a = 0;
+    while (a < n) {
+      if (get(a) !== FILL) { a++; continue; }
+      let e = a;
+      while (e < n && get(e) === FILL) e++;
+      const look = (k, step) => {
+        let first = -1;
+        for (let t = 0; t < THIN && k >= 0 && k < n; t++, k += step) {
+          const c = get(k);
+          if (c === FILL) return first;
+          if (first < 0) first = c;
+          if (c !== S.natural) return c;
+        }
+        return first;
+      };
+      const before = look(a - 1, -1), after = look(e, 1);
+      if (before >= 0 || after >= 0) {
+        const mid = (a + e) >> 1;
+        for (let k = a; k < e; k++) set(k, (k < mid ? before : after) >= 0 ? (k < mid ? before : after) : Math.max(before, after));
+      }
+      a = e;
+    }
+  };
+  for (let y = 0; y < rows; y++) {
+    const b = y * FW;
+    run((k) => cls[b + k], (k, v) => { cls[b + k] = v; }, FW);
+  }
+  for (let x = 0; x < FW; x++) run((k) => cls[k * FW + x], (k, v) => { cls[k * FW + x] = v; }, rows);
+  for (let k = 0; k < FW * rows; k++) if (cls[k] === FILL) cls[k] = S.natural;
+}
+
 // Slivers of unmapped ground or hedge narrower than ~1.1 m between mapped surfaces (the gaps the municipal polygons
 // leave along kerbs, thin hedges) would come back from 1 m texels as strings of blobs: they go to the surfaces on
 // either side, split down the middle
@@ -359,6 +403,7 @@ function columnDistances(feature, rows, out) {
         else if (u === 1 && cls[b + x] === S.bike) cls[b + x] = S.road;
       }
     }
+    fillAccesses(cls, rows);
     clearSlivers(cls, rows);
     // edge cells, on both sides of an edge: any change of surface (f1); a carriageway against a kerbed surface (f2)
     f1.fill(0, 0, FW * rows);

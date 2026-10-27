@@ -219,12 +219,15 @@ export const ACCESS = [
       [L(1111.51, -498.64), P('E', 1109.81, -501.40), L(1110.10, -504.05)]]
   },
   {
-    id: 'zurriola-platform-1195', beach: 'zurriola', type: 'ramp & steps from a beach terrace', top: 7.6, rail: 'steel',
-    note: 'a terrace a little above the sand (LiDAR ~5.95), a ramp up to the promenade and steps down to the sand (5.67, 5.23)',
-    chains: [[P('A', 1183.33, -530.38, { dir: [0.88, -0.47] })], [P('E', 1197.01, -537.63, { dir: [-0.47, -0.88] })],
-      [P('E', 1194.97, -537.00, { dir: [-0.47, -0.88] })]],
-    tops: [7.6, 5.95, 5.95], bots: [5.95, 5.2, 5.2],
-    skip: [P('A', 1194.31, -532.37)]
+    id: 'zurriola-ramp-1195', beach: 'zurriola', type: 'ramp along the wall, terrace & steps', top: 7.7, rail: 'steel',
+    note: "a 40 m ramp along the promenade's wall from the terrace by the round pavilion (LiDAR 7.7) down north-east to " +
+      'its low point (5.87; spot height 5.67 beyond), steps from there to the sand, a terrace beside its upper half (~6.0) ' +
+      'and its last stretch rising a little to the sand further on (6.3)',
+    chains: [[P('A', 1194.31, -532.37, { clip: [1199.33, -527.58, 1195.57, -534.62], dir: [0.88, -0.47] })],
+      [P('A', 1194.31, -532.37, { clip: [1195.57, -534.62, 1199.33, -527.58], dir: [-0.88, 0.47] })],
+      [P('A', 1183.33, -530.38, { t: 'L', dir: [0.88, -0.47] })],
+      [P('E', 1197.01, -537.63, { dir: [-0.47, -0.88] })], [P('E', 1194.97, -537.00, { dir: [-0.47, -0.88] })]],
+    tops: [7.7, 6.3, 6.0, 5.9, 5.9], bots: [5.9, 5.9, 6.0, null, null]
   },
   {
     id: 'zurriola-steps-1335', beach: 'zurriola', type: 'flight along the wall with landings', top: 8.9, wall: true, rail: 'steel',
@@ -726,11 +729,15 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
           return out.length > 0 && Math.max(...out) > prom - 0.6;
         };
         const shared = accParts.find((o) => o !== part && (ringDist(mx, mz, o.p) < 0.4 || ringDist(mx + nx * 0.3, mz + nz * 0.3, o.p) < 0.05));
-        if (shared) {
+        // (beside a landing or a part going another way well below it, as a ramp above the terrace along it: an open side,
+        // with its handrail; not between the pieces of one broad flight, nor the two flights of a switchback)
+        const across = shared && (shared.k === 'l' || part.k === 'l' || Math.abs(part.u[0] * shared.u[0] + part.u[1] * shared.u[1]) < 0.9);
+        if (shared && (!across || y - surfaceAt(shared, mx, mz) < 0.5)) {
           flags += EDGE.closed;
           if (shared.floor == null) step(shared.y[0]);
           continue;
         }
+        if (shared) { flags += EDGE.open; continue; }
         if (buildings.some((b) => pointInRing(mx + nx * 0.35, mz + nz * 0.35, b))) { flags += EDGE.closed; continue; }
         const along = Math.abs(tx * part.u[0] + tz * part.u[1]); // 1: a side of the flight, 0: across it
         if (part.entry && along < 0.5 && Math.hypot(mx - part.entry[0], mz - part.entry[1]) < len / 2 + 0.3) {
@@ -760,6 +767,27 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
           flags += EDGE.closed;
           step(prom);
           continue;
+        }
+        // against ground well above it along some of its length (a ramp along the promenade's wall, a flight sunk below
+        // the walk beside it): a retaining wall from that ground (the LiDAR 1.5-2.5 m out, every 4 m or less) down to the
+        // part, its masonry & coping, the terrain stepping there (not where it is the beach's sand, heaped against it)
+        if (part.floor == null && !onBeach(mx + nx * 1.5, mz + nz * 1.5)) {
+          const m = Math.max(1, Math.ceil(len / 4));
+          const at = (q) => {
+            const f = Math.min(1 - 0.05 / len, Math.max(0.05 / len, q / m)), x = ax + (bx - ax) * f, z = az + (bz - az) * f;
+            const g = Math.max(...[1.5, 2, 2.5].map((t) => lidar(x + nx * t, z + nz * t)).filter(Number.isFinite), -Infinity);
+            return { x: ax + (bx - ax) * (q / m), z: az + (bz - az) * (q / m), g, y: surfaceAt(part, x, z) };
+          };
+          const pts = Array.from({ length: m + 1 }, (_, q) => at(q));
+          const rise = pts.map((p) => p.g - p.y);
+          if (Math.max(...rise) > 0.6 && Math.min(...rise) > -0.3) {
+            flags += EDGE.closed;
+            for (let q = 0; q < m; q++) {
+              const p = pts[q], o = pts[q + 1];
+              wallEdges.push({ a: [p.x, p.z], b: [o.x, o.z], deck: [Math.max(p.g, p.y), Math.max(o.g, o.y)], foot: [p.y - 0.2, o.y - 0.2] });
+            }
+            continue;
+          }
         }
         // cut into higher ground (a cheek wall up to the flight's top); in front of a wall the ground beside comes down
         // to the sand (the LiDAR has the heaps the 2 m grid made of the stairs, but they fall away within 3 m)
