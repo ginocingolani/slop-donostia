@@ -835,7 +835,9 @@ const LANDMARKS = [
   ['bretxa', 'way', 23905020], ['bretxa-merkatua', 'way', 23905055], ['bretxa-plaza', 'way', 119089295],
   ['boulevard-kioskoa', 'way', 184003729], ['tenis-kluba', 'way', 182691330], ['tenis-pistak', 'way', 39244628],
   ['tabakalera', 'relation', 3266749], ['atotxa-dorrea', 'way', 172593495],
-  ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607]
+  ['anoeta', 'way', 1426500083], ['illunbe', 'way', 26973607],
+  // round 4 (queries/places.overpassql): Aiete's palace and the Kulturetxea's sunken pavilion in its park
+  ['aiete-jauregia', 'way', 56132590], ['aiete-kulturetxea', 'way', 224241887]
 ];
 
 // Each landmark's OSM object, looked up before anything is baked: one missing from the snapshot (a query edited without
@@ -909,6 +911,7 @@ const TELEPORTS = [
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
   ['sagues', 'Sagues', 'Sagüés', [-1.9708, 43.3270], 6, [-1.9770, 43.3258], 2],
   ['dabadaba', 'Dabadaba', 'Sala Dabadaba', [-1.975780, 43.315545], 1.7, [-1.976278, 43.315608], 3],
+  ['aiete', 'Aieteko jauregia', 'Palacio de Aiete', [-1.991674, 43.306152], 6, [-1.992012, 43.305579], 9],
   ['anoeta', 'Anoeta', 'Estadio de Anoeta', [-1.9762, 43.3036], 40, [-1.97357, 43.30139], 12]
 ];
 
