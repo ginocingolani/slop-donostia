@@ -967,7 +967,7 @@ const TELEPORTS = [
   ['urgull', 'Urgull', 'Monte Urgull', [-1.98942, 43.32485], 25, [-1.9830, 43.3140], 0],
   ['kontxa', 'Kontxa pasealekua', 'Paseo de La Concha', [-1.9905, 43.3152], 6, [-1.99948, 43.32139], 12],
   ['udaletxea', 'Alderdi Eder', 'Alderdi Eder', [-1.9876, 43.3207], 10, [-1.98578, 43.32160], 12],
-  ['alde-zaharra', 'Konstituzio plaza', 'Plaza de la Constitución', [-1.98540, 43.32340], 1.7, [-1.98470, 43.32380], 6],
+  ['alde-zaharra', 'Konstituzio plaza', 'Plaza de la Constitución', [-1.985080, 43.323413], 1.7, [-1.98470, 43.32380], 6],
   ['kursaal', 'Kursaal eta Zurriola', 'Kursaal y Zurriola', [-1.9792, 43.3225], 8, [-1.97836, 43.32448], 10],
   ['artzain-ona', 'Artzain Onaren katedrala', 'Catedral del Buen Pastor', [-1.98169, 43.31790], 2, [-1.98169, 43.31689], 30],
   ['orrazia', 'Haizearen orrazia', 'Peine del Viento', [-2.00470, 43.32110], 5, [-2.00555, 43.32169], 3],
