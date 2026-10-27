@@ -25,13 +25,17 @@ import * as klubNautikoa from './klub-nautikoa.js';
 import * as laPerla from './la-perla.js';
 import * as dabadaba from './dabadaba.js';
 import * as aiete from './aiete.js';
+import * as konstituzio from './konstituzio-plaza.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
 // buildings under a built landmark are hidden from the plain extrusions (js/donostia/buildings.js). Those are the sites'
 // `buildings` (tools/donostia/build.mjs), less those of any site a model lists in userData.skipped (site ids it could
 // not build), plus the GEO.buildings indices it lists in userData.hide (buildings it replaces that no site claims, found
-// by position: the Aquarium's, the tennis pavilion, the funicular's stations). Modules never edit GEO.
+// by position: the Aquarium's, the tennis pavilion, the funicular's stations). A model may instead keep some buildings
+// changed (userData.replace: Map(index -> record), drawn by buildings.js in their place) and stand phantom neighbours
+// beside them (userData.phantoms: records never drawn), see buildFacadeCells in js/donostia/facade-mesh.js. Modules
+// never edit GEO.
 
 const MODELS = [
   [udaletxea, ['udaletxea']],
@@ -58,13 +62,15 @@ const MODELS = [
   [klubNautikoa, []],
   [laPerla, []],
   [dabadaba, []],
-  [aiete, ['aiete-jauregia', 'aiete-kulturetxea']]
+  [aiete, ['aiete-jauregia', 'aiete-kulturetxea']],
+  [konstituzio, []]
 ];
 
 export function buildLandmarks(GEO, terrain) {
   const group = new THREE.Group();
   group.name = 'DonostiaLandmarks';
   const hidden = new Set();
+  const replace = new Map(), phantoms = [];
   const ctx = { GEO, terrain, kit };
   for (const [module, ids] of MODELS) {
     const sites = ids.map((id) => GEO.landmarks.find((s) => s.id === id)).filter(Boolean);
@@ -81,6 +87,8 @@ export function buildLandmarks(GEO, terrain) {
     const skipped = new Set(model.userData.skipped || []);
     for (const site of sites) if (!skipped.has(site.id)) for (const b of site.buildings || []) hidden.add(b);
     for (const b of model.userData.hide || []) hidden.add(b);
+    for (const [b, record] of model.userData.replace || []) replace.set(b, record);
+    phantoms.push(...(model.userData.phantoms || []));
   }
   // main.js updates the objects it adds; forward to the models that animate (funicular cars, lighthouse beams…). As
   // with build(), one landmark's failure stays its own: an update that throws is logged once and dropped, leaving that
@@ -98,5 +106,5 @@ export function buildLandmarks(GEO, terrain) {
       }
     };
   }
-  return { group, hidden };
+  return { group, hidden, replace, phantoms };
 }

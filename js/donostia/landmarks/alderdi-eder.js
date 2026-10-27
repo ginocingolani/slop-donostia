@@ -596,7 +596,7 @@ function addPlayground(b, ring, swings, ground, terrain) {
 // The ground as the terrain's chunk meshes draw it in the core: the 2 m height samples split along each quad's
 // diagonal (js/donostia/terrain.js chunkIndex), rather than heightAt's bilinear surface, which a few centimetres of
 // paving or gravel laid over a step would dip under
-function meshGround(terrain) {
+export function meshGround(terrain) {
   const f = terrain.core;
   return (x, z) => {
     if (!f || !f.contains?.(x, z)) return Math.max(0, terrain.heightAt(x, z));
@@ -610,7 +610,7 @@ function meshGround(terrain) {
 // A thin overlay (paving, gravel, rubber) laid exactly on the terrain's mesh, `lift` metres over it: the polygon's
 // triangles are cut by the mesh's own triangles in the core (each piece takes that triangle's plane), so a layer of a
 // few centimetres never dips under a crease of the ground. Outside the core (no such mesh) it drapes by subdivision.
-function drapedCap(rings, terrain, lift) {
+export function drapedCap(rings, terrain, lift) {
   const f = terrain.core;
   const contour = toV2(rings[0]), holes = rings.slice(1).map(toV2);
   const pts = [...contour, ...holes.flat()];

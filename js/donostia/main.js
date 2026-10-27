@@ -72,7 +72,8 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('landmarks', landmarks.group);
   mark('landmarks');
   status(`Raising ${GEO.buildings.length.toLocaleString('en-US')} buildings…`);
-  add('buildings', buildDonostiaBuildings(GEO, { hidden: landmarks.hidden }));
+  const { hidden, replace, phantoms } = landmarks;
+  add('buildings', buildDonostiaBuildings(GEO, { hidden, replace, phantoms }));
   mark('buildings');
   status('Planting trees & dressing the streets…');
   const [vegetation, streetscape, bridges, shore, marina] = await Promise.all([
