@@ -222,11 +222,13 @@ SPACING_TWEAKS = {
 }
 
 
-def kern_value(m, left_prof, right_prof, ref_area, depth2, mingap):
-    """Kern (≥ … ≤ 0 usually) so that the clipped white area between the two glyphs matches the reference pair's"""
+def kern_value(m, left_prof, right_prof, ref_gaps, depth2, mingap):
+    """Kern so that the clipped white area between the two glyphs matches the reference pair's (HH) over the same
+    heights (so a period after T is compared with HH's white at the period's own height)"""
     gaps = [(y, a + b) for y, (a, b) in zip(YS, zip(left_prof, right_prof)) if a is not None and b is not None]
     if not gaps:
         return 0
+    ref_area = sum(weight_at(y) * min(max(ref_gaps[y], 0), depth2) for y, _ in gaps)
 
     def area(k):
         return sum(weight_at(y) * min(max(v + k, 0), depth2) for y, v in gaps)
@@ -269,7 +271,13 @@ def kerning(drawn, tt, sb):
             lsb, rsb = sb[n][mi]
             w = drawn[n][mi].w
             profs[n] = ([lsb + p[0] if p else None for p in prof], [rsb + (w - p[1]) if p else None for p in prof])
-        ref = kern_area_ref(m, profs)
+        depth2 = 2 * m.sp + m.v(150, 120)
+        ref_gaps = {y: a + b for y, a, b in zip(YS, profs['H'][1], profs['H'][0]) if a is not None and b is not None}
+        # beyond the stem's height (quotes, the comma's tail) the white of the stem's ends carries on
+        top, bottom = ref_gaps[max(ref_gaps)], ref_gaps[min(ref_gaps)]
+        for y in YS:
+            if y not in ref_gaps:
+                ref_gaps[y] = top if y > 0 else bottom
         vals = {}
         for a in names:
             for b in names:
@@ -277,7 +285,7 @@ def kerning(drawn, tt, sb):
                     continue
                 if a in extra and b in extra:
                     continue
-                k = kern_value(m, profs[a][1], profs[b][0], ref[0], ref[1], m.v(34, 26))
+                k = kern_value(m, profs[a][1], profs[b][0], ref_gaps, depth2, m.v(34, 26))
                 vals[(a, b)] = k
         per_master.append(vals)
     pairs = {}
@@ -286,13 +294,6 @@ def kerning(drawn, tt, sb):
         if key in REQUIRED_PAIRS or any(abs(k) >= 14 for k in ks):
             pairs[key] = [int(round(k / 2) * 2) for k in ks]
     return pairs
-
-
-def kern_area_ref(m, profs):
-    depth2 = 2 * m.sp + m.v(150, 120)
-    gaps = [(y, a + b) for y, a, b in zip(YS, profs['H'][1], profs['H'][0]) if a is not None and b is not None]
-    area = sum(weight_at(y) * min(max(v, 0), depth2) for y, v in gaps)
-    return area, depth2
 
 
 # ---------------------------------------------------------------------------------------------------------------------

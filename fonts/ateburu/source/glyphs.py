@@ -295,8 +295,8 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 
 @glyph('C', 0x43, 0x63)
 def C_(m):
-    W = m.v(624, 700)
-    return G(c_shape(m, W), W, None, None)
+    W = m.v(624, 704)
+    return G(c_shape(m, W, xt=W * m.v(0.735, 0.665), xb=W * m.v(0.770, 0.70)), W, None, None)
 
 
 @glyph('G', 0x47, 0x67)
@@ -401,28 +401,36 @@ def K(m):
 
 @glyph('A', 0x41, 0x61)
 def A(m):
-    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V"""
+    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
+    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V"""
     C, h = m.C, m.hair
-    W = m.v(652, 752)
-    apex_w = m.v(150, 188)                     # width of the flat apex, under the crown
-    ax0 = W / 2 - apex_w / 2 + m.v(14, 16)    # the apex sits right of centre: the crown reaches left
+    W = m.v(660, 760)
+    hc = h * 0.98
     thin, thick = m.thin * 0.92, m.thick * 0.96
+    # solve the apex width so that the legs' inner edges meet just under the crown
+    apex_w = m.v(170, 220)
+    for _ in range(8):
+        ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
+        l_hw = thin / math.sin(math.atan2(C, ax0))
+        r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
+        spread = hc * (ax0 / C + (W - ax0 - apex_w) / C)
+        apex_w = l_hw + r_hw - spread + m.v(4, 0)
+    ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
     l_hw = thin / math.sin(math.atan2(C, ax0))
+    r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
     left = diag((0, 0), (l_hw, 0), (ax0, C), (ax0 + l_hw, C),
                 {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)})
-    r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
     right = diag((W - r_hw, 0), (W, 0), (ax0 + apex_w - r_hw, C), (ax0 + apex_w, C),
                  {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)})
     # the crown: a bar on the cap line, longer to the left, its ends cut as wedges
-    cl = ax0 - m.v(134, 144)
-    cr = ax0 + apex_w + m.v(22, 24)
-    hc = h * 0.98
+    cl = ax0 - m.v(132, 140)
+    cr = ax0 + apex_w + m.v(20, 22)
     wl = min(m.wlen * 0.85, ax0 * (C - hc) / C - cl - 24)
     crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
     # the V crossbar: its upper edge leaves the legs at y_side and dips to y_mid in the middle
-    hb = h * 0.90
-    y_side = m.v(360, 372)
-    y_mid = m.v(296, 304)                      # >= 0.40 cap: the counter stays open
+    hb = h * 0.88
+    y_side = m.v(364, 372)
+    y_mid = m.v(298, 304)                      # >= 0.40 cap: the counter stays open
     def lx(y):
         return l_hw + ax0 * y / C
     def rx(y):
@@ -491,21 +499,23 @@ def X(m):
 @glyph('Y', 0x59, 0x79)
 def Y(m):
     C, s = m.C, m.stem
-    W = m.v(640, 712)
-    yj = m.v(330, 326)
+    W = m.v(644, 716)
+    yj = m.v(326, 322)
     cx = W / 2
     lw = m.thick / math.sin(math.atan2(C - yj, cx))
     rw = m.thin / math.sin(math.atan2(C - yj, cx))
-    left = diag((cx - lw / 2 - s * 0.25, yj - 40), (cx + lw / 2 - s * 0.25, yj - 40), (0, C), (lw, C),
-                {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
-    # (the arms' feet are extended below the junction and buried in the stem)
-    lb = diag_through((cx - s * 0.1, yj - 10), (lw / 2, C), m.thick, yj - 60, C)
+    lb = diag_through((cx - s * 0.1, yj - 10), (lw / 2, C), m.thick, yj - 120, C)
     left = diag(*lb, {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
-    rb = diag_through((cx + s * 0.1, yj - 10), (W - rw / 2, C), m.thin, yj - 60, C)
+    rb = diag_through((cx + s * 0.1, yj - 10), (W - rw / 2, C), m.thin, yj - 120, C)
     right = diag(*rb, {'tr': m.serif, 'tl': m.serif.scaled(0.7)})
-    st = stem(cx - s / 2, cx + s / 2, 0, yj + 10, m.serif, tl=False, tr=False, flare_l=m.flare * 0.5, flare_r=m.flare * 0.5)
-    shape = union([left, right, st])
-    return G(shape, W, None, None)
+    # the arms' outer edges run into the stem's sides: clip what would stick out below
+    y_l = lb[0][1] + (lb[2][1] - lb[0][1]) * ((cx - s / 2) - lb[0][0]) / (lb[2][0] - lb[0][0])
+    y_r = rb[1][1] + (rb[3][1] - rb[1][1]) * ((cx + s / 2) - rb[1][0]) / (rb[3][0] - rb[1][0])
+    keep = polygon([(-100, C + 100), (-100, y_l), (cx - s / 2, y_l), (cx - s / 2, -100), (cx + s / 2, -100),
+                    (cx + s / 2, y_r), (W + 100, y_r), (W + 100, C + 100)])
+    arms = inter(union([left, right]), keep)
+    st = stem(cx - s / 2, cx + s / 2, 0, max(y_l, y_r) + 20, m.serif, tl=False, tr=False)
+    return G(union([arms, st]), W, None, None)
 
 
 @glyph('M', 0x4D, 0x6D)
@@ -819,7 +829,7 @@ def eight(m):
 @glyph('period', 0x2E)
 def period(m):
     dx, dy = dot_size(m)
-    return G(lozenge(dx, dy - 4, dx, dy), 2 * dx, None, None)
+    return G(lozenge(dx, dy - 4, dx, dy), 2 * dx, m.v(46, 38), m.v(46, 38))
 
 
 @glyph('periodcentered', 0xB7)
@@ -841,50 +851,48 @@ def comma_shape(m, cy):
 @glyph('comma', 0x2C)
 def comma(m):
     dx, dy = dot_size(m)
-    return G(comma_shape(m, dy - 4), 2 * dx, None, None)
+    return G(comma_shape(m, dy - 4), 2 * dx, m.v(46, 38), m.v(46, 38))
 
 
 @glyph('colon', 0x3A)
 def colon(m):
     dx, dy = dot_size(m)
-    return G(union([lozenge(dx, dy - 4, dx, dy), lozenge(dx, m.v(420, 420), dx, dy)]), 2 * dx, None, None)
+    return G(union([lozenge(dx, dy - 4, dx, dy), lozenge(dx, m.v(420, 420), dx, dy)]), 2 * dx, m.v(52, 42), m.v(52, 42))
 
 
 @glyph('semicolon', 0x3B)
 def semicolon(m):
     dx, dy = dot_size(m)
-    return G(union([comma_shape(m, dy - 4), lozenge(dx, m.v(420, 420), dx, dy)]), 2 * dx, None, None)
+    return G(union([comma_shape(m, dy - 4), lozenge(dx, m.v(420, 420), dx, dy)]), 2 * dx, m.v(52, 42), m.v(52, 42))
 
 
 @glyph('quoteright', 0x2019)
 def quoteright(m):
     dx, dy = dot_size(m)
-    return G(comma_shape(m, m.C - dy + 6), 2 * dx, None, None)
+    return G(comma_shape(m, m.C - dy + 6), 2 * dx, m.v(40, 32), m.v(40, 32))
 
 
 @glyph('quoteleft', 0x2018)
 def quoteleft(m):
     dx, dy = dot_size(m)
     sh = comma_shape(m, m.C - dy + 6)
-    # turned: the head below, the tail rising
-    yc = m.C - dy + 6 - (dy + m.v(150, 156)) / 2 + dy / 2
-    return G(rotate180(sh, dx, (m.C + 6 + (m.C - 2 * dy + 6 - m.v(150, 156))) / 2), 2 * dx, None, None)
+    return G(rotate180(sh, dx, (m.C + 6 + (m.C - 2 * dy + 6 - m.v(150, 156))) / 2), 2 * dx, m.v(40, 32), m.v(40, 32))
 
 
 @glyph('quotedblright', 0x201D)
 def quotedblright(m):
     dx, dy = dot_size(m)
-    gap = m.v(56, 60)
+    gap = m.v(40, 44)
     one_ = comma_shape(m, m.C - dy + 6)
-    return G(union([one_, shift(one_, 2 * dx + gap, 0)]), 4 * dx + gap, None, None)
+    return G(union([one_, shift(one_, 2 * dx + gap, 0)]), 4 * dx + gap, m.v(40, 32), m.v(40, 32))
 
 
 @glyph('quotedblleft', 0x201C)
 def quotedblleft(m):
     dx, dy = dot_size(m)
-    gap = m.v(56, 60)
+    gap = m.v(40, 44)
     sh = rotate180(comma_shape(m, m.C - dy + 6), dx, (m.C + 6 + (m.C - 2 * dy + 6 - m.v(150, 156))) / 2)
-    return G(union([sh, shift(sh, 2 * dx + gap, 0)]), 4 * dx + gap, None, None)
+    return G(union([sh, shift(sh, 2 * dx + gap, 0)]), 4 * dx + gap, m.v(40, 32), m.v(40, 32))
 
 
 def straight_quote(m, x):
@@ -895,14 +903,14 @@ def straight_quote(m, x):
 @glyph('quotesingle', 0x27)
 def quotesingle(m):
     wt = m.v(98, 126)
-    return G(straight_quote(m, wt / 2), wt, None, None)
+    return G(straight_quote(m, wt / 2), wt, m.v(44, 36), m.v(44, 36))
 
 
 @glyph('quotedbl', 0x22)
 def quotedbl(m):
     wt = m.v(98, 126)
-    gap = m.v(64, 68)
-    return G(union([straight_quote(m, wt / 2), straight_quote(m, wt * 1.5 + gap)]), 2 * wt + gap, None, None)
+    gap = m.v(50, 54)
+    return G(union([straight_quote(m, wt / 2), straight_quote(m, wt * 1.5 + gap)]), 2 * wt + gap, m.v(44, 36), m.v(44, 36))
 
 
 @glyph('exclam', 0x21)
@@ -911,13 +919,13 @@ def exclam(m):
     wt, wb = m.v(132, 176), m.v(76, 104)
     cx = dx
     wedge = polygon([(cx - wt / 2, m.C), (cx + wt / 2, m.C), (cx + wb / 2, 2 * dy + m.v(70, 76)), (cx - wb / 2, 2 * dy + m.v(70, 76))])
-    return G(union([wedge, lozenge(cx, dy - 4, dx, dy)]), 2 * dx, None, None)
+    return G(union([wedge, lozenge(cx, dy - 4, dx, dy)]), 2 * dx, m.v(60, 48), m.v(60, 48))
 
 
 @glyph('exclamdown', 0xA1)
 def exclamdown(m):
     dx, dy = dot_size(m)
-    return G(rotate180(exclam(m).path, dx, m.C / 2), 2 * dx, None, None)
+    return G(rotate180(exclam(m).path, dx, m.C / 2), 2 * dx, m.v(60, 48), m.v(60, 48))
 
 
 def question_path(m, W):
@@ -950,21 +958,21 @@ def questiondown(m):
 
 @glyph('hyphen', 0x2D)
 def hyphen(m):
-    W = m.v(292, 316)
+    W = m.v(226, 244)
     h = m.hair * 0.96
-    return G(rect(0, 350 - h / 2, W, 350 + h / 2), W, m.v(44, 38), m.v(44, 38))
+    return G(rect(0, 350 - h / 2, W, 350 + h / 2), W, m.v(38, 32), m.v(38, 32))
 
 
 @glyph('endash', 0x2013)
 def endash(m):
     h = m.hair * 0.96
-    return G(rect(0, 350 - h / 2, 500, 350 + h / 2), 500, 0, 0)
+    return G(rect(0, 350 - h / 2, 420, 350 + h / 2), 420, 40, 40)
 
 
 @glyph('emdash', 0x2014)
 def emdash(m):
     h = m.hair * 0.96
-    return G(rect(0, 350 - h / 2, 1000, 350 + h / 2), 1000, 0, 0)
+    return G(rect(0, 350 - h / 2, 920, 350 + h / 2), 920, 40, 40)
 
 
 def paren_path(m):
@@ -983,13 +991,13 @@ def paren_path(m):
 @glyph('parenleft', 0x28)
 def parenleft(m):
     p, W = paren_path(m)
-    return G(p, W, None, None)
+    return G(p, W, m.v(56, 46), m.v(24, 18))
 
 
 @glyph('parenright', 0x29)
 def parenright(m):
     p, W = paren_path(m)
-    return G(mirror_x(p, W / 2), W, None, None)
+    return G(mirror_x(p, W / 2), W, m.v(24, 18), m.v(56, 46))
 
 
 @glyph('slash', 0x2F)
@@ -998,7 +1006,7 @@ def slash(m):
     W = m.v(380, 410)
     t = m.hair * 1.02
     hw = t / math.sin(math.atan2(C + 140, W))
-    return G(polygon([(0, -70), (hw, -70), (W, C + 70), (W - hw, C + 70)]), W, None, None)
+    return G(polygon([(0, -70), (hw, -70), (W, C + 70), (W - hw, C + 70)]), W, m.v(10, 6), m.v(10, 6))
 
 
 @glyph('ampersand', 0x26)
