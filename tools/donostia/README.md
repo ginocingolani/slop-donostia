@@ -50,7 +50,8 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | 1 m terrain (MDT LiDAR 2017, tiles 064_4..6_1..3 and 040_6_8) | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 1 m isobaths | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, gardens, woodland, beaches, tree pits, bike lanes, railway; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
+| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses and the port | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
 ## Licences
