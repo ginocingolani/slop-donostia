@@ -157,7 +157,10 @@ export function wallSnaps(walls, grid, sides = null) {
       if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
       const o = snaps.get(jj * w + ii);
       if (!o || o.wall !== s.wall || o.seg === s.seg) continue;
+      // (with a margin: the two samples go back square to their own segments, the chord a little less at the bend)
       let sag = chordSag(walls[s.wall].p, s, o);
+      if (sag <= 0) continue;
+      sag = 1.5 * sag + RECESS;
       if (s.side > 0 && o.side < 0 && sag > SAG_MAX.high) sag = 2 * sag - SAG_MAX.high;
       if (sag > s.back) s.back = Math.min(s.side > 0 ? SAG_MAX.low : SAG_MAX.high, sag);
     }

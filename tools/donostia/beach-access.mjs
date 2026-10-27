@@ -54,7 +54,9 @@ export const ACCESS = [
   {
     id: 'kontxa-miramar-terrace', beach: 'kontxa', type: 'broad flight to the bastion terrace', top: 11.73, bot: 9.99, rail: '',
     note: 'the steps the width of the Pico del Loro bastions, from the promenade (11.73) to their terrace (9.99)',
-    chains: [[P('E', -625.77, 748.23, { dir: [0.218, -0.976] })]]
+    chains: [[P('E', -625.77, 748.23, { dir: [0.218, -0.976] })]],
+    // (the terrace's straight walls between and beside its round bastions, which the LiDAR's search missed)
+    beachEdge: [[-618.5, 742.1, -629.3, 738.2], [-603.1, 746.9, -606.0, 741.9]]
   },
   {
     id: 'kontxa-west', beach: 'kontxa', type: 'flight along the wall', top: 11.55, wall: true, rail: 'white',
@@ -866,7 +868,9 @@ export function beachAccesses({ dtm, walls, buildings = [], loadLayer, log = () 
         const a = even[Math.max(0, k - 1)], b = even[Math.min(even.length - 1, k + 1)];
         const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = (b[1] - a[1]) / l, nz = -(b[0] - a[0]) / l; // towards the land
         const deck = Math.max(...[1.5, 2, 2.5, 3].map((t) => lidar(x + nx * t, z + nz * t)).filter(Number.isFinite), spec.top - 2);
-        p.push(x, z, Math.min(deck, spec.top + 0.3), Math.min(sand, deck - 1));
+        // (the foot: the access's sand, or the beach in front where the access does not come down to it)
+        const beach = Math.min(...[1.5, 2.5, 3.5].map((t) => lidar(x - nx * t, z - nz * t)).filter(Number.isFinite), deck - 1);
+        p.push(x, z, Math.min(deck, spec.top + 0.3), Math.min(spec.wall ? sand : beach, deck - 1));
       }
       lines.push({ t: material, b: 0, p, hs: new Array(p.length / 4).fill(0), access: spec.id });
     }
