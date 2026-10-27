@@ -327,11 +327,11 @@ export function plazaFacadeMaterial() {
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
   const litShare = clamp(cityUniforms.uInteriorGlow.mul(0.24), 0.0, 0.38);
   const litRoom = select(shop.greaterThan(0.5), step(0.3, hw3), step(fract(hw.mul(7.31)), litShare));
-  const warm = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.84, 0.62), fract(hw.mul(7.7)));
+  const warm = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.84, 0.62), fract(hw.mul(7.7))).mul(select(shop.greaterThan(0.5), vec3(1.0, 0.85, 0.65), vec3(1.0, 1.0, 1.0)));
   const lightThrough = pane.add(shutHere.mul(opening).mul(0.05)).add(door.mul(fanlight).mul(opening));
-  const roomGlow = warm.mul(litRoom).mul(lightThrough).mul(glowNight).mul(cityUniforms.uInteriorGlow).mul(select(shop.greaterThan(0.5), float(0.55), float(1.1)));
+  const roomGlow = warm.mul(litRoom).mul(lightThrough).mul(glowNight).mul(cityUniforms.uInteriorGlow).mul(select(shop.greaterThan(0.5), float(0.38), float(1.1)));
   const lantern = vec3(1.0, 0.8, 0.55).mul(bit(FLAG.glow)).mul(night).mul(0.16).mul(float(1).sub(opening));
-  const flood = mix(wallCol, vec3(0.95, 0.8, 0.55), 0.5).mul(night).mul(0.12).mul(bit(FLAG.flood)).mul(float(1).sub(opening));
+  const flood = mix(wallCol, vec3(1.0, 0.7, 0.36), 0.55).mul(night).mul(0.13).mul(bit(FLAG.flood)).mul(float(1).sub(opening));
   mat.emissiveNode = roomGlow.add(wallCol.mul(lantern)).add(flood);
   mat.name = 'KonstituzioFacade';
   facadeMaterial = mat;
@@ -461,7 +461,7 @@ function pavingMaterial() {
   const slabId = vec2(floor(pu), prow);
   const jx = float(0.5).sub(abs(fract(pu).sub(0.5))).mul(sw), jy = float(0.5).sub(abs(fract(dv.div(sh)).sub(0.5))).mul(sh);
   const joint = float(1).sub(smoothstep(0.004, 0.012, min(jx, jy)));
-  const granite = mix(vec3(0.27, 0.262, 0.245), vec3(0.34, 0.33, 0.31), hash(slabId, 0.0));
+  const granite = mix(vec3(0.285, 0.276, 0.258), vec3(0.325, 0.316, 0.296), hash(slabId, 0.0));
   const darkStone = mix(vec3(0.085, 0.088, 0.09), vec3(0.115, 0.118, 0.12), hash(slabId, 3.0));
   let plaza = mix(granite, darkStone, dark);
   plaza = plaza.mul(float(1).sub(joint.mul(0.28).mul(fadeJ)));
@@ -477,7 +477,10 @@ function pavingMaterial() {
   mat.roughnessNode = mix(float(0.82), float(0.66), arcade);
   // the arcades' lanterns on the slate at night
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
-  mat.emissiveNode = vec3(1.0, 0.78, 0.5).mul(arcade).mul(night).mul(0.035);
+  // (on the square: within a few metres of the arcades' fronts, a box round the square's middle)
+  const edge = max(max(float(-1.0).sub(v), v.sub(36.4)), max(u.sub(53.4), float(-0.6).sub(u))).negate();
+  const spill = mix(float(1).sub(smoothstep(0.0, 5.0, edge)).mul(0.022), float(0.035), arcade);
+  mat.emissiveNode = vec3(1.0, 0.78, 0.5).mul(spill).mul(night);
   mat.name = 'KonstituzioPaving';
   return mat;
 }
@@ -813,6 +816,11 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
   bandAlong(m, F, line, 0, line.L, H.cornice, 17.95, 0.16, GREY);
   for (let s = 0.25; s < line.L - 0.1; s += 0.48) bandAlong(m, F, line, s - 0.065, s + 0.065, 17.95, 18.22, 0.52, GREY);
   bandAlong(m, F, line, 0, line.L, 18.22, 18.38, 0.84, GREY);
+  // downpipes from the gutter, down the piers every few bays
+  for (let k = 2; k < side.n; k += 4) {
+    const [pu, pv] = line.at(line.sOf(side.c0 + side.pitch * k), 0.14);
+    m.dome(F, pu, pv, yBot, [[0.055, 0], [0.055, 18.3 - yBot]], 6, { st: GREY });
+  }
   return { line, arches: all, bayCentres };
 }
 
