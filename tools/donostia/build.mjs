@@ -16,7 +16,7 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
-import { detectWalls, detectStairs, shoreGuides, wallExclusions } from './walls.mjs';
+import { detectWalls, detectStairs, quayEdges, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
@@ -597,8 +597,8 @@ function groundClasses(grid, wet) {
 // --- 4c. Shore walls: La Concha's promenade wall, the Paseo Nuevo, the Urumea's & the port's quays ---------------------
 
 // The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
-// LiDAR; tools/donostia/beach-access.mjs adds the lines behind the stairs & ramps built in front of a wall (which the
-// search leaves out). The samples on either side of each wall line that share a triangle across it (wallSnaps, which
+// LiDAR (and along a few of the port's quays, the municipal map's edges); tools/donostia/beach-access.mjs adds the lines
+// behind the stairs & ramps built in front of a wall (which the search leaves out). The samples on either side of each wall line that share a triangle across it (wallSnaps, which
 // js/donostia/terrain.js runs again to move them onto the line) lose the smear: those in front drop to the foot of the
 // wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back up to
 // the promenade's level. Nothing further from a wall changes. Returns { walls (GEO.terrain.walls), access (the beach
@@ -620,12 +620,14 @@ function shoreWalls(dtm, grid, classes) {
     return i < 0 || j < 0 || i >= grid.w || j >= grid.h ? -1 : classes[j * grid.w + i];
   };
   const margin = 12;
-  const found = detectWalls({
+  const searched = detectWalls({
     dtm, classAt, log,
     guides: shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }),
     exclude: wallExclusions({ loadLayer, scanRings, lonLatToLocal, ext: CORE }),
     bounds: { minX: CORE.minX + margin, maxX: CORE.maxX - margin, minZ: CORE.minZ + margin, maxZ: CORE.maxZ - margin }
   });
+  // (and the port's quays where the search finds only scraps: the north basin's north quay, the old slipway's sides)
+  const found = quayEdges({ dtm, walls: searched, loadLayer, log });
   const buildingRings = ['c500_ERAIKINA.json', 'c500_EraikinArinak.json'].flatMap((f) => loadLayer(f).features.map((b) => b.g[0]));
   const access = beachAccesses({ dtm, walls: found, buildings: buildingRings, loadLayer, log });
   // (the hidden runs, where an access standing on the sand meets higher ground, step the terrain like any wall: the
@@ -705,6 +707,54 @@ function shoreStairs(dtm, walls, grid, classes, access) {
   const carved = carveTerrain(grid, access, classes, GROUND.beach, GROUND.stairs);
   log(`shore stairs: ${lowered} terrain samples kept under the steps; ${carved} under & round the beaches' stairs & ramps`);
   return stairs.map(({ plane, ...s }) => s);
+}
+
+// --- 4e. The port's dredged bed ------------------------------------------------------------------------------------------
+
+// The LiDAR has the harbour's water at 0 m and no isobath reaches inside the moles, so the sea floor's fill leaves both
+// basins and the outer harbour at the water's -0.3 m floor (they would dry out below half tide). Inside the marinas (OSM
+// ways 157022675, Kirol portua, and 565482772, Donostia) and HARBOUR (the outer harbour, inside the moles) the water's
+// floor goes down to HARBOUR_BED, below the lowest spring tides (-2.2 m): at once against a quay wall, over
+// HARBOUR_SLOPE from any other shore (the old port's slipway); never above the fill (by the mouth, between the moles'
+// heads, it is already deeper), so the bed meets the bay's floor there.
+const HARBOUR = [-300, -160, -262, -141, -200, -129, -150, -117, -124, -110, -101, -124, -62, -115, -30, -104, 40, -82, 110, -60,
+  140, -52, 165, -40, 165, -285, -300, -285];
+const HARBOUR_WAYS = [157022675, 565482772];
+const HARBOUR_BED = -3; // m
+const HARBOUR_SLOPE = 6; // m from a shore without a wall to the full depth
+function harbourBed(grid, kind, walls) {
+  const rings = [HARBOUR];
+  for (const e of loadLayer('osm_places.json').elements) {
+    if (HARBOUR_WAYS.includes(e.id) && e.geometry) rings.push(e.geometry.flatMap((p) => lonLatToLocal(p.lon, p.lat)));
+  }
+  const index = wallIndex(walls, 16, 4);
+  const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
+  // the water, and the cells below sea level in front of a quay wall (mostly land in the 1 m mask: the wall's smear)
+  const wet = (k) => kind[k] === WATER.sea || kind[k] === WATER.bed;
+  const inside = new Uint8Array(grid.w * grid.h);
+  for (const r of rings) {
+    scanRings([r], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+      const k = j * grid.w + i;
+      if (wet(k)) { inside[k] = 1; return; }
+      if (grid.data[k] > -0.05) return;
+      const q = nearestWall(walls, ...at(k), 3, index);
+      if (q && !q.end && q.d > 0) inside[k] = 1;
+    });
+  }
+  // metres to the nearest cell that is not water (the shore)
+  const toShore = chamfer(grid.w, grid.h, grid.res, (k) => !inside[k] && !wet(k) && kind[k] !== WATER.river);
+  let n = 0;
+  for (let k = 0; k < inside.length; k++) {
+    if (!inside[k]) continue;
+    // (in front of a wall within reach of the shore: the full depth up to its foot)
+    const q = nearestWall(walls, ...at(k), toShore[k] + 2, index);
+    const walled = q && !q.end && q.d > 0;
+    const f = walled ? 1 : Math.min(1, toShore[k] / HARBOUR_SLOPE);
+    const bed = grid.data[k] + (HARBOUR_BED - grid.data[k]) * f;
+    if (bed < grid.data[k] - 0.005) { grid.data[k] = bed; n++; }
+  }
+  log(`harbour: ${n} samples of the basins & the outer harbour (${((n * grid.res * grid.res) / 1e4).toFixed(2)} ha) laid at ` +
+    `${HARBOUR_BED} m or deeper`);
 }
 
 function writeTerrainPNG(grid, blue, file, text) {
@@ -1003,6 +1053,7 @@ const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
 const { walls, access } = shoreWalls(dtm, core.grid, coreClasses);
 const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access);
+harbourBed(core.grid, core.kind, walls);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),

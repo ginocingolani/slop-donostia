@@ -142,6 +142,15 @@ map.
   Left to the sand until photographs show them: two 2 m pieces in the corners between La Perla's octagons and the wall
   (around (−83, 675) and (0, 628)): no spot height at their tops and only the wall's smear in the LiDAR; 2 m deep under
   a 5 m drop, they cannot be flights to the promenade (steps up to a door in the wall's base, most likely).
+- The port (`walls.mjs` `quayEdges`, `build.mjs` `harbourBed`, `bake-ground.mjs`): the search finds the north basin's
+  north quay only in scraps and the old port slipway's sides not at all, so in two boxes the municipal map's quay edges
+  (`KAIA`) stand as walls wherever the LiDAR falls 0.8 m or more across them (the quay behind, the water or the
+  slipway's floor in front), replacing and joining the search's runs. The LiDAR has the harbour's water at 0 m and no
+  isobath reaches inside the moles, so both marinas (OSM ways 157022675 and 565482772) and the outer harbour (a ring
+  inside the moles) get a dredged bed of -3 m, below the lowest spring tides (-2.2 m): at once against a quay wall,
+  over 6 m from any other shore, never shallower than the sea floor's fill (by the mouth, between the moles' heads, it
+  is already deeper). In the port every flat unmapped cell is paved as a quay, however far from the water (the old
+  port's square and slipway), a cell beside a quay wall counting its slope on its flat side.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
   the bed above mean sea level, the port's two moles, the OSM bare rock & rocky coastline), never on paving, buildings,

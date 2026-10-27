@@ -143,6 +143,7 @@ for (const layer of LAYERS) {
 // Under every mapped layer, from the 2 m terrain bake (B channel = GEO.terrain.classes, 7 = water): sea & river beds,
 // and the quays: flat unmapped ground a few metres above the water next to it (the port, the river walls, Sagüés),
 // which the municipal map leaves blank and would otherwise come out as meadow
+const PORT = { minX: -330, maxX: 170, minZ: -270, maxZ: -20 }; // as tools/donostia/walls.mjs
 const terrainFile = fs.readFileSync(path.join(OUT, 'terrain-core.png'));
 const terrainPNG = await decodePNG(terrainFile.buffer.slice(terrainFile.byteOffset, terrainFile.byteOffset + terrainFile.byteLength));
 const TW = terrainPNG.width, TH = terrainPNG.height, TRES = 2;
@@ -166,8 +167,13 @@ const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
   }
   for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) {
     const k = j * TW + i, h = height[k];
-    if (terrainBase[k] || toWater[k] > 15 || h < 1.2 || h > 9) continue;
-    const slope = Math.max(Math.abs(height[k + 1] - height[k - 1]), Math.abs(height[k + TW] - height[k - TW])) / (2 * TRES);
+    // (in the port, all of it however far from the water and down to the foot of the old port's slipway; a cell beside
+    // a quay wall counts its slope on its flat side)
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    const port = x >= PORT.minX && x <= PORT.maxX && z >= PORT.minZ && z <= PORT.maxZ;
+    if (terrainBase[k] || (toWater[k] > 15 && !port) || h < (port ? 0 : 1.2) || h > 9) continue;
+    const across = (a, b) => (port ? Math.min(Math.abs(a - h), Math.abs(h - b)) * 2 : Math.abs(a - b));
+    const slope = Math.max(across(height[k + 1], height[k - 1]), across(height[k + TW], height[k - TW])) / (2 * TRES);
     if (slope < 0.12) terrainBase[k] = S.quay;
   }
 }
