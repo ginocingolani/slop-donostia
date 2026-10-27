@@ -655,7 +655,8 @@ function shoreWalls(dtm, grid, classes) {
       const q = nearestWall(walls, x, z, PAD, index);
       if (!q || q.end || q.d <= 0) continue;
       const w = walls[q.wall];
-      if (q.d > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
+      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little)
+      if (Math.hypot(x - q.x, z - q.z) > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
       const snapped = snaps.get(k);
       if (grid.data[k] > q.foot + 0.1 || snapped) {
         if (grid.data[k] > q.foot + 0.1) { grid.data[k] = q.foot; lowered++; }

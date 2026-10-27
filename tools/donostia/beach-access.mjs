@@ -1212,6 +1212,9 @@ export function carveTerrain(grid, { carve, flats, onBeach, walls }, classes = n
   for (const f of flats) {
     cells(f.ring, FLAT[1], (k, x, z, d) => {
       if (d <= 0.05) return;
+      // (never behind a wall: the promenade, though the municipal beach reach under it)
+      const q = nearestWall(shown, x, z, 4, index);
+      if (q && !q.end && q.d < 0) return;
       if (!(d < 2.5 && inFront(f.ring, f.back, x, z, data[k], f.top)) && !onBeach(x, z)) return;
       const prev = seen.get(k);
       if (!prev || d < prev.d) seen.set(k, { d, sand: f.sand, top: f.top });
