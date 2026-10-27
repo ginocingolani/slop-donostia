@@ -291,9 +291,13 @@ function skipPieces(ax, az, bx, bz, t0, t1, skip) {
 // them) but are never drawn, for a landmark modelled in full whose neighbours stay the city's
 export function buildFacadeCells(GEO, { hidden = new Set(), triangulate, debug = false, replace = null, phantoms = null } = {}) {
   const real = GEO.buildings.length;
-  const B = replace || phantoms
-    ? [...GEO.buildings.map((b, j) => replace?.get(j) || b), ...(phantoms || [])]
-    : GEO.buildings;
+  let B = GEO.buildings;
+  if (replace || phantoms) {
+    // (map keeps the holes of a sparse list of buildings, as js/donostia/landmarks/dabadaba.js passes)
+    B = GEO.buildings.map((b, j) => replace?.get(j) || b);
+    B.length = real;
+    (phantoms || []).forEach((p, k) => { B[real + k] = p; });
+  }
   // Walls follow simplified outlines; hidden landmarks leave no rings (and hide no neighbours' walls)
   const ringSets = B.map((b, j) => (hidden.has(j) ? null : prepareRings(b)));
   const shared = sharedEdges(ringSets);
