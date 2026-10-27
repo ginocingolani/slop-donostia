@@ -155,6 +155,7 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
   };
   const walls = [];
   const stats = new Map();
+  let dupes = 0;
   for (const guide of guides) {
     const nodes = resample(guide.pts, guide.closed);
     const hits = nodes.map((P) => {
@@ -237,6 +238,9 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       // curved run)
       const m = pts.length >> 1, p0 = pts[Math.max(0, m - 3)], p1 = pts[Math.min(pts.length - 1, m + 3)];
       if ((-(p1.z - p0.z)) * lowX + (p1.x - p0.x) * lowZ < 0) pts.reverse();
+      // (a run over a wall another run of the same shoreline found already, where the shoreline doubles back round a
+      // buttress or the head of a flight: two lines on one wall would each take some of its samples)
+      if (pts.filter((q) => claimed.has(ck(q.x, q.z)) && nearestWall(walls, q.x, q.z, 1)).length > 0.6 * pts.length) { dupes++; continue; }
       const kept = simplify(pts, 0.08);
       const p = [];
       for (const q of kept) p.push(r2(q.x), r2(q.z), r2(q.deck), r2(q.foot));
@@ -249,7 +253,8 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       stats.set(name, st);
     }
   }
-  log(`shore walls: ${[...stats].map(([k, v]) => `${k} ${v.runs} runs ${(v.length / 1000).toFixed(2)} km`).join(', ')}`);
+  log(`shore walls: ${[...stats].map(([k, v]) => `${k} ${v.runs} runs ${(v.length / 1000).toFixed(2)} km`).join(', ')}; ${dupes} ` +
+    `runs over walls found already dropped`);
   return walls;
 }
 
