@@ -77,10 +77,12 @@ const PIERS = [[-4.68, -3.30, -1.81, -0.44], [-4.92, -3.23, 4.83, 6.53], [-5.72,
   [-5.93, -4.45, 34.32, 35.9], [54.22, 56.62, -1.72, 0.15], [52.61, 55.08, 37.29, 39.16], [-9.40, -7.63, 4.70, 6.43],
   [-10.16, -8.41, 27.48, 29.27]];
 
-// The arcades' pier centres (fitted to the map's piers) along each side: c0 + pitch k
+// The arcades' pier centres (fitted to the map's piers) along each side: c0 + pitch k, its corner pier first. Each front
+// runs from a to b left to right as seen from the square, so the figures read the right way round; `num`: the numbers
+// of its first bay on the top, middle and first floors
 const NORTH = { a: [-3.38, -1.34], b: [54.23, 0.0], axis: 0, c0: -3.494, pitch: 2.8961, n: 20, num: [1, 50, 99] };
 const EAST = { a: [54.23, 0.0], b: [52.66, 37.26], axis: 1, c0: 5.565, pitch: 2.9033, n: 9, num: [21, 70, 119] };
-const SOUTH = { a: [-4.47, 35.21], b: [52.66, 37.26], axis: 0, c0: -4.729, pitch: 2.8875, n: 20, num: [-49, -98, -147] };
+const SOUTH = { a: [52.66, 37.26], b: [-4.47, 35.21], axis: 0, c0: 53.021, pitch: -2.8875, n: 20, num: [30, 79, 128] };
 // The library's front and its arches (centres 4.306 m apart, 2.39 m wide)
 const LIBRARY = { a: [-0.10, 5.66], b: [-0.94, 28.83], axis: 1, c0: 8.635, pitch: 4.306, n: 5 };
 // The recesses' fronts either side of the library, over the passages' plaza mouths
@@ -109,23 +111,24 @@ const SLABS = [[H.arcadeTop, H.F1, 0.6], [10.32, H.F2, 0.5], [13.92, H.F3, 0.5]]
 // ---------------------------------------------------------------------------------------------------------------------
 
 // Palettes [wall, dressing (frames, quoins, plaques), fill (shutters, doors, frames)], sRGB picked by eye
-export const PAL = { white: 0, sand: 1, ochre: 2, library: 3, grey: 4, plaster: 5, salmon: 6, dark: 7 };
+export const PAL = { white: 0, sand: 1, ochre: 2, library: 3, grey: 4, plaster: 5, salmon: 6, dark: 7, tile: 8 };
 const PALETTES = [
-  [0xeeebe2, 0xe3a537, 0x9a94a8], // the blocks' white render, yellow frames & plaques, lilac-grey shutters
+  [0xeeebe2, 0xdc9c24, 0x9a94a8], // the blocks' white render, yellow frames & plaques, lilac-grey shutters
   [0xc8a465, 0xd6b47a, 0x4a3b2e], // golden sandstone of the arcades, dark timber
-  [0xdea445, 0xc8a465, 0x9a94a8], // ochre render of the bays over the passages, sandstone dressings
-  [0xcdbb98, 0xd9c9a9, 0x5e6b76], // the library's pale sandstone, blue-grey window frames
+  [0xd99a35, 0xc8a465, 0x9a94a8], // ochre render of the bays over the passages, sandstone dressings
+  [0xc2ab84, 0xd1bd99, 0x5e6b76], // the library's pale sandstone, blue-grey window frames
   [0x8d8e8b, 0x777874, 0x4f5052], // grey paint: the cornices and consoles
   [0xe9e3d6, 0xddd5c4, 0x8c8478], // the arcades' white ceilings
   [0xd49b7c, 0xc8a465, 0x2a2622], // the arcades' salmon back walls over a sandstone dado, dark shop frames
-  [0x5d625e, 0x707570, 0x2d2f30] // the library's dark inscription stone
+  [0x5d625e, 0x707570, 0x2d2f30], // the library's dark inscription stone
+  [0x96553f, 0x7e4636, 0x5a3328] // Roman tile (the library's and the passages' roofs)
 ];
 // What fills an opening: glass, a French window with louvred shutters, a shop front, a door, an iron grille
 export const FILL = { glass: 0, shutters: 1, shop: 2, door: 3, grille: 4 };
 // Flags: ashlar coursing, a frame round each opening, a plinth (dark below 0.55 m; the dressing's colour below 1.1 m on
 // rendered walls), floodlit at night, a horizontal cap (set by the builder), lit by the arcades' lanterns at night,
-// voussoirs round the arches
-export const FLAG = { ashlar: 1, frame: 2, plinth: 4, flood: 8, cap: 16, glow: 32, voussoir: 64 };
+// voussoirs round the arches, courses of tiles
+export const FLAG = { ashlar: 1, frame: 2, plinth: 4, flood: 8, cap: 16, glow: 32, voussoir: 64, tiles: 128 };
 
 let facadeMaterial = null;
 let digits = null;
@@ -216,8 +219,8 @@ export function plazaFacadeMaterial() {
   const hw = fract(sin(dot(vec2(bayIdx.add(seed.mul(0.137)), storeyKey.add(seed.mul(0.71))), vec2(12.9898, 78.233))).mul(43758.5453));
   const hw2 = fract(hw.mul(17.13)), hw3 = fract(hw.mul(31.7).add(0.3));
   const shutters = isFill(FILL.shutters);
-  const leftShut = select(hw.lessThan(0.22), float(1), select(hw.lessThan(0.3), float(1), float(0)));
-  const rightShut = select(hw.lessThan(0.22), float(1), select(hw.lessThan(0.3), float(0), select(hw.lessThan(0.37), float(1), float(0))));
+  const leftShut = select(hw.lessThan(0.16), float(1), select(hw.lessThan(0.23), float(1), float(0)));
+  const rightShut = select(hw.lessThan(0.16), float(1), select(hw.lessThan(0.23), float(0), select(hw.lessThan(0.3), float(1), float(0))));
   const shutHere = select(px.lessThan(0.0), leftShut, rightShut).mul(shutters);
   // two shutter colours on the blocks: lilac-grey and, on a third of the windows, a pale blue-grey
   const shutCol = mix(fillCol, vec3(0.42, 0.5, 0.58), step(0.68, hw3).mul(step(palette, 2.5)));
@@ -281,7 +284,7 @@ export function plazaFacadeMaterial() {
   const nRaw = select(numBase.greaterThan(0.0), numBase.add(bayIdx), numBase.negate().sub(bayIdx));
   const n = max(nRaw, 0.0);
   const count = float(1).add(step(9.5, n)).add(step(99.5, n));
-  const plY0 = head.add(0.2), plH = 0.3, plHalf = 0.45;
+  const plY0 = head.add(0.2), plH = 0.3, plHalf = 0.55;
   const inPlaque = hasNum.mul(step(dx, plHalf)).mul(step(plY0, h)).mul(step(h, plY0.add(plH)));
   const pitch = 0.118;
   const tx = px.add(count.mul(pitch * 0.5));
@@ -300,6 +303,10 @@ export function plazaFacadeMaterial() {
   wall = mix(wall, vec3(0.3, 0.27, 0.22), plinthStone);
   wall = mix(wall, dressCol.mul(grain), dado);
   wall = wall.mul(float(1).sub(joints.mul(0.3)).sub(vous.mul(0.3)).sub(ringEdge.mul(0.25)).sub(frameEdge.mul(0.2)));
+  // tiles: courses every 17 cm of height, each tile its own shade
+  const tiles = bit(FLAG.tiles);
+  const tileC = lineAA(abs(fract(h.div(0.17)).sub(0.5)).mul(0.17), 0.012).mul(fine(0.01)).mul(tiles);
+  wall = wall.mul(float(1).sub(tileC.mul(0.4))).mul(float(1).add(mx_noise_float(positionWorld.mul(2.3)).mul(0.12).mul(tiles)));
   wall = mix(wall, foldFace, folded);
   wall = mix(wall, vec3(0.03, 0.03, 0.03), ink.mul(0.92));
   // what fills the opening
@@ -318,11 +325,11 @@ export function plazaFacadeMaterial() {
   // their lanterns, the library floodlit
   const glowNight = smoothstep(0.3, 0.9, cityUniforms.uInteriorGlow);
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
-  const litShare = clamp(cityUniforms.uInteriorGlow.mul(0.34), 0.0, 0.55);
-  const litRoom = select(shop.greaterThan(0.5), float(1), step(fract(hw.mul(7.31)), litShare));
+  const litShare = clamp(cityUniforms.uInteriorGlow.mul(0.24), 0.0, 0.38);
+  const litRoom = select(shop.greaterThan(0.5), step(0.3, hw3), step(fract(hw.mul(7.31)), litShare));
   const warm = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.84, 0.62), fract(hw.mul(7.7)));
   const lightThrough = pane.add(shutHere.mul(opening).mul(0.05)).add(door.mul(fanlight).mul(opening));
-  const roomGlow = warm.mul(litRoom).mul(lightThrough).mul(glowNight).mul(cityUniforms.uInteriorGlow).mul(select(shop.greaterThan(0.5), float(1.6), float(1.1)));
+  const roomGlow = warm.mul(litRoom).mul(lightThrough).mul(glowNight).mul(cityUniforms.uInteriorGlow).mul(select(shop.greaterThan(0.5), float(0.55), float(1.1)));
   const lantern = vec3(1.0, 0.8, 0.55).mul(bit(FLAG.glow)).mul(night).mul(0.16).mul(float(1).sub(opening));
   const flood = mix(wallCol, vec3(0.95, 0.8, 0.55), 0.5).mul(night).mul(0.12).mul(bit(FLAG.flood)).mul(float(1).sub(opening));
   mat.emissiveNode = roomGlow.add(wallCol.mul(lantern)).add(flood);
@@ -348,7 +355,7 @@ const PLAIN = style();
 let railMaterial = null;
 function railingMaterial() {
   if (railMaterial) return railMaterial;
-  const mat = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, roughness: 0.5, metalness: 0.0 });
+  const mat = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide, alphaToCoverage: true, roughness: 0.75, metalness: 0.0 });
   const rk = attribute('rk', 'vec4');
   const kind = rk.x;
   const coverage = Fn(() => {
@@ -359,7 +366,7 @@ function railingMaterial() {
     const cover = (dd) => float(1).sub(smoothstep(w.negate(), w, dd));
     // iron
     const bx = abs(fract(x.div(0.11)).sub(0.5)).mul(0.11);
-    const barsD = max(bx.sub(0.008), max(float(0.09).sub(y), y.sub(0.8)));
+    const barsD = max(bx.sub(0.011), max(float(0.09).sub(y), y.sub(0.8)));
     const railsD = min(min(abs(y.sub(0.065)).sub(0.022), abs(y.sub(0.815)).sub(0.014)), abs(y.sub(0.975)).sub(0.026));
     const rx = fract(x.div(0.12)).sub(0.5).mul(0.12);
     const ringD = max(abs(length(vec2(rx, y.sub(0.893))).sub(0.046)).sub(0.007), abs(y.sub(0.893)).sub(0.06));
@@ -380,11 +387,11 @@ function railingMaterial() {
     const stone = cover(balD);
     const c = select(kind.greaterThan(0.5), stone, iron);
     // far off, the bars' mean
-    const far = smoothstep(0.004, 0.02, pix);
-    const mean = select(kind.greaterThan(0.5), float(0.62), select(y.greaterThan(0.8), float(0.75), float(0.3)));
+    const far = smoothstep(0.003, 0.012, pix);
+    const mean = select(kind.greaterThan(0.5), float(1.0), select(y.greaterThan(0.8), float(0.85), float(0.55)));
     return mix(c, mean, far).mul(step(0.0, y)).mul(step(y, 1.0));
   })();
-  const ironCol = vec3(0.045, 0.05, 0.058), stoneCol = vec3(0.48, 0.53, 0.58);
+  const ironCol = vec3(0.035, 0.038, 0.044), stoneCol = vec3(0.33, 0.37, 0.41);
   mat.colorNode = vec4(select(kind.greaterThan(0.5), stoneCol, ironCol), coverage);
   mat.maskShadowNode = coverage.greaterThan(0.4);
   mat.name = 'KonstituzioRailings';
@@ -454,8 +461,8 @@ function pavingMaterial() {
   const slabId = vec2(floor(pu), prow);
   const jx = float(0.5).sub(abs(fract(pu).sub(0.5))).mul(sw), jy = float(0.5).sub(abs(fract(dv.div(sh)).sub(0.5))).mul(sh);
   const joint = float(1).sub(smoothstep(0.004, 0.012, min(jx, jy)));
-  const granite = mix(vec3(0.5, 0.49, 0.46), vec3(0.6, 0.59, 0.555), hash(slabId, 0.0));
-  const darkStone = mix(vec3(0.15, 0.155, 0.16), vec3(0.2, 0.205, 0.21), hash(slabId, 3.0));
+  const granite = mix(vec3(0.27, 0.262, 0.245), vec3(0.34, 0.33, 0.31), hash(slabId, 0.0));
+  const darkStone = mix(vec3(0.085, 0.088, 0.09), vec3(0.115, 0.118, 0.12), hash(slabId, 3.0));
   let plaza = mix(granite, darkStone, dark);
   plaza = plaza.mul(float(1).sub(joint.mul(0.28).mul(fadeJ)));
   // the arcades' slate: slabs 0.8 x 0.6 m in running bond, each its own shade
@@ -464,10 +471,10 @@ function pavingMaterial() {
   const aId = vec2(floor(au), arow);
   const ajx = float(0.5).sub(abs(fract(au).sub(0.5))).mul(0.8), ajy = float(0.5).sub(abs(fract(v.div(0.6)).sub(0.5))).mul(0.6);
   const ajoint = float(1).sub(smoothstep(0.004, 0.012, min(ajx, ajy)));
-  const slate = mix(vec3(0.075, 0.08, 0.085), vec3(0.12, 0.125, 0.13), hash(aId, 7.0)).mul(float(1).sub(ajoint.mul(0.35).mul(fadeJ)));
+  const slate = mix(vec3(0.08, 0.072, 0.064), vec3(0.12, 0.11, 0.098), hash(aId, 7.0)).mul(float(1).sub(ajoint.mul(0.35).mul(fadeJ)));
   const grain = mx_noise_float(positionWorld.mul(3.1)).mul(0.05).add(1.0);
   mat.colorNode = mix(plaza, slate, arcade).mul(grain);
-  mat.roughnessNode = mix(float(0.72), float(0.45), arcade);
+  mat.roughnessNode = mix(float(0.82), float(0.66), arcade);
   // the arcades' lanterns on the slate at night
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
   mat.emissiveNode = vec3(1.0, 0.78, 0.5).mul(arcade).mul(night).mul(0.035);
@@ -512,7 +519,7 @@ class PlazaModel extends CivicModel {
       if (Math.abs(fn[1]) > 0.85) {
         pa = pts.map((p) => [0, p[1], 1, 0]);
         pb = [0, 0, 0, 0];
-        pc = [sty.palette, 0, 0, (FLAG.cap | (sty.flags & (FLAG.flood | FLAG.glow | FLAG.ashlar))) + 256 * seed];
+        pc = [sty.palette, 0, 0, (FLAG.cap | (sty.flags & (FLAG.flood | FLAG.glow | FLAG.ashlar | FLAG.tiles))) + 256 * seed];
       } else {
         let along = sAlong;
         if (!along) {
@@ -673,18 +680,18 @@ function archedWall(m, line, s0, s1, arches, yBot, yTop, depth, st, { back = st,
   // jambs and soffits through the wall
   for (const [a, b, spring] of sorted) {
     const r = (b - a) / 2, c = a + r;
-    m.faceDir(F, [P(a, yBot, 0), P(a, yBot, -depth), P(a, spring, -depth), P(a, spring, 0)], tdir, st);
-    m.faceDir(F, [P(b, yBot, 0), P(b, yBot, -depth), P(b, spring, -depth), P(b, spring, 0)], [-tdir[0], 0, -tdir[2]], st);
+    m.faceDir(F, [P(a, yBot, 0), P(a, yBot, -depth), P(a, spring, -depth), P(a, spring, 0)], tdir, back);
+    m.faceDir(F, [P(b, yBot, 0), P(b, yBot, -depth), P(b, spring, -depth), P(b, spring, 0)], [-tdir[0], 0, -tdir[2]], back);
     for (let k = 0; k < 2 * segments; k++) {
       const a0 = Math.PI - (k * Math.PI) / (2 * segments), a1 = Math.PI - ((k + 1) * Math.PI) / (2 * segments);
       const am = (a0 + a1) / 2;
       const Q = (ang, off) => P(c + r * Math.cos(ang), spring + r * Math.sin(ang), off);
       m.faceDir(F, [Q(a0, 0), Q(a1, 0), Q(a1, -depth), Q(a0, -depth)],
-        [-Math.cos(am) * tdir[0], -Math.sin(am), -Math.cos(am) * tdir[2]], st);
+        [-Math.cos(am) * tdir[0], -Math.sin(am), -Math.cos(am) * tdir[2]], back);
     }
   }
   // the top
-  m.faceDir(F, [P(s0, yTop, 0), P(s1, yTop, 0), P(s1, yTop, -depth), P(s0, yTop, -depth)], [0, 1, 0], st);
+  m.faceDir(F, [P(s0, yTop, 0), P(s1, yTop, 0), P(s1, yTop, -depth), P(s0, yTop, -depth)], [0, 1, 0], back);
 }
 
 // The stretches of [s0, s1] outside the spans [a, b, ...] (a band broken over the great arches)
@@ -726,7 +733,7 @@ function sideArches(side, line) {
   const out = [];
   const w = 0.8;
   for (let k = 0; k < side.n; k++) {
-    out.push([line.sOf(side.c0 + side.pitch * k + w / 2), line.sOf(side.c0 + side.pitch * (k + 1) - w / 2), H.spring]);
+    out.push([line.sOf(side.c0 + side.pitch * k) + w / 2, line.sOf(side.c0 + side.pitch * (k + 1)) - w / 2, H.spring]);
   }
   return out;
 }
@@ -749,9 +756,9 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
   }
   const all = [...arches, ...big].sort((p, q) => p[0] - q[0]);
   // the front's bays on the piers, so the shader rings the regular arches with voussoirs
-  const r = (side.pitch - 0.8) / 2;
+  const P = Math.abs(side.pitch), r = (P - 0.8) / 2;
   const n0 = line.sOf(side.c0), n1 = line.sOf(side.c0 + side.pitch * side.n), numLen = n1 - n0;
-  const front = style({ bay: side.pitch, sill: -1, head: H.spring + r - 0.02, half: r - 0.02, arch: 1, palette: PAL.sand,
+  const front = style({ bay: P, sill: -1, head: H.spring + r - 0.02, half: r - 0.02, arch: 1, palette: PAL.sand,
     fill: FILL.glass, flags: FLAG.ashlar | FLAG.plinth | FLAG.voussoir | FLAG.glow });
   archedWall(m, line, 0, line.L, all, yBot, H.arcadeTop, depth, front, { back: SAND(FLAG.glow), origin: n0, len: numLen });
   // impost bands on the piers' faces and the band under the consoles
@@ -769,7 +776,7 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
     ROWS.forEach(([sill, head, half], f) => {
       const y0 = f === 0 ? H.arcadeTop : SLABS[f][0], y1 = f === 2 ? H.frieze : SLABS[f + 1][0];
       const st = numbered
-        ? style({ bay: side.pitch, sill, head, half, palette: PAL.white, flags: FLAG.frame, num: side.num[2 - f] })
+        ? style({ bay: P, sill, head, half, palette: PAL.white, flags: FLAG.frame, num: side.num[2 - f] })
         : style({ bay: b - a, sill, head, half: half * 0.95, palette: PAL.ochre, flags: FLAG.frame });
       wallAlong(m, line, a, b, y0, y1, st, numbered ? { origin: n0, len: numLen } : { origin: a, len: b - a });
     });
@@ -788,24 +795,24 @@ function buildSide(m, rails, side, { yBot, depth = 0.86, ends = [] } = {}) {
     bandAlong(m, F, line, 0, line.L, y0, y1, proj, OCHRE);
     const s0 = trimEnd(0, proj), s1 = trimEnd(line.L, proj);
     // the railings' ring posts stand between the windows, over the piers
-    rails.add(line.at(s0, proj - 0.05), line.at(s1, proj - 0.05), y1, { post: side.pitch, offset: n0, s0 });
+    rails.add(line.at(s0, proj - 0.05), line.at(s1, proj - 0.05), y1, { post: P, offset: n0, s0 });
   });
-  for (let s = 0.36; s < line.L - 0.2; s += side.pitch / 4) {
-    bandAlong(m, F, line, s - 0.08, s + 0.08, 5.62, H.arcadeTop, 0.5, GREY);
+  for (let s = 0.36; s < line.L - 0.2; s += P / 4) {
+    bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, GREY);
   }
   const bayCentres = [];
   for (let k = 0; k < side.n; k++) bayCentres.push(n0 + (k + 0.5) * (numLen / side.n));
   for (const [a, b] of pieces) bayCentres.push((a + b) / 2);
   for (const sc of bayCentres) {
     for (const f of [1, 2]) {
-      for (const dxs of [-0.95, 0.95]) bandAlong(m, F, line, sc + dxs - 0.07, sc + dxs + 0.07, SLABS[f][0] - 0.38, SLABS[f][0], 0.42, GREY);
+      for (const dxs of [-0.95, 0.95]) bandAlong(m, F, line, sc + dxs - 0.06, sc + dxs + 0.06, SLABS[f][0] - 0.3, SLABS[f][0], 0.36, GREY);
     }
   }
   // the yellow frieze, the grey cornice: fascia, modillions, corona
   bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, OCHRE);
   bandAlong(m, F, line, 0, line.L, H.cornice, 17.95, 0.16, GREY);
   for (let s = 0.25; s < line.L - 0.1; s += 0.48) bandAlong(m, F, line, s - 0.065, s + 0.065, 17.95, 18.22, 0.52, GREY);
-  bandAlong(m, F, line, 0, line.L, 18.22, 18.36, 0.64, GREY);
+  bandAlong(m, F, line, 0, line.L, 18.22, 18.38, 0.84, GREY);
   return { line, arches: all, bayCentres };
 }
 
@@ -825,11 +832,11 @@ function buildRecess(m, rails, rec, yBot) {
     bandAlong(m, F, line, 0, line.L, y0, y1, proj, OCHRE);
     rails.add(line.at(proj, proj - 0.05), line.at(line.L - proj, proj - 0.05), y1, { post: line.L / 2, offset: 0, s0: proj });
   });
-  for (let s = 0.36; s < line.L - 0.2; s += 0.72) bandAlong(m, F, line, s - 0.08, s + 0.08, 5.62, H.arcadeTop, 0.5, GREY);
+  for (let s = 0.36; s < line.L - 0.2; s += 0.72) bandAlong(m, F, line, s - 0.065, s + 0.065, 5.92, H.arcadeTop, 0.42, GREY);
   bandAlong(m, F, line, 0, line.L, H.frieze, H.cornice, 0.03, OCHRE);
   bandAlong(m, F, line, 0, line.L, H.cornice, 17.95, 0.16, GREY);
   for (let s = 0.25; s < line.L - 0.1; s += 0.48) bandAlong(m, F, line, s - 0.065, s + 0.065, 17.95, 18.22, 0.52, GREY);
-  bandAlong(m, F, line, 0, line.L, 18.22, 18.36, 0.64, GREY);
+  bandAlong(m, F, line, 0, line.L, 18.22, 18.38, 0.84, GREY);
   return { line, arches: [arch] };
 }
 
@@ -859,12 +866,13 @@ function buildWalks(m) {
     const side = sideOf[kind];
     const pts4 = [[a[0], -0.6, a[1]], [b[0], -0.6, b[1]], [b[0], H.ceiling, b[1]], [a[0], H.ceiling, a[1]]];
     if (side) {
-      const ax = side.axis, origin = side === LIBRARY ? side.c0 - side.pitch / 2 : side.c0;
-      const s = [a[ax] - origin, b[ax] - origin, b[ax] - origin, a[ax] - origin];
+      const ax = side.axis, origin = side === LIBRARY ? side.c0 - side.pitch / 2 : side.c0, sg = Math.sign(side.pitch);
+      const P = Math.abs(side.pitch);
+      const s = [(a[ax] - origin) * sg, (b[ax] - origin) * sg, (b[ax] - origin) * sg, (a[ax] - origin) * sg];
       const st = side === LIBRARY
-        ? style({ bay: side.pitch, sill: 0, head: 3.9, half: 0.85, arch: 1, palette: PAL.library, fill: FILL.door, flags: FLAG.ashlar | FLAG.frame | FLAG.glow })
-        : style({ bay: side.pitch, sill: 0.05, head: 3.55, half: 0.85, arch: 1, palette: PAL.salmon, fill: FILL.shop, flags: FLAG.plinth | FLAG.glow });
-      m.quadAlong(F, pts4, dir, st, s, side.pitch * side.n);
+        ? style({ bay: P, sill: 0, head: 3.9, half: 0.85, arch: 1, palette: PAL.library, fill: FILL.door, flags: FLAG.ashlar | FLAG.frame | FLAG.glow })
+        : style({ bay: P, sill: 0.05, head: 3.3, half: 0.78, arch: 1, palette: PAL.salmon, fill: FILL.shop, flags: FLAG.plinth | FLAG.glow });
+      m.quadAlong(F, pts4, dir, st, s, P * side.n);
     } else {
       m.faceDir(F, pts4, dir, SAND(FLAG.plinth | FLAG.glow));
     }
@@ -1021,8 +1029,8 @@ function buildLibrary(m, rails, paint, ctx, yBot) {
   bandAlong(m, F, line, sc - 6.95, sc + 6.95, LIB.cornice, LIB.attic2, -0.25, plain, 1.6);
   bandAlong(m, F, line, sc - 2.6, sc + 2.6, LIB.cornice, LIB.clockBlock, -0.15, stone, 1.8);
   // the roof behind: low hips of tile over the block
-  const roof = hipRoof(LIB_RING.slice(0, 22).map((v, k) => v), LIB.cornice + 0.05, 3.0, 5.0);
-  m.geom(ctx.kit.materials.terracotta, roof);
+  const roof = hipRoof([-0.6, 5.9, -1.3, 28.5, -23.1, 28.65, -21.6, 5.15], LIB.cornice + 0.05, 3.0, 5.0);
+  m.geom(F, roof, style({ palette: PAL.tile, flags: FLAG.tiles }));
 
   // the clock, the arms, the cannon spouts (painted parts), modelled in the front's own axes (x along it, y up, z out
   // of it towards the square) about a point on its line
@@ -1093,7 +1101,7 @@ function buildStrips(m, rails) {
       .sort((p, q) => p[0][0] + p[1][0] - q[0][0] - q[1][0]);
     for (const [a, b] of edges.slice(1, 3)) m.wall(F, a, b, 0.1, MOUTH_TOP, H.eave, OCHRE);
     void rails;
-    m.geom(m.roofMat, hipRoof(r, H.eave, 2.6, 3.0));
+    m.geom(F, hipRoof(r, H.eave, 1.7, 2.6), style({ palette: PAL.tile, flags: FLAG.tiles }));
   }
 }
 
@@ -1165,7 +1173,6 @@ export function build(sites, ctx) {
   const groundAt = (x, z) => terrain.heightAt(x, z);
   const yBot = Math.min(...[[0, 0], [54, 0], [52, 37], [-4, 35], [-3, -1]].map(([u, v]) => groundAt(...toWorld(u, v)))) - G - 0.4;
   const m = new PlazaModel({ ...FRAME, ground: G });
-  m.roofMat = kit.materials.terracotta;
   const rails = new Rails();
   const paint = new PaintBuilder();
   const cctx = { ...ctx, G };

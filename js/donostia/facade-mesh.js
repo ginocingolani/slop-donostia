@@ -242,8 +242,9 @@ function prepareRings(b) {
 
 // Pieces of the stretch [t0, t1] (metres along the wall a -> b) and the height each must start above: a building's
 // `skip` lists stretches of its outline ([ax, az, bx, bz, y]) that a landmark builds itself below y (Infinity: all of
-// it), such as Konstituzio plaza's fronts and the mouths of its passages. A wall takes a stretch when it runs along it,
-// both ends within 0.4 m of its line.
+// it), such as Konstituzio plaza's fronts and the mouths of its passages. A wall with both ends within 0.4 m of a
+// stretch's line is taken: all of it when both ends lie along the stretch (the jogs a front keeps round its piers),
+// the part beside it when it runs on past an end.
 function skipPieces(ax, az, bx, bz, t0, t1, skip) {
   const L = Math.hypot(bx - ax, bz - az);
   if (!skip || L < 1e-6) return [[t0, t1, -Infinity]];
@@ -251,11 +252,19 @@ function skipPieces(ax, az, bx, bz, t0, t1, skip) {
   const cuts = [t0, t1], spans = [];
   for (const [sx, sz, ex, ez, y] of skip) {
     const sl = Math.hypot(ex - sx, ez - sz);
-    if (sl < 1e-6 || Math.abs(((ex - sx) * uz - (ez - sz) * ux) / sl) > 0.05) continue;
+    if (sl < 1e-6) continue;
     const off = (px, pz) => Math.abs((px - sx) * (ez - sz) - (pz - sz) * (ex - sx)) / sl;
     if (off(ax, az) > 0.4 || off(bx, bz) > 0.4) continue;
-    const p = (sx - ax) * ux + (sz - az) * uz, q = (ex - ax) * ux + (ez - az) * uz;
-    const lo = Math.max(t0, Math.min(p, q)), hi = Math.min(t1, Math.max(p, q));
+    const along = (px, pz) => ((px - sx) * (ex - sx) + (pz - sz) * (ez - sz)) / sl;
+    const pa = along(ax, az), pb = along(bx, bz);
+    let lo, hi;
+    if (Math.min(pa, pb) >= 0 && Math.max(pa, pb) <= sl) {
+      lo = t0; hi = t1;
+    } else {
+      if (Math.abs(((ex - sx) * uz - (ez - sz) * ux) / sl) > 0.05) continue;
+      const p = (sx - ax) * ux + (sz - az) * uz, q = (ex - ax) * ux + (ez - az) * uz;
+      lo = Math.max(t0, Math.min(p, q)); hi = Math.min(t1, Math.max(p, q));
+    }
     if (hi - lo < 0.05) continue;
     spans.push([lo, hi, y]);
     cuts.push(lo, hi);
