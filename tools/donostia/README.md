@@ -116,7 +116,10 @@ map.
   its foot (never rising: the river bed stays) and take the ground class beyond, the smeared ones behind come back to the
   promenade level (the Paseo Nuevo's parapet hump is flattened, `js/donostia/shore.js` models the parapet). At runtime
   `js/donostia/terrain.js` moves the samples either side of a wall line onto it (`js/donostia/shore-walls.js`, shared
-  with the bake), so the ground steps vertically there, and `shore.js` faces the step with masonry and a coping.
+  with the bake), so the ground steps vertically there, and `shore.js` faces the step with masonry and a coping. A
+  sample between two walls a couple of cells apart (a quay below a raised walk, a flight's cheek and face) goes onto
+  the one with the taller step (the nearer one unless the other's is a metre taller); left off it, the triangle across
+  that wall stood as a fin square to it.
   Along the beaches' edges, which are walked first without the notches the map draws round rock ribs (an edge that
   leaves and comes back within 2.5 m over 8-40 m) and then as drawn: when the steepest fall makes no wall the next ones
   are tried; a walk 2 m wide or more with the ground behind it only rising holds a wall up at its own level; and two runs
@@ -139,7 +142,8 @@ map.
   piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
   under the slope, and `shore.js` builds them as solid steps of about 17 cm. The beaches' stairs are not among them:
   `beach-access.mjs` builds those (below). In the port (`stairWalls`) a narrow flight down a quay's face (three times
-  longer than wide) falls along it, from its far end to the lowest LiDAR across it, instead of across it to the water;
+  longer than wide; the pieces the map cuts one flight into, sharing edges, fitted as one) falls along it, from its far
+  end a riser under the quay to the lowest LiDAR across it, instead of across it to the water;
   each flight's sides get walls of their own, a cheek where the quay stands 0.8 m or more over the steps and a hidden
   wall where the flight runs on the water (the terrain steps down there; the flight's stone goes on down to the
   harbour's bed, its `base`).
@@ -190,7 +194,8 @@ map.
   over 6 m from any other shore, never shallower than the sea floor's fill (by the mouth, between the moles' heads, it
   is already deeper). In the port every flat unmapped cell is paved as a quay, however far from the water (the old
   port's square and slipway), a cell beside a quay wall counting its slope on its flat side, and so is every unmapped
-  cell of the harbour no higher than the flat quay within 6 m (the ramps the grid leaves where a wall stops short).
+  cell of the harbour no higher than the flat quay within 6 m (the ramps the grid leaves where a wall stops short) or
+  level along one of the grid's axes (a strip of quay a cell wide between a wall's foot and the water).
   Urgull's slopes over the port (`port.mjs` `urgullWoods`: above 8 m, steeper than 0.45, which the municipal woodland
   stops short of) are woodland, as the orthophoto shows, planted by `bake-streetscape.mjs`.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
