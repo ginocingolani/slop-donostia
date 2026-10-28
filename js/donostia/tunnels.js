@@ -13,7 +13,8 @@ import { TUNNELS } from './data-tunnels.js';
 // over the bore, an arched opening and, through it, the bore going in, traced from the view ray (interior mapping, as
 // La Concha's arcade in js/donostia/shore.js: its walls, vault and floor of the opening's section, the lamps along it,
 // the far portal's daylight where the bore is short enough to see through; no geometry behind the face). Over the
-// head a cornice, and on the old stone portals a parapet with a white railing.
+// head a cornice, and on the old stone portals a parapet with a white railing. Where a retaining wall runs on from the
+// face, the two meet square (js/donostia/shore-walls.js puts the terrain's samples there onto the corner).
 // - the Miramar tunnel (1890, under the palace's gardens; OSM's road and bike lane share it): cream limestone ashlar, a
 //   ring of voussoirs round its semicircular arch, its lining light between dark ribs. After Wikimedia Commons:
 //   «Miramar tunela» (Joxemai, CC BY-SA 4.0) and the engraving «El túnel del Antiguo» (La Ilustración Española y
@@ -49,7 +50,6 @@ const PARAPET = { h: 0.32, t: 0.42 }; // m: the plinth over the ground (the rail
 const CONCRETE_PARAPET = 0.9; // m: the concrete portals' parapet over the ground
 const RAIL = { h: 1.0, post: 0.05, every: 1.3 }; // m: the railing over its plinth, its posts & their spacing
 const RETURN = 0.9; // m: how far each end of a face turns back into the hill
-const PIER = 1.6; // m: a corner pier's sides, along the face and along the wall that runs on from it
 
 const lin = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
 
@@ -121,39 +121,6 @@ function faceGeometry(portals) {
       if (sg > 0) quad(base, base + 2, base + 1, base + 3);
       else quad(base, base + 1, base + 2, base + 3);
     }
-    // a pier in each corner where a retaining wall runs on from the face (the 2 m terrain cannot turn that corner: a
-    // sample in it ramps from one wall's top to the other's foot): its two faces square to the face and to the wall
-    (P.e || []).forEach((d, end) => {
-      if (!d) return;
-      const E = end ? V[V.length - 1] : V[0], N = end ? V[V.length - 2] : V[1];
-      const l = Math.hypot(N.x - E.x, N.z - E.z) || 1, tx = (N.x - E.x) / l, tz = (N.z - E.z) / l;
-      const edge = openings.reduce((m, o) => Math.min(m, Math.abs((end ? V[V.length - 1].u - (o.uc + o.half) : o.uc - o.half - V[0].u))), Infinity);
-      const pf = Math.min(PIER, edge - 0.25), pw = PIER;
-      if (pf < 0.5) return;
-      const [dx, dz] = d;
-      const A1 = [E.x + tx * pf, E.z + tz * pf], A2 = [A1[0] + dx * pw, A1[1] + dz * pw], A3 = [E.x + dx * pw, E.z + dz * pw];
-      const y0 = E.foot - BURY, y1 = E.deck;
-      const side = (a, b, away) => {
-        const sx = b[0] - a[0], sz = b[1] - a[1], sl = Math.hypot(sx, sz) || 1;
-        let nx = -sz / sl, nz = sx / sl;
-        if (nx * away[0] + nz * away[1] < 0) { nx = -nx; nz = -nz; }
-        const base = pos.length / 3;
-        vertex(a[0], y0, a[1], [nx, nz], face, 0, none);
-        vertex(a[0], y1, a[1], [nx, nz], face, 0, none);
-        vertex(b[0], y0, b[1], [nx, nz], face, sl, none);
-        vertex(b[0], y1, b[1], [nx, nz], face, sl, none);
-        // wound to face (nx, nz): on the left of a -> b, or on its right
-        if (sx * nz - sz * nx > 0) quad(base, base + 2, base + 1, base + 3); else quad(base, base + 1, base + 2, base + 3);
-      };
-      side(A1, A2, [tx, tz]);
-      side(A2, A3, [dx, dz]);
-      // its top, level with the ground behind
-      const base = pos.length / 3;
-      for (const [x, z] of [[E.x, E.z], A1, A3, A2]) vertex(x, y1, z, [0, 0], face, 0, none);
-      nrm.splice(nrm.length - 12, 12, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
-      const cross = (A1[0] - E.x) * (A3[1] - E.z) - (A1[1] - E.z) * (A3[0] - E.x);
-      if (cross < 0) quad(base, base + 1, base + 2, base + 3); else quad(base, base + 2, base + 1, base + 3);
-    });
   }
   return { pos, nrm, col, u, open, arch, bore, len, idx };
 }

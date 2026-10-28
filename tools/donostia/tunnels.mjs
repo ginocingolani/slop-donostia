@@ -313,22 +313,6 @@ export function tunnelPortals({ dtm, loadLayer, lonLatToLocal, core, walls: shor
   log(`tunnels: ${chains.length} ways in tunnels in the core, ${ends.length} ends where the ground rises over them, ` +
     `${out.length} portals (${out.reduce((s, q) => s + q.o.length, 0)} openings)`);
   const retaining = retainingWalls({ dtm, loadLayer, faces: walls, portals: out, shore, log });
-  // each face's ends that a retaining wall runs on from (js/donostia/tunnels.js stands a pier in the corner): the wall's
-  // way from there, or 0
-  out.forEach((P, i) => {
-    const f = walls[i].p, n = f.length / 4;
-    P.e = [0, n - 1].map((v) => {
-      for (const w of retaining) {
-        const m = w.p.length / 4;
-        for (const [a, b] of [[0, 1], [m - 1, m - 2]]) {
-          if (Math.hypot(w.p[4 * a] - f[4 * v], w.p[4 * a + 1] - f[4 * v + 1]) > 0.05) continue;
-          const dx = w.p[4 * b] - w.p[4 * a], dz = w.p[4 * b + 1] - w.p[4 * a + 1], l = Math.hypot(dx, dz) || 1;
-          return [r2(dx / l), r2(dz / l)];
-        }
-      }
-      return 0;
-    });
-  });
   return { portals: out, walls: [...walls, ...retaining] };
 }
 
@@ -353,6 +337,7 @@ const RUN_MIN = 2; // m
 const TWIN = 2.2; // m: two runs this close are one wall
 const BANK = 5.5; // m: the reach of a bank's foot in front of a wall
 const JOIN = 4.5; // m
+const FOOT_GRADE = 0.15; // the steepest the ground in front of a wall rises from a portal's face along it
 
 function retainingWalls({ dtm, loadLayer, faces, portals, shore, log }) {
   const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
@@ -430,9 +415,17 @@ function retainingWalls({ dtm, loadLayer, faces, portals, shore, log }) {
     }
   }
   // the runs with level ground in front first, then the longer
-  const runs = candidates.map((run) => ({ run, level: run.filter((p) => p.level).length / run.length }))
-    .filter(({ run }) => (run.length - 1) * 0.5 >= RUN_MIN)
+  const runs = candidates.map((run) => ({
+    run, level: run.filter((p) => p.level).length / run.length, step: median(run.map((p) => p.deck - p.foot))
+  })).filter(({ run }) => (run.length - 1) * 0.5 >= RUN_MIN)
     .sort((a, b) => b.level - a.level || b.run.length - a.run.length);
+  // (a wall's two faces, facing away from each other: the taller step stands, the other is its back, a freestanding
+  // wall's or the top of a bank behind it: the north wall of the Pico del Loro footway's east courtyard)
+  const facing = (p, q) => p.ox * q.ox + p.oz * q.oz;
+  for (const R of runs) {
+    R.run = R.run.filter((p) => !runs.some((S) => S !== R && S.step > R.step + 0.5 &&
+      S.run.some((q) => facing(p, q) < -0.5 && Math.hypot(p.x - q.x, p.z - q.z) < TWIN)));
+  }
   // (each run without its samples along a wall kept already, in the pieces left)
   const out = [], kept = [];
   let twins = 0;
@@ -441,9 +434,10 @@ function retainingWalls({ dtm, loadLayer, faces, portals, shore, log }) {
     let cur = [];
     const flush = () => { if ((cur.length - 1) * 0.5 >= RUN_MIN) { pieces.push(cur); kept.push(...cur); } cur = []; };
     for (const p of run) {
-      // (a wall over a bank stands only where no wall found already holds the bank's foot in front of it)
-      const twin = kept.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < TWIN ||
-        (!p.level && (q.x - p.x) * p.ox + (q.z - p.z) * p.oz > 0 && Math.hypot(p.x - q.x, p.z - q.z) < BANK));
+      // (a wall over a bank stands only where no wall found already holds the bank's foot in front of it, facing the
+      // same way: not the opposite side of a courtyard)
+      const twin = kept.some((q) => Math.hypot(p.x - q.x, p.z - q.z) < TWIN || (!p.level && facing(p, q) > 0.5 &&
+        (q.x - p.x) * p.ox + (q.z - p.z) * p.oz > 0 && Math.hypot(p.x - q.x, p.z - q.z) < BANK));
       if (twin) { twins++; flush(); } else cur.push(p);
     }
     flush();
@@ -555,6 +549,15 @@ function retainingWalls({ dtm, loadLayer, faces, portals, shore, log }) {
     const f = faces[fi], q = fv ? f.p.length - 4 : 0, k = head ? 0 : w.p.length - 4;
     const end = f.p.slice(q, q + 4);
     if (Math.hypot(end[0] - w.p[k], end[1] - w.p[k + 1]) > 0.05) w.p = head ? [...end, ...w.p] : [...w.p, ...end];
+    // (by the portal the wall's foot is the road's: in front of the cutting's walls the LiDAR has the face's smear,
+    // which the profiles took for a bank; the road climbs from the face no faster than FOOT_GRADE)
+    const n = w.p.length / 4;
+    let along = 0;
+    for (let t = 1; t < n; t++) {
+      const v = head ? t : n - 1 - t, u = head ? t - 1 : n - t;
+      along += Math.hypot(w.p[4 * v] - w.p[4 * u], w.p[4 * v + 1] - w.p[4 * u + 1]);
+      w.p[4 * v + 3] = r2(Math.min(w.p[4 * v + 3], end[3] + FOOT_GRADE * along));
+    }
     joined++;
   }
   log(`tunnels: ${out.length} retaining walls round the portals (${out.reduce((s, w) => s + w.p.length / 4, 0)} vertices; ` +
