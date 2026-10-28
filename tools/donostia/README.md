@@ -117,6 +117,22 @@ map.
   promenade level (the Paseo Nuevo's parapet hump is flattened, `js/donostia/shore.js` models the parapet). At runtime
   `js/donostia/terrain.js` moves the samples either side of a wall line onto it (`js/donostia/shore-walls.js`, shared
   with the bake), so the ground steps vertically there, and `shore.js` faces the step with masonry and a coping.
+  Along the beaches' edges, which are walked first without the notches the map draws round rock ribs (an edge that
+  leaves and comes back within 2.5 m over 8-40 m) and then as drawn: when the steepest fall makes no wall the next ones
+  are tried; a walk 2 m wide or more with the ground behind it only rising holds a wall up at its own level; and two runs
+  a few metres apart at one level, with no stairs or building between them, are one wall. That finds the sea wall under
+  the walk round the Pico del Loro (Miramar's garden bank falls faster than the wall in front of it), which the search
+  missed: the 2 m grid hung from the walk to the water there as a sawtooth curtain. In front of La Concha's & Zurriola's
+  walls the sand or water still a metre over the foot drops too out to 4.5 m (the LiDAR spreads that wall's fall over
+  3-4 m), and where the sea comes up to the wall the samples go down to its floor beyond, not the LiDAR's sea surface at
+  the foot (a ledge out of the water); `js/donostia/water.js` leaves its rocky shallows' darkening out against a wall.
+  `bake-ground.mjs` lays no sand on top of the beaches' walls: behind them, within 3 m, the municipal beach gives way to
+  the surface further inland, else the paving.
+- La Concha's arcade (`js/donostia/shore.js`, `ARCADES`): the recova under the promenade's edge from the foot of Alderdi
+  Eder's ramps to the clock rotunda's north-east ramp, round columns under segmental arches in the sea wall's face and the
+  gallery behind them at the walkway's level (4.1 m), traced in the walls' shader (no geometry of its own). The municipal
+  map leaves it out under the promenade's deck; its run and form were read off Wikimedia Commons photographs (freely
+  licensed, credited in the module) used as references only: nothing derived from their pixels is committed.
 - Shore stairs (`walls.mjs`, `GEO.terrain.stairs`): the municipal map's stairs (`ESKAILERA`) by a wall, within 3 m of
   it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
   inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
