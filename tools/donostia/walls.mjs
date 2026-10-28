@@ -138,8 +138,8 @@ function median(a) {
   return s[s.length >> 1];
 }
 
-// Running median then two box passes of a field along a run
-function smooth(v, rMed = 2, rBox = 2) {
+// Running median then two box passes of a field along a run (and tools/donostia/tunnels.mjs's retaining walls)
+export function smooth(v, rMed = 2, rBox = 2) {
   const n = v.length;
   let out = v.map((_, k) => median(v.slice(Math.max(0, k - rMed), Math.min(n, k + rMed + 1))));
   for (let pass = 0; pass < 2; pass++) {
@@ -153,7 +153,7 @@ function smooth(v, rMed = 2, rBox = 2) {
 }
 
 // Douglas-Peucker over the crest points, keeping each kept point's attributes
-function simplify(pts, tol) {
+export function simplify(pts, tol) {
   const keep = new Uint8Array(pts.length);
   keep[0] = keep[pts.length - 1] = 1;
   const stack = [[0, pts.length - 1]];
