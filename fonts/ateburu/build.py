@@ -66,6 +66,12 @@ MASTERS = [G.Master('HUD', 0.0, 600, 0.0), G.Master('Black', 1.0, 900, 0.0),
 WGHT = (600, 900)
 CURV = (0, 100)
 INSTANCES = [('SemiBold', 600), ('Bold', 700), ('ExtraBold', 800), ('Black', 900)]
+# The HUD subset (webfonts/Ateburu-HUD.woff2) is the SemiBold at this curvature (CURV 0-100). 0 keeps the HUD as it
+# has been; the app's owner picks a value (see FONTLOG), and only this number changes.
+HUD_CURV = 0
+# True bakes the dotted i (ss01) into the HUD subset as a required contextual feature (rclt), so it applies with no
+# CSS, through the HUD's letter-spacing (which turns calt off) and in the minimap's canvas text. False: as before.
+HUD_SS01 = False
 MODEL = VariationModel([{'wght': m.t, 'CURV': m.c} for m in MASTERS], axisOrder=['wght', 'CURV'])
 
 
@@ -558,11 +564,15 @@ def main():
     web.flavor = 'woff2'
     web.save(os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'))
 
-    hud = TTFont(os.path.join(OUT_STATIC, f'{FAMILY}-SemiBold.ttf'))
+    if HUD_CURV:
+        hud = build_font((0.0, HUD_CURV / CURV[1]), 600, names_for('SemiBold', 600), drawn, outl, sb, kern)
+        finish_static(hud, 'SemiBold')
+    else:
+        hud = TTFont(os.path.join(OUT_STATIC, f'{FAMILY}-SemiBold.ttf'))
     hud.recalcTimestamp = False
     options = subset.Options()
     options.flavor = 'woff2'
-    options.layout_features = ['kern']
+    options.layout_features = ['kern'] + (['ss01'] if HUD_SS01 else [])
     options.name_IDs = ['*']
     options.name_languages = ['*']
     options.notdef_outline = True
@@ -570,6 +580,10 @@ def main():
     sub = subset.Subsetter(options)
     sub.populate(unicodes=list(hud.getBestCmap().keys()))
     sub.subset(hud)
+    if HUD_SS01:
+        for rec in hud['GSUB'].table.FeatureList.FeatureRecord:
+            if rec.FeatureTag == 'ss01':
+                rec.FeatureTag, rec.Feature.FeatureParams = 'rclt', None
     hud.flavor = 'woff2'
     hud.save(os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2'))
 
