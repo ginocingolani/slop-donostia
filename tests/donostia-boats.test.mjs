@@ -16,7 +16,7 @@ test('the digitised boats and their bake agree and stay in the port', async () =
   const src = JSON.parse(fs.readFileSync(`${root}tools/donostia/data/port_boats.json`, 'utf8'));
   const { BOATS, FERRY } = await import(pathToFileURL(`${root}js/donostia/data-boats.js`).href);
   assert.match(src.source, /geoEuskadi/);
-  assert.deepEqual(BOATS.classes, ['sail', 'motor', 'open', 'txipironera', 'rib', 'passenger', 'fishing']);
+  assert.deepEqual(BOATS.classes, ['sail', 'motor', 'open', 'txipironera', 'rib', 'passenger', 'fishing', 'catamaran', 'launch']);
   const N = BOATS.boats.length / STRIDE;
   assert.ok(Number.isInteger(N) && N > 300, `${N} boats`);
   // every digitised boat is drawn once: by boats.js, or as one of the ferries
@@ -39,6 +39,18 @@ test('the digitised boats and their bake agree and stay in the port', async () =
   const hulls = new Set();
   for (let i = 0; i < N; i++) if (BOATS.boats[STRIDE * i + 5] === BOATS.classes.indexOf('txipironera')) hulls.add(BOATS.boats[STRIDE * i + 7]);
   assert.ok(hulls.size >= 8, `${hulls.size} txipironera hull paints`);
+  // the passenger boats that are no ferries: the catamaran at Kaiko pasealekua, the open launch at the Lasta landing,
+  // white; no other boat of 10 m or more has a hull in the ferries' blue
+  assert.equal(of('catamaran'), 1);
+  assert.ok(of('launch') >= 1);
+  const ferryBlue = FERRY.paint[0], blueish = (c) => (c & 0xff) > ((c >> 16) & 0xff) + 60;
+  for (let i = 0; i < N; i++) {
+    const [x, z, , length, , cls, , hull] = BOATS.boats.slice(STRIDE * i, STRIDE * (i + 1));
+    const name = BOATS.classes[cls];
+    if (name === 'catamaran') assert.ok(Math.hypot(x / 100 + 66.8, z / 100 + 182.5) < 3, `the catamaran at ${x / 100}, ${z / 100}`);
+    if (name === 'catamaran' || name === 'launch' || name === 'passenger') assert.equal(hull, 0xe2e3df, `the ${name}'s hull is white`);
+    if (length >= 1000) assert.ok(hull !== ferryBlue && !blueish(hull), `a ${length / 100} m ${name} painted like a ferry`);
+  }
 });
 
 test('the island ferries: two, at the north basin\'s ferry pier, with lanes to the island\'s landing', async () => {

@@ -745,12 +745,14 @@ const FIX = [
   [-24.03, -122.54, { x: -21.2, z: -121.9, heading: 270, length: 4.4, beam: 1.8, family: 'motor' }]
 ];
 const ADD = [
-  // passenger boats at the north quay, bows to the harbour mouth: a covered saloon; open upper decks with benches
+  // passenger boats at the north quay (the Lasta landing), bows to the harbour mouth: the island ferries, roofed (solar
+  // panels on the western one); beside the middle one an open launch, rows of benches and its orange life rafts forward
   { x: 28.36, z: -223.6, heading: 116, length: 14.0, beam: 6.2, family: 'passenger', colour: '#e8e8e5', zone: 'north' },
   { x: 12.75, z: -215.96, heading: 118, length: 14.1, beam: 5.0, family: 'passenger', colour: '#e2e2df', accent: '#3a4250', zone: 'north' },
   { x: 33.54, z: -215.33, heading: 112, length: 11.9, beam: 5.2, family: 'passenger', colour: '#e6e5e1', accent: '#8a5a48', zone: 'north' },
-  // the catamaran
-  { x: -66.74, z: -182.37, heading: 102, length: 18.4, beam: 5.9, family: 'passenger', colour: '#e8e8e6', accent: '#5a7fa8', zone: 'north' },
+  // the catamaran (Ciudad de San Sebastián, the bay tours'), its twin bows to the east: measured between its hulls' outer
+  // sides and from its stern to the bows' tips
+  { x: -66.78, z: -182.53, heading: 101, length: 18.4, beam: 6.4, family: 'passenger', colour: '#e8e8e6', accent: '#5a7fa8', zone: 'north' },
   // between the north basin's pontoons
   { x: 37.1, z: -196.0, heading: 200, length: 11.5, beam: 5.2, family: 'passenger', colour: '#e2e3e1', zone: 'north' },
   // ... the fishing boat at the fish market's quay: a dark hull, the white wheelhouse forward, nets aft

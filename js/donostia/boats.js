@@ -21,6 +21,8 @@ import { BOATS } from './data-boats.js';
 // - rib: a 5.5 m RIB, its tubes in their colour, a console and an outboard
 // - passenger: a 15 m passenger boat with a saloon and an open upper deck under a wheelhouse
 // - fishing: a 12 m inshore fishing boat with its wheelhouse (in its own paint) forward, a mast and a gantry
+// - catamaran: the 18 m bay-tours catamaran, two hulls under a saloon with an open upper deck of benches, blue stripes
+// - launch: a 12 m open passenger launch, benches in rows, orange life rafts forward
 // The island ferries are js/donostia/ferries.js's, on this module's builder & material (exported below).
 // Every mesh (class x level of detail) draws its instances from one storage buffer, a slice each (as the trees do), so
 // all of them share one shader & one pipeline per pass. Paints come per vertex (a fixed paint, or the boat's hull, deck
@@ -45,7 +47,9 @@ const SPECS = {
   txipironera: { L: 5.5, B: 2.0, k: 0.7 },
   rib: { L: 5.5, B: 2.3, k: 0.6 },
   passenger: { L: 15, B: 5.5, k: 0.5 },
-  fishing: { L: 12, B: 4.2, k: 0.7 }
+  fishing: { L: 12, B: 4.2, k: 0.7 },
+  catamaran: { L: 18.4, B: 6.4, k: 0.4 },
+  launch: { L: 12, B: 4.4, k: 0.6 }
 };
 
 // --- paints ------------------------------------------------------------------------------------------------------------
@@ -519,7 +523,116 @@ function fishingBody(lod) {
   return b.build();
 }
 
-const BODIES = { sail: sailBody, motor: motorBody, open: openBody, txipironera: txipironeraBody, rib: ribBody, passenger: passengerBody, fishing: fishingBody };
+// another builder's triangles moved across by dx (a catamaran's hulls)
+function append(b, o, dx) {
+  for (let k = 0; k < o.pos.length; k += 3) b.pos.push(o.pos[k] + dx, o.pos[k + 1], o.pos[k + 2]);
+  for (const key of ['nrm', 'paint', 'tint', 'part']) for (const v of o[key]) b[key].push(v);
+}
+
+const CAT_HULL = { L: 18.4, B: 1.9, transom: 0.86, widest: 0.5, entry: 1.15, sheer: [1.55, 1.6, 2.05], keel: 0.95,
+  section: [[0, 0], [0.42, 0.14], [0.84, 0.42], [1, 1]] };
+const CAT_B = 6.4; // the model's beam over both hulls
+const GREEN = P(0x2f7352, 0.6); // the catamaran's fenders
+const ORANGE = P(0xe0662a, 0.6); // life rafts
+
+// The catamaran (the bay tours' Ciudad de San Sebastián, after its photos): two slender hulls under a bridge deck, the
+// saloon on it with a band of windows down each side and a raked windscreen forward, the open upper deck on its roof
+// with benches in rows, rails all round and a steel arch aft; the deck between the bows in the accent, as the stripes
+function catamaranBody(lod) {
+  const b = new Builder();
+  const hx = CAT_B / 2 - CAT_HULL.B / 2;
+  let shape = null;
+  for (const s of [-1, 1]) {
+    const one = new Builder();
+    shape = addHull(one, { ...CAT_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.84, 0.42], [1, 1]] : CAT_HULL.section });
+    append(b, one, s * hx);
+  }
+  const { z } = shape, W = CAT_B / 2 - 0.08;
+  // the bridge deck between the hulls, its underside clear of the water; a blue band along its sides
+  const yd = 1.6, zb0 = z(0.01), zb1 = z(0.8);
+  b.box(0, 1.0, (zb0 + zb1) / 2, W * 2, yd - 1.0, zb1 - zb0, DECK, { bottom: true });
+  b.box(0, 1.28, (zb0 + zb1) / 2, W * 2 + 0.04, 0.1, zb1 - zb0 + 0.02, ACCENT, { top: false });
+  // the deck between the bows, in the accent
+  const zf1 = z(0.93);
+  b.quad(V(-hx + 0.6, yd, zb1), V(-hx + 0.6, yd, zf1), V(hx - 0.6, yd, zf1), V(hx - 0.6, yd, zb1), ACCENT);
+  // the saloon: white below, the band of windows, a white band under the upper deck, which overhangs the windscreen
+  const zs0 = z(0.07), zs1 = z(0.72), ws = W - 0.25;
+  b.frustum(yd, ws, zs0, zs1, yd + 0.75, ws, zs0, zs1 - 0.15, DECK, { top: false });
+  b.frustum(yd + 0.75, ws, zs0, zs1 - 0.15, yd + 1.7, ws - 0.04, zs0, zs1 - 0.95, GLASS, { top: false });
+  const yu = yd + 2.05; // the upper deck
+  b.frustum(yd + 1.7, ws - 0.04, zs0, zs1 - 0.95, yu, W, zs0 - 0.2, zs1 - 0.3, DECK);
+  if (lod) return b.build();
+  // the upper deck's rails, the arch over its after end with a light, its benches in two blocks either side of an aisle;
+  // the white posts between the saloon's windows
+  const zu0 = zs0 - 0.2, zu1 = zs1 - 0.3, yr = yu + 0.95;
+  for (const s of [-1, 1]) {
+    for (let zz = zs0 + 0.9; zz < zs1 - 1.3; zz += 1.15) b.box(s * (ws - 0.01), yd + 0.75, zz, 0.08, 0.95, 0.14, DECK, { top: false });
+    b.bar(V(s * (W - 0.05), yr, zu0), V(s * (W - 0.05), yr, zu1), 0.05, STEEL);
+    for (let zz = zu0; zz <= zu1 + 0.01; zz += (zu1 - zu0) / 6) b.bar(V(s * (W - 0.05), yu, zz), V(s * (W - 0.05), yr, zz), 0.04, STEEL);
+    b.bar(V(s * (W - 0.3), yu, z(0.16)), V(s * (W - 0.3), yu + 2.1, z(0.16)), 0.1, STEEL);
+    for (let zz = z(0.2); zz < zu1 - 1.2; zz += 0.85) {
+      const x0 = s * 0.55, x1 = s * (W - 0.35);
+      b.box((x0 + x1) / 2, yu, zz, Math.abs(x1 - x0), 0.45, 0.42, DECK);
+      b.box((x0 + x1) / 2, yu + 0.45, zz - 0.19, Math.abs(x1 - x0), 0.4, 0.06, DECK);
+    }
+  }
+  b.bar(V(-(W - 0.05), yr, zu0), V(W - 0.05, yr, zu0), 0.05, STEEL);
+  b.bar(V(-(W - 0.05), yr, zu1), V(W - 0.05, yr, zu1), 0.05, STEEL);
+  b.bar(V(-(W - 0.3), yu + 2.1, z(0.16)), V(W - 0.3, yu + 2.1, z(0.16)), 0.1, STEEL);
+  b.box(0, yu + 2.15, z(0.16), 0.14, 0.14, 0.14, LIGHT);
+  // the rails round the bows and the after deck, the green fenders forward
+  for (const s of [-1, 1]) {
+    const xo = s * (hx + 0.8), xi = s * (hx - 0.6);
+    b.bar(V(xo, yd + 0.9, zs1), V(s * hx, shape.sheer(0.98) + 0.85, z(0.97)), 0.04, STEEL);
+    b.bar(V(xi, yd + 0.9, zs1), V(s * hx, shape.sheer(0.98) + 0.85, z(0.97)), 0.04, STEEL);
+    b.bar(V(s * W, yd + 0.9, zb0 + 0.1), V(s * W, yd + 0.9, zs0), 0.04, STEEL);
+    b.box(s * (CAT_B / 2 + 0.15), 0.9, z(0.86), 0.4, 0.45, 0.4, GREEN);
+  }
+  b.bar(V(-W, yd + 0.9, zb0 + 0.1), V(W, yd + 0.9, zb0 + 0.1), 0.04, STEEL);
+  return b.build();
+}
+
+const LAUNCH_HULL = { L: 12, B: 4.4, transom: 0.9, widest: 0.45, entry: 1.7, sheer: [1.0, 1.0, 1.35], keel: 0.7,
+  section: [[0, 0], [0.6, 0.15], [0.92, 0.4], [1, 1]] };
+
+// An open passenger launch (the Lasta landing's, after the orthophoto): an open hull, white inside, benches across it in
+// two blocks either side of an aisle, the orange life rafts forward of them, a short deck at the bow, rails on stanchions
+function launchBody(lod) {
+  const b = new Builder();
+  const shape = addHull(b, { ...LAUNCH_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.92, 0.4], [1, 1]] : LAUNCH_HULL.section },
+    { open: !lod, floor: 0.35, wall: 0.08, gunwale: HULL });
+  if (lod) {
+    for (const s of [-1, 1]) b.box(s * 0.9, shape.sheer(0.7) - 0.1, shape.z(0.73), 0.8, 0.4, 1.2, ORANGE);
+    return b.build();
+  }
+  bowDeck(b, shape, 0.84, 0.02);
+  for (let t = 0.07; t < 0.64; t += 0.06) {
+    for (const s of [-1, 1]) {
+      const x0 = s * 0.35, x1 = s * (shape.halfBeam(t) - 0.2), zc = shape.z(t);
+      b.box((x0 + x1) / 2, 0.35, zc, Math.abs(x1 - x0), 0.45, 0.4, DECK);
+      b.box((x0 + x1) / 2, 0.8, zc - 0.18, Math.abs(x1 - x0), 0.4, 0.05, DECK);
+    }
+  }
+  // the life rafts in their canisters, the helm's console beside them, a mast with its light
+  for (const [x, t] of [[-0.9, 0.7], [0.9, 0.7], [-0.6, 0.77], [0.6, 0.77]]) b.box(x, 0.35, shape.z(t), 0.7, 0.55, 0.75, ORANGE);
+  b.box(0, 0.35, shape.z(0.68), 0.7, 0.85, 0.5, DECK);
+  b.bar(V(0, shape.sheer(0.8), shape.z(0.8)), V(0, shape.sheer(0.8) + 2.0, shape.z(0.8)), 0.06, STEEL);
+  b.box(0, shape.sheer(0.8) + 2.0, shape.z(0.8), 0.12, 0.12, 0.12, LIGHT);
+  for (const s of [-1, 1]) {
+    for (let k = 0; k <= 6; k++) {
+      const t = 0.04 + (0.8 * k) / 6, x = s * (shape.halfBeam(t) - 0.04);
+      b.bar(V(x, shape.sheer(t), shape.z(t)), V(x, shape.sheer(t) + 0.75, shape.z(t)), 0.035, STEEL);
+    }
+    b.bar(V(s * (shape.halfBeam(0.04) - 0.04), shape.sheer(0.04) + 0.75, shape.z(0.04)),
+      V(s * (shape.halfBeam(0.84) - 0.04), shape.sheer(0.84) + 0.75, shape.z(0.84)), 0.04, STEEL);
+  }
+  return b.build();
+}
+
+const BODIES = {
+  sail: sailBody, motor: motorBody, open: openBody, txipironera: txipironeraBody, rib: ribBody, passenger: passengerBody,
+  fishing: fishingBody, catamaran: catamaranBody, launch: launchBody
+};
 
 // --- material ------------------------------------------------------------------------------------------------------------
 
@@ -610,7 +723,7 @@ export const srgb = (v) => {
 };
 const STRIDE = 10; // integers per boat in BOATS.boats
 // the sheer stripe's depth per class (m): a txipironera's gunwale stripe, a passenger boat's band, a cove line
-const STRIPES = { txipironera: 0.12, passenger: 0.25, sail: 0.05, fishing: 0.0 };
+const STRIPES = { txipironera: 0.12, passenger: 0.25, sail: 0.05, fishing: 0.0, catamaran: 0.1, launch: 0.05 };
 
 /**
  * The port's boats. seaLevel: the water's level uniform (js/donostia/water.js userData.seaLevel), so the hulls ride the

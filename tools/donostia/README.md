@@ -242,8 +242,12 @@ map.
   fish squid from, painted (Commons photographs of the port, `raw/refs/boats/`, looked at only) a deep or bright blue,
   red, orange, green or black under a white gunwale stripe, or white under a coloured one, a cabin seen from above
   making a small wheelhouse; the paints & options (consoles, canopies, wheelhouses, outboards) are picked per boat from
-  a hash of its position, the photographed colours where they tell. `BOATS_DEBUG=x,z node
-  tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+  a hash of its position, the photographed colours where they tell. The passenger boats other than the two ferries
+  stay white and unlike them: the one of 16 m or more is the catamaran, the bay tours' Ciudad de San Sebastián at Kaiko
+  pasealekua (two hulls under a saloon with an open upper deck of benches, blue stripes; after its photos on the
+  tourism office's listing, `raw/refs/boats/catamaran/`, looked at only); those at the Lasta landing beside the ferries
+  are open launches, rows of benches and orange life rafts forward, as the orthophoto shows them. `BOATS_DEBUG=x,z
+  node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
 - The island ferries (`bake-boats.mjs`, `js/donostia/ferries.js`, `js/donostia/ferry-timeline.js`): the two passenger
   boats moored at OSM's ferry pier in the north basin are the Motoras de la Isla, blue, modelled after Commons
   photographs of Aitona Julian III. OSM's `route=ferry` "Donostia - Santa Clara" (`queries/ferry.overpassql`) gives

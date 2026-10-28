@@ -13,10 +13,11 @@
 //   above, its family, says which boats have a mast, a cabin or tubes): the rows of small boats, wherever the boats
 //   within 9 m are mostly under 5.4 m long (the inner basin's west half, its east side, the north basin's south row),
 //   are the local txipironeras, the small wooden boats the port's people fish squid from (a cabin seen from above: a
-//   small wheelhouse); the big white motor boats, sailboats & dinghies of the marina keep theirs; the passenger boats
-//   moored alongside OSM's ferry pier are the two island ferries.
+//   small wheelhouse); the big white motor boats, sailboats & dinghies of the marina keep theirs. Of the passenger
+//   boats, the two moored alongside OSM's ferry pier are the island ferries, the one of 16 m or more the catamaran (the
+//   bay tours' Ciudad de San Sebastián at Kaiko pasealekua), the others at the Lasta landing open launches with benches.
 // - Paints, per boat a hull, a deck & an accent colour: hulls a gelcoat white unless the photo shows them painted
-//   (painted open & motor boats; a third of the motor launches under 7 m dark blue, red, green or black), decks as
+//   (painted open & motor boats; a third of the motor boats under 7 m dark blue, red, green or black), decks as
 //   photographed (an open boat's: its inside), the accent (a sailboat's sail cover, a motor boat's canopy, a RIB's
 //   tubes) as photographed or the usual navy & canvas. The txipironeras & the fishing boats are painted as the port's
 //   are (Commons photos, raw/refs/boats): a hull in one of their paints and a gunwale stripe in a contrasting one, a
@@ -47,7 +48,7 @@ const OUT = path.join(ROOT, 'js/donostia/data-boats.js');
 const PREVIEW = previewDir();
 const SRC = JSON.parse(fs.readFileSync(path.join(DATA, 'port_boats.json'), 'utf8'));
 // the classes boats.js draws (ferries apart: js/donostia/ferries.js)
-const CLASSES = ['sail', 'motor', 'open', 'txipironera', 'rib', 'passenger', 'fishing'];
+const CLASSES = ['sail', 'motor', 'open', 'txipironera', 'rib', 'passenger', 'fishing', 'catamaran', 'launch'];
 const BLUR = 0.15; // m
 const CLEAR = 0.12; // m kept between a hull and a pontoon or quay
 const MAX_SLIDE = 1.5; // m
@@ -260,11 +261,20 @@ const pierNear = (x, z) => {
 const ferries = boats.filter((b) => b.family === 'passenger' && pierNear(b.x, b.z).d < 12).sort((a, b) => a.x - b.x);
 if (ferries.length !== 2) log(`WARNING: ${ferries.length} island ferries at the ferry pier (2 expected)`);
 ferries.splice(2);
+// The other passenger boats: the catamaran, 16 m or more (the Catamarán Ciudad de San Sebastián, the bay tours' boat
+// at Kaiko pasealekua: its twin hulls plain on the orthophoto); the open launches with rows of benches, moored at the
+// Lasta landing beside the ferries (within 30 m of OSM's ferry station); the rest stay passenger boats with a saloon
+const STATION = loadLayer('osm_places.json').elements.find((e) => e.tags?.amenity === 'ferry_terminal' && e.tags?.public_transport === 'station');
+if (!STATION) throw new Error('the ferry station (amenity=ferry_terminal, public_transport=station) is missing from the OSM snapshot');
+const [stationX, stationZ] = lonLatToLocal(STATION.lon, STATION.lat);
+const CATAMARAN_MIN = 16, LANDING_R = 30; // m
 
 function classify(b) {
   if (ferries.includes(b)) return 'ferry';
   if (b.family === 'txalupa') return 'txipironera';
   if ((b.family === 'open' || b.family === 'motor') && b.rowLength <= ROW_SMALL && b.length <= TXIPI_MAX) return 'txipironera';
+  if (b.family === 'passenger' && b.length >= CATAMARAN_MIN) return 'catamaran';
+  if (b.family === 'passenger' && Math.hypot(b.x - stationX, b.z - stationZ) < LANDING_R) return 'launch';
   return b.family; // sail, motor, open, rib, passenger, fishing
 }
 for (const b of boats) b.cls = classify(b);
@@ -296,9 +306,13 @@ const TXIPI_HULLS = [[28, 47, 92], [31, 86, 168], [64, 150, 206], [178, 38, 42],
 const TXIPI_STRIPES = [[178, 38, 42], [31, 86, 168], [30, 88, 58], [28, 47, 92]];
 const TXIPI_INSIDES = [[224, 222, 212], [224, 222, 212], [198, 202, 202], [172, 202, 216], [180, 208, 186], [162, 208, 202]];
 const FISHING_HULLS = [[27, 29, 32], [36, 82, 160], [178, 34, 36]];
-// the small launches' hulls (a third of the motor boats under 7 m), as the photos show them among the white ones
-const LAUNCH_HULLS = [[28, 47, 92], [150, 32, 36], [30, 80, 55], [31, 86, 168], [24, 26, 30]];
+// the small motor boats' hulls (a third of those under 7 m), as the photos show them among the white ones
+const SMALL_MOTOR_HULLS = [[28, 47, 92], [150, 32, 36], [30, 80, 55], [31, 86, 168], [24, 26, 30]];
 const FERRY_PAINT = [[31, 108, 196], WHITE, WHITE];
+// the catamaran white, its sheer & deck stripes and the deck between its bows a deep blue (its photos, raw/refs/boats/
+// catamaran, and the orthophoto); the open launches white with a navy cove line, white inside
+const CATAMARAN_PAINT = [WHITE, WHITE, [28, 70, 156]];
+const LAUNCH_PAINT = [WHITE, [218, 218, 212], NAVY];
 const pick = (list, t) => list[Math.min(list.length - 1, Math.floor(t * list.length))];
 // [hull, deck, accent]; a hull the photo shows painted all over (its tone well away from grey) keeps that paint; an
 // open boat's deck is its inside, the whole boat's tone
@@ -321,13 +335,15 @@ function paints(b) {
       return [hull, [200, 201, 197], hull === FISHING_HULLS[0] ? [214, 110, 40] : WHITE]; // (the accent: the wheelhouse)
     }
     case 'ferry': return FERRY_PAINT;
+    case 'catamaran': return CATAMARAN_PAINT;
+    case 'launch': return LAUNCH_PAINT;
     case 'rib': return [WHITE, deck, acc ? unveil(acc) : TUBE_GREY]; // the tubes
     case 'sail': return [WHITE, deck, acc && chroma(acc) > 40 ? acc : NAVY]; // the sail cover
     case 'open': return [painted || WHITE, deck, acc || NAVY]; // (the accent: the console's & seats' covers)
     case 'passenger': return [WHITE, deck, acc || NAVY];
     default: { // motor: the canopy
-      const launch = b.length < 7 && hashAt(b, 11) < 0.35 ? pick(LAUNCH_HULLS, hashAt(b, 12)) : null;
-      return [painted || launch || WHITE, deck, acc || CANVAS];
+      const small = b.length < 7 && hashAt(b, 11) < 0.35 ? pick(SMALL_MOTOR_HULLS, hashAt(b, 12)) : null;
+      return [painted || small || WHITE, deck, acc || CANVAS];
     }
   }
 }
