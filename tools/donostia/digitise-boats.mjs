@@ -729,7 +729,9 @@ const DROP = [
   ['RIB', [-3, -162.6, 0.5, -162.6, 0.5, -159.4, -3, -159.4]],
   // the inshore fishing boat moored along the fish market's quay in the north basin (its wheelhouse, deck gear & dark
   // hull read as five small boats)
-  ['fishing boat', [43.8, -208, 51.8, -208, 51.8, -195.8, 43.8, -195.8]]
+  ['fishing boat', [43.8, -208, 51.8, -208, 51.8, -195.8, 43.8, -195.8]],
+  // a motor boat under way down the north basin's fairway, its wake behind it: nothing moored there
+  ['under way', [-44, -187, -36, -187, -36, -180, -44, -180]]
 ];
 const FIX = [
   [5.21, -174.12, { family: 'sail' }], // a sailboat on the north basin's T pontoon (its stern is cut square)

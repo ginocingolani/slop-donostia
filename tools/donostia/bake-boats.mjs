@@ -9,25 +9,44 @@
 //   one slides off it by the least distance (up to 1.5 m), or is trimmed a little; hulls that overlap each other are
 //   eased apart.
 // - The photo's blur widens every hull by about a pixel each side: lengths & beams lose 15 cm.
-// - Paints, per boat a hull, a deck & an accent colour: hulls a gelcoat white unless the photo shows them painted (the
-//   txalupas, painted open & motor boats), decks as photographed (an open boat's: its inside), the accent (a sailboat's
-//   sail cover, a motor boat's canopy, a RIB's tubes, a txalupa's sheer stripe) as photographed or the usual navy &
-//   canvas. The photo's colours come lifted out of its haze.
+// - Classes, the model & paints each boat gets, from where it lies and how big it is (the shape the digitiser read from
+//   above, its family, says which boats have a mast, a cabin or tubes): the rows of small boats, wherever the boats
+//   within 9 m are mostly under 5.4 m long (the inner basin's west half, its east side, the north basin's south row),
+//   are the local txipironeras, the small wooden boats the port's people fish squid from (a cabin seen from above: a
+//   small wheelhouse); the big white motor boats, sailboats & dinghies of the marina keep theirs; the passenger boats
+//   moored alongside OSM's ferry pier are the two island ferries.
+// - Paints, per boat a hull, a deck & an accent colour: hulls a gelcoat white unless the photo shows them painted
+//   (painted open & motor boats), decks as photographed (an open boat's: its inside), the accent (a sailboat's sail
+//   cover, a motor boat's canopy, a RIB's tubes) as photographed or the usual navy & canvas. The txipironeras & the
+//   fishing boats are painted as the port's are (Commons photos, raw/refs/boats): a hull in one of their paints (the
+//   photo's where it shows one) and a gunwale stripe in a contrasting one, picked per boat from a hash of its position.
+//   The photo's colours come lifted out of its haze.
+// - Options, per boat: an open boat's console & outboard, a motor boat's canopy (where the photo shows its colour), a
+//   txipironera's wheelhouse or outboard.
+// - The island ferries (the Motoras de la Isla: osm_ferry.json's route=ferry "Donostia - Santa Clara"): their berths in
+//   the north basin, the island's landing (where the route ends, the bow just off the jetty the terrain has), and per
+//   ferry a lane each way: out of the berth astern to where it can turn, then OSM's route, smoothed, kept to starboard
+//   of it in the bay (the ferries pass port to port) and to it in the harbour and at the island, with a speed limit
+//   per point (harbour, bay); bent round any moored boat it would brush, and checked clear of the quays, pontoons,
+//   moored boats and land.
 // Deterministic: no randomness, a fixed order.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HERE, DATA, loadLayer, lonLatToLocal, pointInRing, scanRings, encodePNG, previewDir, licenceComment, log } from './lib.mjs';
+import { decodePNG } from '../../js/donostia/png.js';
 
 const ROOT = path.resolve(HERE, '../..');
 // the pontoons' decks as bake-marina.mjs (run before this bake) builds them: the walkways on OSM's centre lines at the
 // widths measured on the orthophoto, which the outlines below only approximate
 const { MARINA } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/data-marina.js')).href);
+const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
 const OUT = path.join(ROOT, 'js/donostia/data-boats.js');
 const PREVIEW = previewDir();
 const SRC = JSON.parse(fs.readFileSync(path.join(DATA, 'port_boats.json'), 'utf8'));
-const FAMILIES = ['sail', 'motor', 'open', 'txalupa', 'rib', 'passenger', 'fishing'];
+// the classes boats.js draws (ferries apart: js/donostia/ferries.js)
+const CLASSES = ['sail', 'motor', 'open', 'txipironera', 'rib', 'passenger', 'fishing'];
 const BLUR = 0.15; // m
 const CLEAR = 0.12; // m kept between a hull and a pontoon or quay
 const MAX_SLIDE = 1.5; // m
@@ -124,10 +143,10 @@ const blocked = (x, z) => {
 // A hull's outline from above (local: u across, v along, bow at +v), as fractions of its beam & length
 const OUTLINE = [[0, 0.5], [0.22, 0.42], [0.42, 0.25], [0.5, 0.05], [0.48, -0.3], [0.45, -0.5],
   [-0.45, -0.5], [-0.48, -0.3], [-0.5, 0.05], [-0.42, 0.25], [-0.22, 0.42]];
-function outline(b, dx = 0, dz = 0) {
+function outline(b, dx = 0, dz = 0, shape = OUTLINE) {
   const h = (b.heading * Math.PI) / 180, fx = Math.sin(h), fz = Math.cos(h);
   // across: (cos h, -sin h)
-  return OUTLINE.map(([u, v]) => [b.x + dx + fx * v * b.length + fz * u * b.beam, b.z + dz + fz * v * b.length - fx * u * b.beam]);
+  return shape.map(([u, v]) => [b.x + dx + fx * v * b.length + fz * u * b.beam, b.z + dz + fz * v * b.length - fx * u * b.beam]);
 }
 const hits = (b, dx = 0, dz = 0) => {
   const pts = outline(b, dx, dz);
@@ -201,7 +220,55 @@ for (let pass = 0; pass < 6; pass++) {
   if (!any) break;
 }
 
-// --- paints --------------------------------------------------------------------------------------------------------------
+// --- classes ------------------------------------------------------------------------------------------------------------
+
+// a hash in [0, 1) of a boat's position and a salt: it picks paints & options per boat, and a boat keeps them however
+// many others come or go in the data
+const hashAt = (b, k) => {
+  let h = Math.imul((Math.round(b.x * 100) * 73856093) ^ (Math.round(b.z * 100) * 19349663) ^ (k * 83492791), 0x9e3779b1) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+};
+
+// The rows of small boats: where the boats within ROW_R (itself included) are mostly (the median) under ROW_SMALL long.
+// Their open & motor boats up to TXIPI_MAX are txipironeras.
+const ROW_R = 9, ROW_SMALL = 5.4, TXIPI_MAX = 7.5; // m
+for (const b of boats) {
+  const near = boats.filter((o) => Math.hypot(o.x - b.x, o.z - b.z) <= ROW_R).map((o) => o.length).sort((p, q) => p - q);
+  b.rowLength = near[near.length >> 1];
+}
+
+// The island ferries: the passenger boats moored alongside OSM's ferry pier (within 12 m of it), west to east
+const FERRY_PIER = loadLayer('osm_places.json').elements.find((e) => e.tags?.man_made === 'pier' && e.tags?.ferry === 'yes' && e.geometry);
+if (!FERRY_PIER) throw new Error('the ferry pier (man_made=pier, ferry=yes) is missing from the OSM snapshot');
+const pierLine = FERRY_PIER.geometry.map((p) => lonLatToLocal(p.lon, p.lat));
+const pierNear = (x, z) => {
+  let best = { d: Infinity };
+  for (let k = 0; k + 1 < pierLine.length; k++) {
+    const [ax, az] = pierLine[k], [bx, bz] = pierLine[k + 1];
+    const d = segDist(x, z, ax, az, bx, bz);
+    if (d < best.d) {
+      const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+      best = { d, x: ax + dx * t, z: az + dz * t };
+    }
+  }
+  return best;
+};
+const ferries = boats.filter((b) => b.family === 'passenger' && pierNear(b.x, b.z).d < 12).sort((a, b) => a.x - b.x);
+if (ferries.length !== 2) log(`WARNING: ${ferries.length} island ferries at the ferry pier (2 expected)`);
+ferries.splice(2);
+
+function classify(b) {
+  if (ferries.includes(b)) return 'ferry';
+  if (b.family === 'txalupa') return 'txipironera';
+  if ((b.family === 'open' || b.family === 'motor') && b.rowLength <= ROW_SMALL && b.length <= TXIPI_MAX) return 'txipironera';
+  return b.family; // sail, motor, open, rib, passenger, fishing
+}
+for (const b of boats) b.cls = classify(b);
+
+// --- paints & options ----------------------------------------------------------------------------------------------------
 
 const rgb = (hex) => [1, 3, 5].map((o) => parseInt(hex.slice(o, o + 2), 16));
 const hex = (c) => c.reduce((v, x) => v * 256 + Math.max(0, Math.min(255, Math.round(x))), 0);
@@ -220,50 +287,293 @@ const unveil = (c) => {
   const m = (c[0] + c[1] + c[2]) / 3;
   return c.map((v) => Math.max(0, Math.min(232, (m + (v - m) * 1.6) * 0.92)));
 };
+// The port's small boats & fishing boats as the photos show them (raw/refs/boats): the txipironeras' hulls deep or bright
+// blue, red, orange, green or black under a white gunwale stripe, or white under a coloured one, white inside; the
+// fishing boats' hulls black, blue or red, their wheelhouses white or (on a black hull) orange. The island ferries are the
+// Motoras de la Isla's blue, white above.
+const TXIPI_HULLS = [[28, 47, 92], [31, 86, 168], [64, 150, 206], [178, 38, 42], [222, 84, 44], [30, 88, 58], [36, 132, 112], [27, 29, 32]];
+const TXIPI_STRIPES = [[178, 38, 42], [31, 86, 168], [30, 88, 58], [28, 47, 92]];
+const TXIPI_INSIDE = [224, 222, 212];
+const FISHING_HULLS = [[27, 29, 32], [36, 82, 160], [178, 34, 36]];
+const FERRY_PAINT = [[31, 108, 196], WHITE, WHITE];
+const pick = (list, t) => list[Math.min(list.length - 1, Math.floor(t * list.length))];
 // [hull, deck, accent]; a hull the photo shows painted all over (its tone well away from grey) keeps that paint; an
 // open boat's deck is its inside, the whole boat's tone
 function paints(b) {
   const acc = b.accent ? rgb(b.accent) : null, tone = rgb(b.tone || b.colour);
   const deck = b.family === 'open' || b.family === 'txalupa' ? lift(b.tone || b.colour) : lift(b.colour);
   const painted = chroma(tone) > 40 ? tone.map((v) => Math.min(232, v * 1.1)) : null;
-  switch (b.family) {
-    case 'txalupa': return [unveil(acc || tone), deck, WHITE]; // painted hull, a white sheer stripe
+  switch (b.cls) {
+    case 'txipironera': {
+      // the ones the photo shows painted all over keep their paint; the rest (seen from above: the white gunwale & the
+      // inside) one of the port's, a third of them white
+      const inside = chroma(deck) > 35 ? deck : TXIPI_INSIDE;
+      if (b.family === 'txalupa') return [unveil(acc || tone), inside, WHITE];
+      if (hashAt(b, 6) < 0.3) return [WHITE, inside, pick(TXIPI_STRIPES, hashAt(b, 7))];
+      const hull = pick(TXIPI_HULLS, hashAt(b, 8));
+      return [hull, inside, hashAt(b, 9) < 0.8 ? WHITE : pick(TXIPI_STRIPES.filter((s) => s !== hull), hashAt(b, 7))];
+    }
+    case 'fishing': {
+      const hull = acc && Math.max(...acc) < 60 ? FISHING_HULLS[0] : pick(FISHING_HULLS, hashAt(b, 8));
+      return [hull, [200, 201, 197], hull === FISHING_HULLS[0] ? [214, 110, 40] : WHITE]; // (the accent: the wheelhouse)
+    }
+    case 'ferry': return FERRY_PAINT;
     case 'rib': return [WHITE, deck, acc ? unveil(acc) : TUBE_GREY]; // the tubes
     case 'sail': return [WHITE, deck, acc && chroma(acc) > 40 ? acc : NAVY]; // the sail cover
     case 'open': return [painted || WHITE, deck, acc || NAVY]; // (the accent: the console's & seats' covers)
     case 'passenger': return [WHITE, deck, acc || NAVY];
-    case 'fishing': return [acc || [40, 70, 120], WHITE, [190, 40, 35]];
     default: return [painted || WHITE, deck, acc || CANVAS]; // motor: the canopy
   }
 }
+// Options, bits: 1 the class's optional fitting (an open boat's console, a motor boat's canopy where the photo shows its
+// colour, a txipironera's wheelhouse where a cabin shows from above), 2 an outboard (open boats, txipironeras without one)
+function options(b) {
+  switch (b.cls) {
+    case 'open': return (hashAt(b, 2) >= 0.55 ? 1 : 0) | (hashAt(b, 5) < 0.85 ? 2 : 0);
+    case 'motor': return b.accent || hashAt(b, 3) >= 0.75 ? 1 : 0;
+    case 'txipironera': return b.family === 'motor' ? 1 : hashAt(b, 5) < 0.35 ? 2 : 0;
+    default: return 0;
+  }
+}
+
+// --- the island ferries' lanes ---------------------------------------------------------------------------------------------
+
+// The terrain (the 2 m core grid of build.mjs, as bake-marina.mjs reads it, between its cells' centres as the ground is
+// drawn): land beyond the port's grid above, where it stands 0.2 m out of the sea
+const heightAt = await (async () => {
+  const { x0, z0, w, h, res, url } = GEO.terrain.core;
+  const file = fs.readFileSync(path.join(ROOT, url));
+  const img = await decodePNG(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
+  const at = (i, j) => {
+    const k = Math.max(0, Math.min(h - 1, j)) * w + Math.max(0, Math.min(w - 1, i));
+    return ((img.data[3 * k] << 8) | img.data[3 * k + 1]) / 100 - GEO.terrain.heightOffset;
+  };
+  return (x, z) => {
+    const fx = (x - x0) / res - 0.5, fz = (z - z0) / res - 0.5, i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
+    return (at(i, j) * (1 - tx) + at(i + 1, j) * tx) * (1 - tz) + (at(i, j + 1) * (1 - tx) + at(i + 1, j + 1) * tx) * tz;
+  };
+})();
+const inGrid = (x, z) => x >= G.x0 && z >= G.z0 && x < G.x0 + G.w * G.res && z < G.z0 + G.h * G.res;
+const solid = (x, z) => blocked(x, z) || (!inGrid(x, z) && heightAt(x, z) > 0.2);
+// a ferry's outline from above: a blunt bow, as the Motoras' (the photo's ferries, and their photos)
+const FERRY_OUTLINE = [[0.3, 0.5], [0.45, 0.42], [0.5, 0.25], [0.5, -0.5], [-0.5, -0.5], [-0.5, 0.25], [-0.45, 0.42], [-0.3, 0.5]];
+// what the ferry f at (x, z, heading) with m metres to spare touches: 'built' (quays, pontoons, land), a moored boat, or
+// nothing (the other ferry is away whenever this one moves)
+function ferryHits(f, x, z, heading, m) {
+  const pts = outline({ x, z, heading, length: f.length + 2 * m, beam: f.beam + 2 * m }, 0, 0, FERRY_OUTLINE);
+  for (let k = 0; k < pts.length; k++) {
+    const [ax, az] = pts[k], [bx, bz] = pts[(k + 1) % pts.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+    for (let q = 0; q < n; q++) if (solid(ax + ((bx - ax) * q) / n, az + ((bz - az) * q) / n)) return 'built';
+  }
+  if (solid(x, z)) return 'built';
+  for (const o of boats) {
+    if (o.cls === 'ferry' || Math.hypot(o.x - x, o.z - z) > (o.length + f.length) / 2 + m + 1) continue;
+    if (SAT(pts, outline(o)) > 0) return o;
+  }
+  return null;
+}
+const unit = (h) => [Math.sin((h * Math.PI) / 180), Math.cos((h * Math.PI) / 180)];
+const headingOf = (dx, dz) => ((Math.atan2(dx, dz) * 180) / Math.PI + 360) % 360;
+// signed turn from heading a to b, the short way (degrees)
+const turnTo = (a, b) => ((b - a + 540) % 360) - 180;
+
+// OSM's route (way 28161360, "Donostia - Santa Clara"): from the ferry pier in the north basin, out through the old port
+// & the harbour mouth, across the bay and round the island jetty's head to its landing
+const ROUTE = loadLayer('osm_ferry.json').elements.find((e) => e.tags?.route === 'ferry' && /Santa Clara/.test(e.tags?.name || '') && e.geometry);
+if (!ROUTE || !ferries.length) throw new Error('the island ferry route (route=ferry, Donostia - Santa Clara) or its ferries are missing');
+const route = ROUTE.geometry.map((p) => lonLatToLocal(p.lon, p.lat));
+const ISLAND_END = route[route.length - 1];
+const HARBOUR = MARINA.harbour.ring;
+const inHarbour = (x, z) => pointInRing(x, z, HARBOUR);
+const SPEED = { harbour: 2.0, bay: 5.0 }; // m/s
+const OFFSET = 9; // m to starboard of OSM's line in the bay, either way (the harbour & the island's approach: on it)
+const STEP = 4; // m between a lane's points
+
+// the island's landing for a ferry: its bow on the route's end, heading as the route's last 10 m, then back along its
+// axis till its outline clears the jetty by 0.1 m
+function islandLanding(f) {
+  let k = route.length - 2;
+  while (k > 0 && Math.hypot(route[k][0] - ISLAND_END[0], route[k][1] - ISLAND_END[1]) < 10) k--;
+  const heading = headingOf(ISLAND_END[0] - route[k][0], ISLAND_END[1] - route[k][1]), [ux, uz] = unit(heading);
+  for (let d = f.length / 2; d < f.length / 2 + 15; d += 0.1) {
+    const x = ISLAND_END[0] - ux * d, z = ISLAND_END[1] - uz * d;
+    if (!ferryHits(f, x, z, heading, 0.1)) return { x, z, heading };
+  }
+  throw new Error('no clear landing at the island jetty');
+}
+// Astern from a berth to the nearest point (12 m back or more, as little as may be off the berth's line towards `away`,
+// a unit [x, z]) where the ferry turns clear to `toward` ([x, z] of where it heads next): the way back clear at the
+// berth's heading, and every heading of the turn (the short way, else the long one)
+function asternTurn(f, berth, toward, away = [0, 0]) {
+  const [ux, uz] = unit(berth.heading);
+  for (let d = 12; d <= 45; d += 1) {
+    for (let e = 0; e <= 12; e += 2) {
+      const x = berth.x - ux * d + away[0] * e, z = berth.z - uz * d + away[1] * e;
+      let clear = true;
+      for (let q = 1, n = Math.ceil(Math.hypot(d, e)); q <= n && clear; q++) {
+        if (ferryHits(f, berth.x + ((x - berth.x) * q) / n, berth.z + ((z - berth.z) * q) / n, berth.heading, 0)) clear = false;
+      }
+      if (!clear) continue;
+      const short = turnTo(berth.heading, headingOf(toward[0] - x, toward[1] - z));
+      for (const turn of [short, short - Math.sign(short) * 360]) {
+        let ok = true;
+        for (let q = 1; q <= 24 && ok; q++) if (ferryHits(f, x, z, berth.heading + (turn * q) / 24, 0.5)) ok = false;
+        if (ok) return { x, z, turn };
+      }
+    }
+  }
+  throw new Error(`no room to turn astern of the berth at ${berth.x.toFixed(1)}, ${berth.z.toFixed(1)}`);
+}
+// Chaikin's corner cutting (the ends kept), then points STEP apart
+function smooth(pts, rounds = 4) {
+  let p = pts;
+  for (let r = 0; r < rounds; r++) {
+    const q = [p[0]];
+    for (let k = 0; k + 1 < p.length; k++) {
+      const [ax, az] = p[k], [bx, bz] = p[k + 1];
+      if (k > 0) q.push([0.75 * ax + 0.25 * bx, 0.75 * az + 0.25 * bz]);
+      if (k + 2 < p.length) q.push([0.25 * ax + 0.75 * bx, 0.25 * az + 0.75 * bz]);
+    }
+    q.push(p[p.length - 1]);
+    p = q;
+  }
+  const out = [p[0]];
+  let carry = 0;
+  for (let k = 0; k + 1 < p.length; k++) {
+    const [ax, az] = p[k], [bx, bz] = p[k + 1], l = Math.hypot(bx - ax, bz - az);
+    let s = STEP - carry;
+    for (; s < l; s += STEP) out.push([ax + ((bx - ax) * s) / l, az + ((bz - az) * s) / l]);
+    carry = l - (s - STEP);
+  }
+  const last = p[p.length - 1], end = out[out.length - 1];
+  if (Math.hypot(last[0] - end[0], last[1] - end[1]) > STEP * 0.4) out.push(last);
+  else out[out.length - 1] = last;
+  return out;
+}
+// A lane: the points kept to starboard by OFFSET out in the bay (eased in over 100 m from the harbour mouth and the
+// island's landing), smoothed; each with its speed limit
+function lane(pts, island) {
+  const mouth = MARINA.harbour.mouth;
+  const ramp = (d) => Math.min(1, Math.max(0, (d - 30) / 100)) ** 2 * (3 - 2 * Math.min(1, Math.max(0, (d - 30) / 100)));
+  const shifted = pts.map(([x, z], k) => {
+    if (k === 0 || k === pts.length - 1 || inHarbour(x, z)) return [x, z];
+    const [px, pz] = pts[k - 1], [nx, nz] = pts[k + 1], l = Math.hypot(nx - px, nz - pz) || 1;
+    const w = OFFSET * ramp(Math.hypot(x - mouth[0], z - mouth[1])) * ramp(Math.hypot(x - island.x, z - island.z));
+    return [x - ((nz - pz) / l) * w, z + ((nx - px) / l) * w]; // starboard of (dx, dz): (-dz, dx)
+  });
+  return smooth(shifted).map(([x, z]) => [x, z, inHarbour(x, z) ? SPEED.harbour : SPEED.bay]);
+}
+// Where the ferry f on a lane would brush a moored boat (OSM draws the fairway, not round what moors beside it) the lane
+// bends away from the boat: each such point's least sideways shift that clears it by 0.6 m, eased out over 30 m either
+// way (the ends stay put)
+function keepClear(f, pts) {
+  const normal = (k) => {
+    const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return { h: headingOf(b[0] - a[0], b[1] - a[1]), nx: -(b[1] - a[1]) / l, nz: (b[0] - a[0]) / l };
+  };
+  const R = Math.round(30 / STEP), n = pts.length;
+  for (let round = 0; round < 4; round++) {
+    const push = new Float64Array(n);
+    let any = false;
+    for (let k = 2; k < n - 2; k++) {
+      const [x, z] = pts[k], { h, nx, nz } = normal(k), hit = ferryHits(f, x, z, h, 0.3);
+      if (!hit || hit === 'built') continue;
+      const side = Math.sign((x - hit.x) * nx + (z - hit.z) * nz) || 1;
+      for (let d = 0.25; d <= 6; d += 0.25) {
+        if (!ferryHits(f, x + nx * side * d, z + nz * side * d, h, 0.6)) { push[k] = side * d; any = true; break; }
+      }
+    }
+    if (!any) break;
+    pts = pts.map(([x, z, v], k) => {
+      let best = 0;
+      for (let j = Math.max(0, k - R); j <= Math.min(n - 1, k + R); j++) {
+        const t = 1 - Math.abs(k - j) / R, p = push[j] * t * t * (3 - 2 * t);
+        if (Math.abs(p) > Math.abs(best)) best = p;
+      }
+      best *= Math.min(1, k / 5, (n - 1 - k) / 5);
+      const { nx, nz } = normal(k);
+      return [x + nx * best, z + nz * best, v];
+    });
+  }
+  return pts;
+}
+// the route's points from the first one 45 m clear of every ferry's berth (the ferries' own approaches replace the rest)
+const routeFrom = route.findIndex(([x, z]) => ferries.every((f) => Math.hypot(x - f.x, z - f.z) > 45));
+const FERRIES_OUT = ferries.map((f) => {
+  const berth = { x: f.x, z: f.z, heading: f.heading };
+  const island = islandLanding(f);
+  // out: astern off the berth, turn towards the route, the route to 20 m short of the landing, the last 18 m straight in
+  const [iux, iuz] = unit(island.heading);
+  const shared = route.slice(routeFrom).filter(([x, z]) => Math.hypot(x - island.x, z - island.z) > 20);
+  const p = pierNear(f.x, f.z), port = asternTurn(f, berth, shared[0], [(f.x - p.x) / p.d, (f.z - p.z) / p.d]);
+  const out = keepClear(f, lane([[port.x, port.z], ...shared, [island.x - iux * 18, island.z - iuz * 18], [island.x, island.z]], island));
+  // back: astern off the landing, turn towards the route reversed from its first point 25 m off, the route, the last 40 m
+  // along the berth's line
+  const rev = route.slice(routeFrom).reverse(), from = rev.findIndex(([x, z]) => Math.hypot(x - island.x, z - island.z) > 30);
+  const isl = asternTurn(f, island, rev[from]);
+  const [bux, buz] = unit(berth.heading);
+  const back = keepClear(f, lane([[isl.x, isl.z], ...rev.slice(from), [berth.x - bux * 40, berth.z - buz * 40], [berth.x, berth.z]], island));
+  // every point of both lanes clear (by 0.3 m; coming alongside, the last 8 m, by what the berth itself has), at the
+  // heading the ferry has there
+  let worst = 0;
+  for (const pts of [out, back]) {
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)];
+      const hit = ferryHits(f, pts[k][0], pts[k][1], headingOf(b[0] - a[0], b[1] - a[1]), k >= pts.length - 3 ? 0 : 0.3);
+      if (hit) { worst++; if (worst <= 6) log(`ferry lane at ${pts[k][0].toFixed(1)}, ${pts[k][1].toFixed(1)} touches ${hit === 'built' ? 'a quay, pontoon or land' : `the ${hit.cls} at ${hit.x.toFixed(1)}, ${hit.z.toFixed(1)}`}`); }
+    }
+  }
+  if (worst) throw new Error(`${worst} points of the ferry's lanes are not clear`);
+  return { f, berth, island, turns: [port.turn, isl.turn], out, back };
+});
 
 // --- output ------------------------------------------------------------------------------------------------------------
 
 const cm = (v) => Math.round(v * 100);
+const deg10 = (h) => Math.round((((h % 360) + 360) % 360) * 10) % 3600;
 const flat = [];
-const count = Object.fromEntries(FAMILIES.map((f) => [f, 0]));
+const count = Object.fromEntries([...CLASSES, 'ferry'].map((c) => [c, 0]));
 for (const b of boats) {
+  count[b.cls]++;
+  if (b.cls === 'ferry') continue;
   const [hull, deck, accent] = paints(b);
-  flat.push(cm(b.x), cm(b.z), Math.round(b.heading * 10) % 3600, cm(b.length), cm(b.beam), FAMILIES.indexOf(b.family),
+  flat.push(cm(b.x), cm(b.z), deg10(b.heading), cm(b.length), cm(b.beam), CLASSES.indexOf(b.cls), options(b),
     hex(hull), hex(deck), hex(accent));
-  count[b.family]++;
 }
 const DATA_OUT = {
-  families: FAMILIES,
-  // per boat 9 integers: x, z (cm), heading (tenths of a degree from +z towards +x, of the bow), length, beam (cm),
-  // family (index), hull, deck & accent colours (sRGB 0xRRGGBB)
+  classes: CLASSES,
+  // per boat 10 integers: x, z (cm), heading (tenths of a degree from +z towards +x, of the bow), length, beam (cm),
+  // class (index), options (bits: 1 the class's optional fitting, 2 an outboard), hull, deck & accent colours (sRGB
+  // 0xRRGGBB)
   boats: flat
+};
+const FERRY_DATA = {
+  // hull, deck & accent colours (sRGB 0xRRGGBB)
+  paint: FERRY_PAINT.map(hex),
+  // per ferry: its berth [x, z (cm), heading (tenths of a degree), length, beam (cm)]; the island's landing [x, z,
+  // heading]; the turns it makes astern of each [berth, landing] (tenths of a degree, signed); its lanes out & back,
+  // points STEP m apart from the turn astern to the landing / the berth: [x, z (cm), speed limit (cm/s)] each
+  ferries: FERRIES_OUT.map(({ f, berth, island, turns, out, back }) => ({
+    berth: [cm(berth.x), cm(berth.z), deg10(berth.heading), cm(f.length), cm(f.beam)],
+    island: [cm(island.x), cm(island.z), deg10(island.heading)],
+    turns: turns.map((t) => Math.round(t * 10)),
+    out: out.flatMap(([x, z, v]) => [cm(x), cm(z), cm(v)]),
+    back: back.flatMap(([x, z, v]) => [cm(x), cm(z), cm(v)])
+  }))
 };
 const js = '// js/donostia/data-boats.js — generated by tools/donostia/bake-boats.mjs; do not edit.\n' +
   '// Boats digitised on the 2025 orthophoto: Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi (free use with the credit) · ' +
   'pontoons & quays: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (CC BY-SA 3.0) · ' +
-  '© OpenStreetMap contributors (ODbL)\n' +
+  'the ferry route & pier: © OpenStreetMap contributors (ODbL)\n' +
   licenceComment('c500', 'osm') +
   `//   Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi (Ortofoto 2025): free use with the credit\n` +
-  `export const BOATS = ${JSON.stringify(DATA_OUT)};\n`;
+  `export const BOATS = ${JSON.stringify(DATA_OUT)};\n` +
+  `export const FERRY = ${JSON.stringify(FERRY_DATA)};\n`;
 fs.writeFileSync(OUT, js);
 log(`${path.relative(ROOT, OUT)}: ${boats.length} boats ${JSON.stringify(count)}, ${(js.length / 1e3).toFixed(1)} kB; ` +
-  `${slid} slid & ${trimmed} trimmed off the pontoons (${stuck} stuck), ${eased} pairs eased apart, ${narrowed} narrowed`);
+  `${slid} slid & ${trimmed} trimmed off the pontoons (${stuck} stuck), ${eased} pairs eased apart, ${narrowed} narrowed; ` +
+  `ferry lanes ${FERRIES_OUT.map(({ out, back }) => `${((out.length - 1) * STEP).toFixed(0)} & ${((back.length - 1) * STEP).toFixed(0)} m`).join(', ')}`);
 
 // --preview <dir>: the hulls over the pontoons & quays, from above (8 px/m)
 if (PREVIEW) {
@@ -290,5 +600,22 @@ if (PREVIEW) {
       }
     }
   }
+  // the ferries' lanes: out in yellow, back in magenta
+  const dot = (img, wi, hi, i, j, c) => {
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii >= 0 && jj >= 0 && ii < wi && jj < hi) img.set(c, (jj * wi + ii) * 3);
+    }
+  };
+  const lanes = (img, wi, hi, ox, oz, s) => FERRIES_OUT.forEach(({ out, back }) => [[out, [250, 220, 0]], [back, [240, 0, 200]]].forEach(([pts, c]) =>
+    pts.forEach(([x, z]) => dot(img, wi, hi, Math.floor((x - ox) * s), Math.floor((z - oz) * s), c))));
+  lanes(px, w, h, x0, z0, 8);
   fs.writeFileSync(path.join(PREVIEW, 'boats.png'), encodePNG(px, w, h, 3));
+  // ... and over the bay to the island (1 px/m): land & what is built in grey
+  const fx0 = -960, fz0 = -260, fw = 1040, fh = 440, fpx = new Uint8Array(fw * fh * 3).fill(20);
+  for (let j = 0; j < fh; j++) {
+    for (let i = 0; i < fw; i++) if (solid(fx0 + i + 0.5, fz0 + j + 0.5)) fpx.set([150, 130, 110], (j * fw + i) * 3);
+  }
+  lanes(fpx, fw, fh, fx0, fz0, 1);
+  fs.writeFileSync(path.join(PREVIEW, 'ferry.png'), encodePNG(fpx, fw, fh, 3));
 }

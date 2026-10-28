@@ -30,7 +30,7 @@ The steps it runs, in order:
 | `bake-alderdi.mjs` | the gardens' municipal layers (parterres, beds, hedges...), OSM | `js/donostia/data-alderdi.js` |
 | `bake-seamarks.mjs` | OSM's seamarks (`osm_seamarks.json`), checked against NGA Pub. 113 (in the script) | `js/donostia/data-seamarks.js` (the aids to navigation) |
 | `digitise-boats.mjs` (with `jpeg.mjs`; only with `raw/ortho`) | the 2025 orthophoto over the port, OSM marinas & piers, the municipal quays & pontoons, the terrain | `tools/donostia/data/port_boats.json` (committed) |
-| `bake-boats.mjs` | `port_boats.json`, the municipal quays & pontoons, OSM piers | `js/donostia/data-boats.js` |
+| `bake-boats.mjs` | `port_boats.json`, the municipal quays & pontoons, OSM piers & the ferry route (`osm_ferry.json`), the marina (`data-marina.js`), the terrain | `js/donostia/data-boats.js` (the boats, their classes & paints; the island ferries' berths & lanes) |
 | `bake-tifo.mjs` (with `jpeg.mjs`) | the tifo's design (`js/donostia/landmarks/tifo-design.js`); the portrait's photo (`raw/refs/tifo/`, kept as committed without it) | `data/donostia/tifo-banner.png`, `tifo-portrait.png` |
 
 `build.mjs --preview <dir>`, `bake-ground.mjs --preview <dir>`, `bake-streetscape.mjs --preview <dir>`,
@@ -60,7 +60,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats; the roofs, dormers and chimneys of the Miramar palace and Maskor Gain, the Miramar tower's place); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
-| Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags) | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
+| Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags), the island ferry's route | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | The lights' characters, elevations, ranges and structures, San Sebastián (nos. 1788-1800): [NGA Pub. 113, List of Lights, Radio Aids and Fog Signals](https://msi.nga.mil/Publications/NGALOL) (2019 edition, corrected to Notice to Mariners 26/2019), the check on OSM's seamarks (`bake-seamarks.mjs`) | U.S. National Geospatial-Intelligence Agency | U.S. Government work, no copyright claimed (public domain) |
 | Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
@@ -89,7 +89,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-seamarks.js` | OSM, checked against NGA Pub. 113 | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
-| `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them; the ferry's route & pier), the terrain | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
 | `js/donostia/landmarks/konstituzio-plaza.js` (the square's plan: the arcades' outline, piers and passages, the library's block) | municipal map | CC BY-SA 3.0 |
 | `js/donostia/landmarks/miramar.js` (the palace's plan, wings, bays, turret and light-courts; the gate arch's wing; the roofs and the tower's place, read off the orthophoto) | municipal map, OSM, orthophoto 2025 | CC BY-SA 3.0 + ODbL 1.0, geoEuskadi credit |
@@ -189,7 +189,7 @@ map.
   past the mouth: the harbour's green water, no surf or swash, its colour never the turquoise of a sandy shallow) and
   sheltered (rising to 1 within 70 m: the waves down to 28 % of the open sea's, so reflections sharpen). The open sea is
   unchanged.
-- The port's boats (`digitise-boats.mjs`): the 389 boats moored in the inner basin, the north basin and the old port on
+- The port's boats (`digitise-boats.mjs`): the 384 boats moored in the inner basin, the north basin and the old port on
   the 2025 orthophoto (`raw/ortho/ortho2025-port_x-350_z-300.jpg`, decoded by `jpeg.mjs`, a stdlib baseline JPEG
   decoder, so the pixels are the same on every machine). The bright, neutral or painted pixels on the basins' water,
   off everything built, make blobs; a row of boats moored side by side is one blob, cut across its axis at the seams
@@ -197,11 +197,30 @@ map.
   the seams' sharpest, the blob's own, the edge it is moored to and its neighbours'. Each piece's tightest box gives the
   centre, heading, length & beam, its narrower end the bow, its outline (a long teardrop, widest well aft: a sailboat)
   and colours the family. What the automatic pass gets wrong (the passenger boats & the catamaran, cut across; the
-  old port's few boats; pale quay edges taken for hulls; a dozen others) is dropped, corrected or added by hand in the
-  script, checked tile by tile against the orthophoto. `bake-boats.mjs` takes 15 cm off every length & beam (the photo's
-  blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
-  is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
-  colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+  fishing boat by the fish market, read as five small ones; a boat under way in the fairway; the old port's few boats;
+  pale quay edges taken for hulls; a dozen others) is dropped, corrected or added by hand in the script, checked tile by
+  tile against the orthophoto. `bake-boats.mjs` takes 15 cm off every length & beam (the photo's blur), slides the hulls
+  clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina is built), eases
+  overlapping hulls apart and gives each boat its class: the port has two parts, the marina's white motor boats,
+  sailboats & dinghies, and the rows of small boats (the boats within 9 m mostly under 5.4 m: the inner basin's west
+  half & east side, the north basin's south row), which are the txipironeras, the small wooden boats the port's people
+  fish squid from, painted (Commons photographs of the port, `raw/refs/boats/`, looked at only) a deep or bright blue,
+  red, orange, green or black under a white gunwale stripe, or white under a coloured one, a cabin seen from above
+  making a small wheelhouse; the paints & options (consoles, canopies, wheelhouses, outboards) are picked per boat from
+  a hash of its position, the photographed colours where they tell. `BOATS_DEBUG=x,z node
+  tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+- The island ferries (`bake-boats.mjs`, `js/donostia/ferries.js`, `js/donostia/ferry-timeline.js`): the two passenger
+  boats moored at OSM's ferry pier in the north basin are the Motoras de la Isla, blue, modelled after Commons
+  photographs of Aitona Julian III. OSM's `route=ferry` "Donostia - Santa Clara" (`queries/ferry.overpassql`) gives
+  their way out through the old port and the harbour mouth, across the bay and round the jetty's head to Santa Klara's
+  landing; per ferry the bake lays a lane each way: astern off its berth to the nearest point it can turn clear, the
+  route smoothed (Chaikin), kept 9 m to starboard of it in the open bay so the two pass port to port, bent round any
+  moored boat it would brush, the last stretch straight along the quay or onto the jetty; every point checked clear of
+  the quays, pontoons, moored boats and land (the terrain) and given a speed limit (2 m/s in the harbour, 5 m/s in the
+  bay). The runtime eases them along those lanes (slower through the bends, accelerating & stopping gently), with
+  pauses at each end, one at the island while the other is in port, from 10:00 to 20:00 (the summer timetable,
+  motorasdelaisla.com) by the time of day the lighting shows (`presets.js`'s `clock`: under way at midday, moored at
+  the other three).
 - Miramar jauregia (`js/donostia/landmarks/miramar.js`) is built on the municipal outline in the palace's own frame:
   walls take each edge's height and finish from where it lies (the garden front's canted bays one storey high, the
   loggia, the gallery, the service wing), roofs are rectangles of the plan with jettied half-timbered gables, hips or

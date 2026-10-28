@@ -46,7 +46,7 @@ else
   echo "digitise-boats.mjs skipped: no orthophoto (tools/donostia/raw/ortho; run with --fetch to get it). Keeping the" \
     "committed tools/donostia/data/port_boats.json." >&2
 fi
-$NODE "$HERE/bake-boats.mjs"         # js/donostia/data-boats.js (the boats moored in the port)
+$NODE "$HERE/bake-boats.mjs"         # js/donostia/data-boats.js (the boats moored in the port, the island ferries' lanes)
 # the tifo's banner on Anoeta's south stand: its frame, and Aitor Zabaleta's portrait when the raw cache has its source
 $NODE "$HERE/bake-tifo.mjs"          # data/donostia/tifo-banner.png, tifo-portrait.png
 echo "Donostia data rebuilt"
