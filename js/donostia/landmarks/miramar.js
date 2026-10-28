@@ -64,7 +64,7 @@ const KIND = { brick: 0, loggia: 1, ashlar: 2, blank: 3, tower: 4 };
 
 const BRICK = new THREE.Color(0xb35a3d), DRESSING = new THREE.Color(0xc8b28a);
 const STONE = rgb(0xc8b28a), OAK = rgb(0x3b2519), RENDER = rgb(0xebe5d7), WHITE = rgb(0xf0ede4), LEAD = rgb(0x8f8d88);
-const DARK = rgb(0x1a1612), IRON = rgb(0x2a2a2a);
+const DARK = rgb(0x1a1612), IRON = rgb(0x2a2a2a), SHUTTER = rgb(0x553624), PANE = rgb(0x2c2f33);
 const NO_WINDOWS = { facade: [0, 99, 0, KIND.blank] };
 
 // Wall tops and finishes by where an edge of the outline lies in the frame: [u0, u1, v0, v1, top, kind]; the first box
@@ -180,8 +180,8 @@ function createBrickMaterial() {
     .add(smoothstep(0.2, 0.6, fwidth(louvreY)).mul(0.86));
   const oak = vec3(...OAK);
   const stone = vec3(DRESSING.r, DRESSING.g, DRESSING.b).mul(float(0.95).add(mx_noise_float(positionWorld.mul(1.3)).mul(0.05)));
-  const glass = vec3(0.03, 0.04, 0.05);
-  const pane = mix(mix(glass, stone, bars), oak.mul(1.5).mul(louvre), shut);
+  const glass = vec3(0.05, 0.065, 0.08);
+  const pane = mix(mix(glass, stone, bars), vec3(...SHUTTER).mul(louvre), shut);
   const windowCol = mix(pane, oak, frame);
 
   // stone: the ground floor (a darker plinth), all of an ashlar wall, quoins, string courses at each floor & sills
@@ -209,10 +209,11 @@ function createBrickMaterial() {
   mat.roughnessNode = mix(float(0.86), float(0.15), glassy);
   mat.metalnessNode = mix(float(0.0), float(0.3), glassy);
 
-  // lit rooms at dusk & night: a per-window draw against the preset's interior glow
-  const lit = step(fract(h.mul(7.31)), clamp(cityUniforms.uInteriorGlow.mul(0.36), 0.0, 0.7)).mul(glassy);
+  // lit rooms at dusk & night: a per-window draw against the preset's interior glow (none by day)
+  const night = smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
+  const lit = step(fract(h.mul(7.31)), night.mul(0.55)).mul(glassy);
   const warm = select(h.lessThan(0.55), vec3(1.0, 0.82, 0.6), vec3(1.0, 0.7, 0.4));
-  mat.emissiveNode = warm.mul(lit).mul(cityUniforms.uInteriorGlow).mul(1.5);
+  mat.emissiveNode = warm.mul(lit).mul(night).mul(1.9);
   return mat;
 }
 
@@ -223,7 +224,7 @@ function createTileMaterial() {
   const fw = fwidth(yc).max(0.001);
   const course = smoothstep(fw, float(0).sub(fw), fract(yc).sub(0.12)).mul(smoothstep(0.5, 0.2, fw));
   const tone = mx_noise_float(positionWorld.mul(vec3(2.2, 3.3, 2.2))).mul(0.07).add(mx_noise_float(positionWorld.mul(0.2)).mul(0.06)).add(1.0);
-  mat.colorNode = vec3(0.2, 0.1, 0.078).mul(tone).mul(float(1).sub(course.mul(0.3)));
+  mat.colorNode = vec3(0.15, 0.075, 0.056).mul(tone).mul(float(1).sub(course.mul(0.3)));
   return mat;
 }
 
@@ -636,8 +637,9 @@ function roofOver(spec, out) {
 }
 
 // A jettied, half-timbered gable on a roof's end (s: -1 at the ridge's start, +1 at its end), its face half a metre out
-// over the wall below: white render between dark oak, a band of windows over the sill beam, a wheel either side of the
-// king post above, a collar near the apex; barge boards and a finial at the roof's verge; a tiled hood over the jetty
+// over the wall below, dark oak on white render as the photographs show it: over the sill beam a band of brown louvred
+// windows between posts; over the next beam a two-light window between two wheels (a cross in a ring); over the collar
+// close studding up to the verges; broad barge boards and a finial at the roof's verge; a tiled hood over the jetty
 function timberGable(r, s, out) {
   const { map, matrix, zc, hw, eave, top, tanp } = r;
   const a = s > 0 ? r.a1 : r.a0, xE = s > 0 ? r.xE1 : r.xE0;
@@ -645,49 +647,52 @@ function timberGable(r, s, out) {
   const half = (y) => Math.max(0, hw - (y - eave) / tanp - 0.04); // the gable's half-width at height y, under the roof
   const apex = top - 0.08;
   out.render.add([[x, y0, zc - half(y0)], [x, y0, zc + half(y0)], [x, apex, zc]].map(map), map([s, 0, 0]));
-  const oak = (geo) => out.put(M.paint, geo.applyMatrix4(matrix), OAK);
+  const paint = (geo, col) => out.put(M.paint, geo.applyMatrix4(matrix), col);
+  const oak = (geo) => paint(geo, OAK);
   const xf = x + s * 0.045; // the timbers' face, proud of the render
   const beam = (y, h) => oak(new THREE.BoxGeometry(0.09, h, 2 * half(y + h)).translate(xf, y + h / 2, zc));
   const post = (z, ya, yb, w = 0.16) => oak(new THREE.BoxGeometry(0.09, yb - ya, w).translate(xf, (ya + yb) / 2, z));
-  beam(y0, 0.22);
-  // the band of windows over the sill
-  const w0 = y0 + 0.22, w1 = y0 + 1.72;
-  for (const dz of [-1.55, 0, 1.55]) {
-    if (Math.abs(dz) + 0.62 > half(w1)) continue;
-    out.put(M.paint, new THREE.BoxGeometry(0.05, 1.25, 1.02).applyMatrix4(new THREE.Matrix4().makeTranslation(x + s * 0.02, (w0 + w1) / 2, zc + dz)).applyMatrix4(matrix), rgb(0x2c2f33));
-    for (const e of [-0.6, 0.6]) post(zc + dz + e, w0, w1);
-  }
+  const panel = (z, ya, yb, w, col) => paint(new THREE.BoxGeometry(0.05, yb - ya, w).translate(x + s * 0.025, (ya + yb) / 2, z), col);
+  beam(y0, 0.24);
+  // the band of louvred windows over the sill, posts between them and at its ends
+  const w0 = y0 + 0.24, w1 = y0 + 1.6;
+  const n = Math.max(1, Math.floor((2 * half(w1) - 0.3) / 1.25));
+  const step = (2 * half(w1) - 0.3) / n;
+  for (let k = 0; k <= n; k++) post(zc - half(w1) + 0.15 + k * step, w0, w1, 0.18);
+  for (let k = 0; k < n; k++) panel(zc - half(w1) + 0.15 + (k + 0.5) * step, w0 + 0.12, w1 - 0.1, step - 0.3, SHUTTER);
   beam(w1, 0.2);
-  // the triangle: the king post, a wheel each side, a collar
-  const yk = w1 + 0.2;
-  post(zc, yk, apex - 0.1, 0.18);
-  const yc = yk + (apex - yk) * 0.33;
-  const zw = half(yc) * 0.5;
-  const rw = Math.min(0.75, zw - 0.25, half(yc + 0.75) - zw - 0.1);
-  if (rw > 0.3) {
+  // a two-light window on the axis between two wheels
+  const rw = 0.7, b0 = w1 + 0.2, yc = b0 + rw + 0.08, b1 = yc + rw + 0.08;
+  const zw = Math.min(half(yc) * 0.56, half(yc + rw * 0.5) - rw - 0.1);
+  if (zw - rw > 0.35) {
+    panel(zc, b0 + 0.25, b1 - 0.2, 2 * Math.min(0.55, zw - rw - 0.2), PANE);
+    for (const t of [-1, 0, 1]) post(zc + t * Math.min(0.62, zw - rw - 0.12), b0, b1, 0.14);
     for (const t of [-1, 1]) {
       const zz = zc + t * zw;
-      const ring = new THREE.RingGeometry(rw * 0.78, rw, 18).rotateY(s * Math.PI / 2).translate(xf + s * 0.04, yc, zz);
-      oak(ring);
-      for (const q of [Math.PI / 4, -Math.PI / 4]) {
-        oak(new THREE.BoxGeometry(0.09, 2 * rw * 0.9, 0.09).rotateX(q).translate(xf, yc, zz));
-      }
+      oak(new THREE.RingGeometry(rw * 0.76, rw, 20).rotateY(s * Math.PI / 2).translate(xf + s * 0.04, yc, zz));
+      for (const q of [0, Math.PI / 2]) oak(new THREE.BoxGeometry(0.09, 2 * rw * 0.92, 0.1).rotateX(q).translate(xf, yc, zz));
+      post(zz + t * (rw + 0.12), b0, b1, 0.14);
     }
   }
-  const yColl = apex - (apex - yk) * 0.3;
-  if (half(yColl) > 0.4) beam(yColl, 0.15);
-  // barge boards along the verges, a finial at the apex
+  if (half(b1 + 0.18) > 0.35) beam(b1, 0.18);
+  // close studding up to the verges
+  const c0 = b1 + 0.18;
+  for (let z = -half(c0) + 0.2; z < half(c0) - 0.1; z += 0.42) {
+    const yTop = eave + (hw - Math.abs(z) - 0.04) * tanp - 0.06;
+    if (yTop - c0 > 0.25) post(zc + z, c0, Math.min(yTop, apex - 0.05), 0.12);
+  }
+  // broad barge boards along the verges, a finial at the apex
   const zEave = r.zE, yEave = r.yE;
   for (const t of [-1, 1]) {
-    oak(strut([xE - s * 0.04, yEave - 0.12, zc + t * zEave], [xE - s * 0.04, top + 0.02, zc], 0.08, 0.42));
+    oak(strut([xE - s * 0.05, yEave - 0.18, zc + t * zEave], [xE - s * 0.05, top + 0.05, zc], 0.1, 0.55));
   }
-  oak(new THREE.BoxGeometry(0.16, 1.5, 0.16).translate(xE - s * 0.06, top + 0.55, zc));
-  out.put(M.paint, new THREE.ConeGeometry(0.16, 0.45, 4).translate(xE - s * 0.06, top + 1.5, zc).applyMatrix4(matrix), OAK);
+  oak(new THREE.BoxGeometry(0.18, 1.6, 0.18).translate(xE - s * 0.07, top + 0.6, zc));
+  paint(new THREE.ConeGeometry(0.17, 0.5, 4).translate(xE - s * 0.07, top + 1.6, zc), OAK);
   // the hood over the jetty, on brackets, from the wall out past the gable's foot
   const len = Math.hypot(0.95, 0.45);
   const hood = new THREE.BoxGeometry(len, 0.12, 2 * hw + 0.5).rotateZ(-s * Math.atan2(0.45, 0.95)).translate(a + s * 0.47, eave - 0.06, zc);
   out.put(out.tile, hood.applyMatrix4(matrix));
-  for (const dz of [-hw + 0.3, 0, hw - 0.3]) oak(new THREE.BoxGeometry(0.75, 0.16, 0.14).translate(a + s * 0.38, eave - 0.45, zc + dz));
+  for (const dz of [-hw + 0.3, -hw / 3, hw / 3, hw - 0.3]) oak(new THREE.BoxGeometry(0.75, 0.18, 0.16).translate(a + s * 0.38, eave - 0.45, zc + dz));
 }
 
 // A gabled dormer on a roof's slope (side -1 at -z, +1 at +z), its front on the wall's line: render & oak with a
