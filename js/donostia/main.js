@@ -16,6 +16,7 @@ import { buildShore } from './shore.js';
 import { buildMarina } from './marina.js';
 import { buildBoats } from './boats.js';
 import { buildSeamarks } from './seamarks.js';
+import { buildFerries } from './ferries.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
@@ -37,7 +38,7 @@ const STORAGE_KEY = 'donostia-god-camera';
 
 /**
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
- * the shore's walls & rocks, the port's moorings and its boats, the aids to navigation.
+ * the shore's walls & rocks, the port's moorings, its boats and the island ferries, the aids to navigation.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
@@ -88,6 +89,8 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('marina', marina);
   // the boats in the port ride the sea's level (the tide)
   add('boats', buildBoats(water.userData.seaLevel));
+  // the island ferries, under way in the service's hours of the time of day the lighting shows
+  add('ferries', buildFerries(water.userData.seaLevel, () => DONOSTIA_PRESETS[lighting.activePresetId]?.clock ?? 12));
   // the aids to navigation: the lights (the lighthouses' at their models' lanterns), the posts, columns & buoys
   add('seamarks', buildSeamarks(terrain, { seaLevel: water.userData.seaLevel, landmarks: landmarks.group }));
   modules.sky = lighting.sky;
