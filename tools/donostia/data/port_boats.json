@@ -22,7 +22,7 @@
 {"x":42.06,"z":-185.08,"heading":23,"length":6.9,"beam":2.5,"family":"motor","colour":"#d6d8d7","tone":"#d3d4d3","zone":"north"},
 {"x":39.84,"z":-183.78,"heading":23,"length":7.5,"beam":2.7,"family":"motor","colour":"#e6e8e7","tone":"#e5e7e7","zone":"north"},
 {"x":37.34,"z":-182.74,"heading":23,"length":7.1,"beam":2.4,"family":"motor","colour":"#d4d5d3","tone":"#cfd0cf","zone":"north"},
-{"x":-66.74,"z":-182.37,"heading":102,"length":18.4,"beam":5.9,"family":"passenger","colour":"#e8e8e6","tone":"#e8e8e6","accent":"#5a7fa8","zone":"north","hand":true},
+{"x":-66.78,"z":-182.53,"heading":101,"length":18.4,"beam":6.4,"family":"passenger","colour":"#e8e8e6","tone":"#e8e8e6","accent":"#5a7fa8","zone":"north","hand":true},
 {"x":6.76,"z":-181.98,"heading":264,"length":10.6,"beam":3.5,"family":"sail","colour":"#c5c9cb","tone":"#bdc1c4","zone":"north"},
 {"x":35.15,"z":-181.66,"heading":23,"length":7.5,"beam":2.6,"family":"motor","colour":"#dcdcda","tone":"#dcdcd9","zone":"north"},
 {"x":26.65,"z":-181.59,"heading":199,"length":4.6,"beam":1.7,"family":"open","colour":"#bbc1c6","tone":"#b2bac2","zone":"north"},
