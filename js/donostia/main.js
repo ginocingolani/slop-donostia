@@ -38,7 +38,7 @@ const STORAGE_KEY = 'donostia-god-camera';
 
 /**
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
- * the shore's walls & rocks, the port's moorings, its boats and the island ferries, the aids to navigation.
+ * the shore's walls & rocks, the port's moorings, its boats, the island ferries and the aids to navigation.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
