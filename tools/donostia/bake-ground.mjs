@@ -22,6 +22,7 @@ import { pathToFileURL } from 'node:url';
 import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 import { BEACH_ACCESS } from '../../js/donostia/data-beach-access.js';
+import { WALL, nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT = path.join(ROOT, 'data', 'donostia');
@@ -219,6 +220,28 @@ const underDeck = new Uint8Array(TW * TH);
   }
   log(`ground under land bridges: ${cells * TRES * TRES} m² repainted (embankments grass, no bike lanes from the deck)`);
 }
+// The beaches' sea walls (GEO.terrain.walls of La Concha's & Zurriola's kinds, found by build.mjs): in places the
+// municipal beach reaches over the wall's top (where the walk round the Pico del Loro leaves La Concha's promenade), and
+// its sand would lie on the paving behind the coping. Behind such a wall, within ON_WALL of its line, the sand gives way
+// to the surface further inland (the promenade's paving where none is found). onWall: the 1 m texels within reach.
+const { GEO } = await import(pathToFileURL(path.join(HERE, '../../js/donostia/geodata.js')).href);
+const beachWalls = (GEO.terrain.walls || []).filter((w) => w.t === WALL.concha || w.t === WALL.zurriola);
+const beachWallIndex = wallIndex(beachWalls, 16, 4);
+const ON_WALL = 3, INLAND = 4; // m
+const onWall = new Uint8Array(W * H);
+for (const w of beachWalls) {
+  for (let k = 0; k + 4 < w.p.length; k += 4) {
+    const ax = w.p[k], az = w.p[k + 1], bx = w.p[k + 4], bz = w.p[k + 5], l = Math.hypot(bx - ax, bz - az);
+    for (let t = 0; t <= l; t += 0.5) {
+      const x = ax + ((bx - ax) * t) / (l || 1), z = az + ((bz - az) * t) / (l || 1);
+      for (let b = -ON_WALL - 1; b <= ON_WALL + 1; b++) for (let a = -ON_WALL - 1; a <= ON_WALL + 1; a++) {
+        const i = Math.floor(x - CORE.minX) + a, j = Math.floor(z - CORE.minZ) + b;
+        if (i >= 0 && j >= 0 && i < W && j < H) onWall[j * W + i] = 1;
+      }
+    }
+  }
+}
+let offWall = 0;
 lap('sources');
 
 // --- 1/7 m raster in strips: surfaces, then distances to their edges and to the kerbs ----------------------------------
@@ -411,6 +434,28 @@ function columnDistances(feature, rows, out) {
     }
     fillAccesses(cls, rows);
     clearSlivers(cls, rows);
+    // no sand on top of the beaches' walls (see onWall)
+    for (let y = 0; y < rows; y++) {
+      const z = zTop + (y + 0.5) / SS, tj = Math.floor(z - CORE.minZ);
+      if (tj < 0 || tj >= H) continue;
+      for (let x = 0; x < FW; x++) {
+        const c = cls[y * FW + x];
+        if (c !== S.beach && c !== S.seabed) continue;
+        const wx = fx0 + (x + 0.5) / SS, ti = Math.floor(wx - CORE.minX);
+        if (ti < 0 || ti >= W || !onWall[tj * W + ti]) continue;
+        const q = nearestWall(beachWalls, wx, z, ON_WALL, beachWallIndex);
+        if (!q || q.end || q.d >= 0) continue;
+        let inland = S.pedestrian;
+        for (let t = 0.25; t <= INLAND; t += 0.25) {
+          const xx = Math.round((wx - q.nx * t - fx0) * SS - 0.5), yy = Math.round((z - q.nz * t - zTop) * SS - 0.5);
+          if (xx < 0 || yy < 0 || xx >= FW || yy >= rows) break;
+          const o = cls[yy * FW + xx];
+          if (o !== S.beach && o !== S.seabed && o !== S.natural) { inland = o; break; }
+        }
+        cls[y * FW + x] = inland;
+        offWall++;
+      }
+    }
     // edge cells, on both sides of an edge: any change of surface (f1); a carriageway against a kerbed surface (f2)
     f1.fill(0, 0, FW * rows);
     f2.fill(0, 0, FW * rows);
@@ -457,6 +502,7 @@ function columnDistances(feature, rows, out) {
     }
   }
 }
+log(`no sand on the beaches' walls: ${(offWall / (SS * SS)).toFixed(0)} m² behind them repainted`);
 lap('surface raster & edge distances');
 
 const surfaceAt = (x, z) => {
