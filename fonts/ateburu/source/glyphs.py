@@ -46,12 +46,16 @@ class Master:
 
 
 class G:
-    """A drawn glyph: outline (skia path), body width w, left/right side bearings (None = auto-spaced), anchors"""
+    """A drawn glyph: outline (skia path), body width w, left/right side bearings (None = auto-spaced), and the x of
+    its anchors: top (accents), bottom (cedilla, comma below), ogonek (the hook at the lower right), caron (Ľ's
+    apostrophe caron beside the stem)"""
 
-    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None):
+    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None, ogonek=None, caron=None):
         self.path, self.w, self.lsb, self.rsb = path, w, lsb, rsb
         self.top = w / 2 if top is None else top
         self.bottom = w / 2 if bottom is None else bottom
+        self.ogonek = w * 0.78 if ogonek is None else ogonek
+        self.caron = w * 0.6 if caron is None else caron
         self.adv = adv  # fixed advance (dashes, space)
 
 
@@ -167,7 +171,7 @@ def H(m):
 @glyph('I', 0x49)
 def I(m):
     s = m.stem
-    return G(stem(0, s, 0, m.C, m.serif, flare_l=m.flare, flare_r=m.flare), s, m.sp, m.sp)
+    return G(stem(0, s, 0, m.C, m.serif, flare_l=m.flare, flare_r=m.flare), s, m.sp, m.sp, ogonek=s * 0.66)
 
 
 @glyph('E', 0x45, 0x65)
@@ -182,7 +186,7 @@ def E(m):
         bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8),
             bend=arm(m, s / 2, m.v(4, 5))),
         bar(s / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
-    ]), W, m.sp, None, top=W * 0.48)
+    ]), W, m.sp, None, top=W * 0.48, ogonek=W * 0.82)
 
 
 @glyph('F', 0x46, 0x66)
@@ -206,7 +210,7 @@ def L(m):
     return G(union([
         stem(0, s, 0, C, m.serif, br=False, flare_l=m.flare, flare_r=m.flare),
         bar(s / 2, W, 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
-    ]), W, m.sp, None, top=s / 2)
+    ]), W, m.sp, None, top=s / 2, caron=s + m.v(62, 58))
 
 
 @glyph('T', 0x54, 0x74)
@@ -280,12 +284,12 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 
     yi_t, yi_b = inner_top(xt), inner_bot(xb)
     if beak_top:
-        bl, bw = m.v(50, 54), m.v(46, 52)
+        bl, bw = m.v(50, 40), m.v(46, 50)
         yi2 = inner_top(xt - bw)
         parts.append(polygon([(xt + 30, yi_t + 50), (xt + 30, yi_t - bl), (xt, yi_t - bl), (xt - bw, yi2 + 5),
                               (xt - bw, yi2 + 50)]))
     if beak_bottom:
-        bl, bw = m.v(28, 30), m.v(36, 42)
+        bl, bw = m.v(28, 20), m.v(36, 40)
         yi2 = inner_bot(xb - bw)
         parts.append(polygon([(xb + 30, yi_b - 50), (xb - bw, yi2 - 50), (xb - bw, yi2 - 5), (xb, yi_b + bl),
                               (xb + 30, yi_b + bl)]))
@@ -298,7 +302,8 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 @glyph('C', 0x43, 0x63)
 def C_(m):
     W = m.v(646, 726)
-    return G(c_shape(m, W, xt=W * m.v(0.735, 0.67), xb=W * m.v(0.770, 0.705)), W, None, None)
+    # the Black's terminals are cut further back than the HUD's, so its heavier strokes keep the aperture open
+    return G(c_shape(m, W, xt=W * m.v(0.735, 0.645), xb=W * m.v(0.770, 0.685)), W, None, None)
 
 
 @glyph('G', 0x47, 0x67)
@@ -559,7 +564,7 @@ def A(m):
     pr = intersect_lines((rx(0), 0), up_r, (xm, y_mid), unit((xr - xm, y_side + 10 - y_mid)))
     shape = trap_at(shape, pl, m.trap)
     shape = trap_at(shape, pr, m.trap)
-    return G(shape, W, None, None, top=(lx(C * 0.5) + rx(C * 0.5)) / 2)
+    return G(shape, W, None, None, top=(lx(C * 0.5) + rx(C * 0.5)) / 2, ogonek=W - r_hw * 0.5)
 
 
 @glyph('V', 0x56, 0x76)
@@ -696,7 +701,7 @@ def U(m):
     c.C((W / 2 - irx * ki, -o + bottom), (s, yu - iry * ki), (s, yu))
     c.L((s, C))
     tops = [stem(0, s, yu, C, m.serif, bl=False, br=False), stem(W - s, W, yu, C, m.serif, bl=False, br=False)]
-    return G(union([c.path()] + tops), W, m.sp, m.sp)
+    return G(union([c.path()] + tops), W, m.sp, m.sp, ogonek=W * 0.68)
 
 
 @glyph('J', 0x4A, 0x6A)
@@ -1161,61 +1166,11 @@ def space(m):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# marks (unencoded; used by the accented capitals)
+# marks: see marks.py
 
 
 def accent_base(m):
     return m.C + ACCENT_GAP
-
-
-@glyph('acutecomb.case')
-def acute(m):
-    y0 = accent_base(m)
-    hgt = m.v(144, 150)
-    dxs = m.v(118, 128)
-    wb, wt = m.v(40, 52), m.v(96, 126)
-    p = polygon([(-dxs / 2 - wb / 2, y0), (-dxs / 2 + wb / 2, y0), (dxs / 2 + wt / 2, y0 + hgt), (dxs / 2 - wt / 2, y0 + hgt)])
-    return G(p, 0, 0, 0)
-
-
-@glyph('gravecomb.case')
-def grave(m):
-    return G(mirror_x(acute(m).path, 0), 0, 0, 0)
-
-
-@glyph('dieresiscomb.case')
-def dieresis(m):
-    y0 = accent_base(m)
-    dx, dy = m.v(54, 68), m.v(62, 78)
-    sep = m.v(104, 120)
-    return G(union([lozenge(-sep, y0 + dy, dx, dy), lozenge(sep, y0 + dy, dx, dy)]), 0, 0, 0)
-
-
-@glyph('tildecomb.case')
-def tilde(m):
-    """A flat, compact tilde, heavy enough to survive at 12 px on a dark panel"""
-    y0 = accent_base(m)
-    a, b = m.v(44, 54), m.v(42, 52)
-    w = m.v(330, 366)
-    amp = m.v(46, 46)
-    x0 = -w / 2 + a
-    sp = [
-        hobby((x0, y0 + b + 2), (0.55, 1), (-w * 0.17, y0 + b + amp), (1, 0)),
-        hobby((-w * 0.17, y0 + b + amp), (1, 0), (w * 0.17, y0 + b), (1, 0)),
-        hobby((w * 0.17, y0 + b), (1, 0), (-x0, y0 + b + amp - 2), (0.55, 1)),
-    ]
-    return G(stroke(sp, a, b, knots=[(0, 0.9), (1, 1.0), (2, 1.0), (3, 0.9)], name='tilde'), 0, 0, 0)
-
-
-@glyph('cedillacomb')
-def cedilla(m):
-    a, b = m.v(32, 40), m.v(28, 36)
-    r = m.v(68, 76)
-    sp = [
-        hobby((-6, 34), (0.12, -1), (r, -96), (0.05, -1)),
-        hobby((r, -96), (0.05, -1), (-m.v(62, 66), -176 + b), (-1, -0.08)),
-    ]
-    return G(stroke(sp, a, b, knots=[(0, 1.0), (1, 1.04), (2, 0.86)], name='cedilla'), 0, 0, 0)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1287,24 +1242,18 @@ def short_i_accent_shift(m):
     return short_i_top(m) + m.v(58, 54) - accent_base(m)
 
 
-# composites: (name, unicodes, base, mark or None, placement). Placement None puts the mark on the base's top anchor
-# (the cedilla on its bottom one); 'short' lowers it onto the short i. Lowercase codepoints share the capitals' glyphs,
-# except the i family, which has its own glyphs so that the dotted-i features can tell i from I.
+# composites: (name, unicodes, base, mark or None, placement). Placement None puts the mark on the base's anchor for
+# its class (top; bottom for the cedilla and comma below; ogonek; caron for Ľ); 'short' lowers it onto the short
+# dotted i; 'spacing' makes a spacing accent (no base). latin.py adds the accented letters and marks.py the spacing
+# accents. Lowercase codepoints share the capitals' glyphs, except the i family, which has its own glyphs so that the
+# dotted-i features can tell i from I.
 COMPOSITES = [
-    ('Aacute', [0xC1, 0xE1], 'A', 'acutecomb.case', None), ('Agrave', [0xC0, 0xE0], 'A', 'gravecomb.case', None),
-    ('Eacute', [0xC9, 0xE9], 'E', 'acutecomb.case', None), ('Egrave', [0xC8, 0xE8], 'E', 'gravecomb.case', None),
-    ('Iacute', [0xCD], 'I', 'acutecomb.case', None), ('Igrave', [0xCC], 'I', 'gravecomb.case', None),
-    ('Idieresis', [0xCF], 'I', 'dieresiscomb.case', None),
-    ('Oacute', [0xD3, 0xF3], 'O', 'acutecomb.case', None), ('Ograve', [0xD2, 0xF2], 'O', 'gravecomb.case', None),
-    ('Uacute', [0xDA, 0xFA], 'U', 'acutecomb.case', None), ('Udieresis', [0xDC, 0xFC], 'U', 'dieresiscomb.case', None),
-    ('Ntilde', [0xD1, 0xF1], 'N', 'tildecomb.case', None),
-    ('Ccedilla', [0xC7, 0xE7], 'C', 'cedillacomb', None),
-    # the lowercase i family: by default the same capitals
     ('i', [0x69], 'I', None, None),
-    ('iacute', [0xED], 'I', 'acutecomb.case', None), ('igrave', [0xEC], 'I', 'gravecomb.case', None),
-    ('idieresis', [0xEF], 'I', 'dieresiscomb.case', None),
+    ('iacute', [0xED], 'I', 'acutecomb', None), ('igrave', [0xEC], 'I', 'gravecomb', None),
+    ('idieresis', [0xEF], 'I', 'dieresiscomb', None),
 ]
-I_ACCENTS = [('acute', 'acutecomb.case'), ('grave', 'gravecomb.case'), ('dieresis', 'dieresiscomb.case')]
+I_ACCENTS = [('acute', 'acutecomb'), ('grave', 'gravecomb'), ('dieresis', 'dieresiscomb'),
+             ('circumflex', 'circumflexcomb')]
 for _acc, _mark in I_ACCENTS:
     COMPOSITES.append((f'i{_acc}.short', [], 'dotlessi.short', _mark, 'short'))
     COMPOSITES.append((f'i{_acc}.shortplain', [], 'dotlessi.shortplain', _mark, 'short'))
