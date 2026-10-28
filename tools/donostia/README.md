@@ -19,7 +19,7 @@ The steps it runs, in order:
 |---|---|---|
 | `fetch.sh` | the web | `tools/donostia/raw/` (gitignored); `tools/donostia/data/osm_*.json` & `osm_queries.sha256` (committed) |
 | `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed); `raw/bathy/isobaths.json` and the unzipped `raw/dtm/*.asc` (bake-only) |
-| `build.mjs` (with `walls.mjs`, `beach-access.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps) |
+| `build.mjs` (with `walls.mjs`, `beach-access.mjs`, `tunnels.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls and the tunnels' walls), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps), `js/donostia/data-tunnels.js` (the tunnels' portals) |
 | `bake-ground.mjs` | `tools/donostia/data/`, the terrain, the beaches' stairs & ramps | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
 | `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches, the port's quays (`port.mjs`) | `js/donostia/data-shore.js` (the rocks) |
@@ -87,6 +87,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-bridges.js`, `data-streetscape.js`, `data-shore.js` | OSM, municipal map, the terrain | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
 | `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
 | `js/donostia/data-beach-access.js` | municipal map (stairs, ramps, spot heights, beaches, buildings), the LiDAR, read against the 2025 orthophoto and OSM | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
+| `js/donostia/data-tunnels.js` | OSM (the tunnels' ways), the LiDAR (the portals' faces & levels), municipal map (the walls round them) | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-seamarks.js` | OSM, checked against NGA Pub. 113 and "Costa Cantábrica"'s list of lights | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
@@ -283,6 +284,45 @@ map.
   from their pixels is committed. The blocks round the square stay the city's extrusions with their eaves levelled at
   the cornice: `buildFacadeCells` (`js/donostia/facade-mesh.js`) takes replaced records (`skip` lists the stretches of
   an outline a landmark builds itself) and phantom neighbours (never drawn, but they hide party walls).
+- Tunnels (`tunnels.mjs`, run by `build.mjs`; `js/donostia/tunnels.js`): the bare-earth LiDAR keeps the hill over a
+  tunnel and nothing of its bore, and has a portal's face (ten metres of masonry under Miramar's gardens) as a step a
+  metre or two wide, which the 2 m grid smeared into a slope over the end of the road, the ground's paving stretched
+  down it in long streaks. Every OSM way in a tunnel through the ground (roads, paths & railways with `tunnel=yes`, not
+  a building passage; ways that meet end to end are one) is followed out of each end inside the core until the LiDAR
+  over it, the median across the bore's width, rises 3 m or more from the road within 4 m and stays up for 6 m (the
+  face on the end's own half of a short tunnel; none where the way ends under a building, which the bare earth leaves
+  level). The face is where that rise is half done, traced across the bore and on beside it while a step of 1.4 m holds
+  with the road's level in front, fitted with a straight line, with 2 m of face at least either side of the opening.
+  Ways whose faces lie on one line, or two bores side by side whose faces cross, share a portal; a road and the path
+  beside it share an arch (the Miramar tunnel's road and bike lane, ways 23920623 & 35804363), a track a way (two in
+  one bore make it double). Each face is a hidden wall of `GEO.terrain.walls` (`f: 1`), so the terrain steps at it:
+  the road in front, the ground over the bore behind; where a sample shares triangles with a face and another wall,
+  in front of both it goes onto the face (left off it, it drew a ramp from the face's top across the opening's flank),
+  behind the other it stays up. Round each portal (45 m) the municipal walls (`HORMA`) stand as retaining walls
+  (`WALL.garden`: grey rubble under a dressed coping, `js/donostia/shore.js`) where the LiDAR 1.5-3.5 m either side
+  of their outline steps 1.4 m or more, the road's level within -1.5/+6 m in front and the ground there level, or a
+  bank falling away from the wall (its face then goes down to the bank's foot, the bank before it levelled out to 5 m:
+  the 2 m grid makes a sawtooth of a bank a cell wide between a wall and a road); of two runs along one wall the one
+  with level ground in front stands. A wall that ends by a face's end runs on to it, the two meeting where their lines
+  cross (the face's end moved along its line, its openings, up to 1 m, to leave 1.2 m beside them); the municipal
+  stairs by these walls are built as the shore's (`walls.mjs`'s `detectStairs`). These walls keep the ground classes:
+  in front of them lies the road, the walk, a courtyard. The portals (`js/donostia/tunnels.js`): the face in masonry
+  from under the road to the ground over the bore, a cornice, a parapet with a white railing on the stone portals (a
+  plain one on the concrete), a pier in each corner where a retaining wall runs on, and the arch: a semicircle where
+  the face is tall enough over a springing of 1.6 m (a road's) or 2.2 m (a path's or a railway's), else a segment
+  under a 0.4 m head; through it the bore, traced from the view ray (no geometry behind the face: walls, vault, floor,
+  ribs every 3 m, lamps every 4.5 m that light it at night, the far portal's daylight). The Miramar tunnel (1890) is
+  cream limestone ashlar with a ring of voussoirs, the Pico del Loro's footway (Loretopeko tunela) red sandstone with
+  a concrete ring and the painted vault of ItsasArte MiramArt (2016), after Wikimedia Commons photographs and the 1890
+  engraving of the «Túnel del Antiguo» (`raw/refs/tunnels/`, with `CREDITS.json`, looked at only: nothing derived
+  from their pixels is committed); the others (the bypass's, Lugaritz's, Zorroaga's, the railways', 45 of 49) are
+  board-marked concrete. La Concha's railing (`bake-streetscape.mjs`) takes the ground under it no higher than a
+  garden wall's foot within 2 m, so it stays on the walk round the Pico del Loro, under Miramar's walls. The municipal
+  map already leaves the bores out of its roads (the gardens and paths over them are its own), and OSM maps no street
+  lamps over them. Left as they were: the cuttings' sides where the map has no wall (the bypass's portals stand in
+  slopes the 2 m grid still smears), the corners of the Pico del Loro footway's two courtyards (6 m wide: a sample in
+  a corner ramps between the face's top and the side wall's foot beside the corner's pier), the port's and the Paseo
+  Nuevo's portals (a shore wall stands there already).
 - Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
   the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
   road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster
