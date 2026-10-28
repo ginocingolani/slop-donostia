@@ -34,10 +34,13 @@ const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
 const CORE = FRAME.core;
 const PREVIEW = previewDir();
 const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
-const { nearestWall, visibleWalls, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
+const { WALL, nearestWall, visibleWalls, COPING } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/shore-walls.js')).href);
 const { BEACH_ACCESS } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/data-beach-access.js')).href);
 const G = GEO.terrain.classes;
 const WALLS = visibleWalls(GEO.terrain.walls || []); // (not the hidden runs behind the beaches' stairs & ramps)
+// the shore's (La Concha's railing stands on them), not the gardens' retaining walls round the tunnels' portals
+const SHORE_WALLS = WALLS.filter((w) => w.t !== WALL.garden);
+const GARDEN_WALLS = WALLS.filter((w) => w.t === WALL.garden);
 
 // Species ids shared with js/donostia/trees-species.js (SPECIES order)
 const SP = { plane: 0, tamarisk: 1, broadleaf: 2, evergreen: 3, pine: 4, palm: 5 };
@@ -559,6 +562,12 @@ trees.forEach((t, i) => {
 const PROMENADE = new Set([G.sidewalk, G.pedestrian, G.bike]);
 const MODULE = 0.8, MODULES_PER_SECTION = 5, LAMP_EVERY = 4;
 const POST_W = [0.46, 0.62, 0]; // m along the railing: a stone pillar, a lamp pedestal, the face of a monument
+// The terrain under the railing, no higher than a garden's retaining wall's foot within 2 m of it (the 2 m grid blends
+// the wall over a cell: the walk round the Pico del Loro runs between the sea wall and Miramar's garden walls)
+const walkAt = (x, z) => {
+  const h = terrain.heightAt(x, z), q = nearestWall(GARDEN_WALLS, x, z, 2);
+  return q ? Math.min(h, q.foot) : h;
+};
 // cuts: [{ x, z, r, monument }] where the railing stops (openings, monuments): the samples within r of the centre along
 // the railing (the centre may lie a little off its line) are left out. -> { runs: [[[x, y, z], ...], ...], abut: [[start
 // on a monument, end on one], ...] }
@@ -590,7 +599,7 @@ function bakeRailings(cuts = []) {
         else if (s === G.natural) natural++;
       }
       let land = -Infinity;
-      for (let d = 1; d <= 4; d += 0.5) land = Math.max(land, terrain.heightAt(x + nx * d, z + nz * d));
+      for (let d = 1; d <= 4; d += 0.5) land = Math.max(land, walkAt(x + nx * d, z + nz * d));
       const sand = terrain.heightAt(x - nx * 3, z - nz * 3);
       const drop = land - sand;
       const ok = land > 2.5 && ((paved >= 2 && drop > 0.6) || (paved + natural >= 2 && drop > 2.5));
@@ -598,18 +607,18 @@ function bakeRailings(cuts = []) {
       // walk inland until the terrain reaches the top of the wall (the 2 m grid smears the drop over a few metres; on a
       // vertical wall this stops at once, on the edge)
       let d = 0;
-      while (d < 3 && terrain.heightAt(x + nx * d, z + nz * d) < land - 0.3) d += 0.25;
+      while (d < 3 && walkAt(x + nx * d, z + nz * d) < land - 0.3) d += 0.25;
       const rx = x + nx * (d + 0.2), rz = z + nz * (d + 0.2);
       // on a shore wall (GEO.terrain.walls, found by build.mjs): on its coping, 25 cm behind the masonry face, which the
       // 2 m terrain cannot place within a metre or two
-      const wall = nearestWall(WALLS, rx, rz, 4);
+      const wall = nearestWall(SHORE_WALLS, rx, rz, 4);
       if (wall && !wall.end && wall.d < 0.5) {
         const wx = wall.x - wall.nx * 0.25, wz = wall.z - wall.nz * 0.25;
-        return { x: wx, z: wz, y: wall.deck + COPING[WALLS[wall.wall].t], sand, cut: cuts.find((c) => Math.hypot(wx - c.x, wz - c.z) < c.r) };
+        return { x: wx, z: wz, y: wall.deck + COPING[SHORE_WALLS[wall.wall].t], sand, cut: cuts.find((c) => Math.hypot(wx - c.x, wz - c.z) < c.r) };
       }
       // standing on the promenade: the median of its height 1-3 m inland, clear of the 2 m grid's blend over the edge
       // and of the slope seaward of the line, however steep the terrain draws the wall
-      const hs = [1.2, 1.8, 2.4, 3.0].map((e) => terrain.heightAt(rx + nx * e, rz + nz * e)).sort((a, b) => a - b);
+      const hs = [1.2, 1.8, 2.4, 3.0].map((e) => walkAt(rx + nx * e, rz + nz * e)).sort((a, b) => a - b);
       return { x: rx, z: rz, y: (hs[1] + hs[2]) / 2, sand, cut: cuts.find((c) => Math.hypot(rx - c.x, rz - c.z) < c.r) };
     });
     // where a run stops at a cut: the point between its last sample a and the cut's first c at the cut's radius
