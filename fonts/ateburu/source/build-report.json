@@ -1,5 +1,5 @@
 {
- "glyphs": 77,
+ "glyphs": 79,
  "kerning": {
   "A C": [
    -112,
@@ -1190,256 +1190,250 @@
    -64
   ],
   "K A": [
-   46,
-   38,
-   52,
-   54
+   6,
+   -4,
+   12,
+   10
   ],
   "K B": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K C": [
-   -48,
-   -32,
-   -6,
-   34
+   -88,
+   -74,
+   -46,
+   -8
   ],
   "K D": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K E": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K F": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K G": [
-   -54,
-   -36,
-   -12,
-   32
+   -94,
+   -78,
+   -52,
+   -10
   ],
   "K H": [
-   62,
-   64,
-   70,
-   94
+   24,
+   22,
+   32,
+   52
   ],
   "K I": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K J": [
-   26,
-   52,
-   70,
-   104
+   -14,
+   10,
+   30,
+   62
   ],
   "K K": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K L": [
-   62,
-   64,
-   70,
-   94
+   24,
+   22,
+   32,
+   52
   ],
   "K M": [
-   62,
-   60,
-   72,
-   84
+   22,
+   18,
+   32,
+   42
   ],
   "K N": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K O": [
-   -56,
-   -36,
-   -12,
-   32
+   -94,
+   -78,
+   -52,
+   -10
   ],
   "K P": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K Q": [
-   -56,
-   -36,
-   -12,
-   32
+   -94,
+   -78,
+   -52,
+   -10
   ],
   "K R": [
-   62,
-   66,
-   70,
-   94
+   24,
+   24,
+   32,
+   52
   ],
   "K S": [
-   28,
-   44,
-   58,
-   66
+   -12,
+   2,
+   18,
+   24
   ],
   "K T": [
    14,
-   30,
-   6,
-   36
+   8,
+   0,
+   16
   ],
   "K U": [
-   16,
-   36,
-   8,
-   40
+   14,
+   14,
+   2,
+   28
   ],
   "K V": [
-   20,
-   36,
-   12,
-   36
+   18,
+   14,
+   8,
+   22
   ],
   "K W": [
-   20,
-   36,
-   12,
-   36
-  ],
-  "K X": [
-   32,
-   20,
-   46,
-   48
+   18,
+   14,
+   8,
+   22
   ],
   "K Y": [
    18,
-   36,
-   12,
-   36
+   14,
+   8,
+   22
   ],
   "K Z": [
-   84,
-   90,
-   88,
-   116
+   44,
+   48,
+   48,
+   74
   ],
   "K colon": [
-   54,
-   50,
-   54,
-   72
+   14,
+   8,
+   12,
+   30
   ],
   "K comma": [
-   60,
-   54,
-   60,
-   76
+   20,
+   12,
+   18,
+   34
   ],
   "K exclam": [
-   46,
-   44,
-   46,
-   66
+   8,
+   2,
+   6,
+   24
   ],
   "K four": [
-   -192,
-   -164,
-   -202,
-   -170
+   -198,
+   -186,
+   -208,
+   -188
   ],
   "K hyphen": [
-   -250,
-   -214,
-   -266,
-   -214
+   -422,
+   -398,
+   -444,
+   -410
   ],
   "K one": [
-   -44,
-   -50,
-   -28,
-   -22
+   -84,
+   -92,
+   -68,
+   -64
   ],
   "K parenright": [
-   60,
-   62,
-   42,
-   64
+   20,
+   20,
+   4,
+   22
   ],
   "K period": [
-   60,
-   54,
-   60,
-   76
+   20,
+   12,
+   18,
+   34
   ],
   "K question": [
-   -74,
-   -94,
-   -78,
-   -78
+   -100,
+   -126,
+   -100,
+   -106
   ],
   "K quotedblleft": [
-   -84,
-   -108,
-   -100,
-   -108
+   -88,
+   -130,
+   -104,
+   -128
   ],
   "K quotedblright": [
-   -36,
+   -38,
+   -68,
    -48,
-   -50,
-   -48
+   -60
   ],
   "K quoteleft": [
-   -84,
-   -108,
-   -100,
-   -108
+   -88,
+   -130,
+   -104,
+   -128
   ],
   "K quoteright": [
-   -36,
+   -38,
+   -68,
    -48,
-   -50,
-   -48
+   -60
   ],
   "K semicolon": [
-   54,
-   50,
-   54,
-   72
+   14,
+   8,
+   12,
+   30
   ],
   "K seven": [
-   16,
-   30,
+   14,
    8,
-   36
+   4,
+   22
   ],
   "K zero": [
-   -26,
-   -8,
-   10,
-   52
+   -66,
+   -50,
+   -30,
+   10
   ],
   "L C": [
    -72,
@@ -4832,9 +4826,15 @@
    -34
   ]
  },
- "kerning_pairs": 805,
+ "kerning_pairs": 804,
  "outline_notes": {
   "Black": [
+   "K: kink of 3.6\u00b0 at (599, 134)",
+   "K.straight: extreme without a point near (375.5, 690.5)",
+   "K.straight: kink of 2.6\u00b0 at (351, 671)",
+   "K.straight: kink of 3.5\u00b0 at (599, 134)",
+   "K.roman: extreme without a point near (417.0, 690.5)",
+   "K.roman: kink of 3.6\u00b0 at (392, 671)",
    "W: kink of 3.5\u00b0 at (251, 661)",
    "M: kink of 1.5\u00b0 at (54, 98)",
    "M: kink of 1.5\u00b0 at (872, 98)",
@@ -4873,9 +4873,24 @@
    "P: kink of 7.8\u00b0 at (273, 10)",
    "R: kink of 7.8\u00b0 at (273, 10)",
    "R: kink of 7.8\u00b0 at (7, 10)",
-   "K: kink of 5.7\u00b0 at (273, 10)",
+   "K: kink of 5.7\u00b0 at (244, 143)",
+   "K: kink of 9.0\u00b0 at (273, 10)",
    "K: kink of 7.8\u00b0 at (7, 10)",
-   "K: kink of 1.5\u00b0 at (263, 664)",
+   "K: kink of 7.1\u00b0 at (273, 710)",
+   "K.straight: kink of 5.7\u00b0 at (244, 143)",
+   "K.straight: kink of 9.0\u00b0 at (273, 10)",
+   "K.straight: kink of 7.8\u00b0 at (7, 10)",
+   "K.straight: kink of 5.6\u00b0 at (298, 619)",
+   "K.straight: kink of 6.6\u00b0 at (377, 710)",
+   "K.roman: 2.0-unit stub at (418, 718)",
+   "K.roman: kink of 7.8\u00b0 at (7, 10)",
+   "K.roman: kink of 7.4\u00b0 at (273, 710)",
+   "K.roman: kink of 7.1\u00b0 at (237, 542)",
+   "K.roman: kink of 8.7\u00b0 at (418, 710)",
+   "K.roman: kink of 7.4\u00b0 at (711, 710)",
+   "K.roman: kink of 8.1\u00b0 at (711, 10)",
+   "K.roman: kink of 3.8\u00b0 at (285, 88)",
+   "K.roman: kink of 7.1\u00b0 at (273, 10)",
    "A: kink of 7.8\u00b0 at (12, 10)",
    "A: kink of 7.8\u00b0 at (858, 10)",
    "A: kink of 5.2\u00b0 at (607, 10)",
@@ -4907,7 +4922,15 @@
    "cedillacomb: kink of 2.4\u00b0 at (-19, -171)"
   ],
   "Bold": [
-   "K: extreme without a point near (639, 20)",
+   "K: kink of 7.0\u00b0 at (560, 110)",
+   "K.straight: extreme without a point near (408.0, 693.5)",
+   "K.straight: kink of 1.7\u00b0 at (362, 658)",
+   "K.straight: kink of 3.1\u00b0 at (384, 675)",
+   "K.straight: kink of 7.0\u00b0 at (560, 110)",
+   "K.roman: extreme without a point near (435.0, 693.5)",
+   "K.roman: kink of 1.7\u00b0 at (391, 658)",
+   "K.roman: kink of 2.2\u00b0 at (412, 675)",
+   "K.roman: kink of 1.7\u00b0 at (525, 93)",
    "V: kink of 2.2\u00b0 at (232, 658)",
    "W: kink of 1.9\u00b0 at (216, 667)",
    "M: kink of 1.6\u00b0 at (63, 89)",
@@ -4916,6 +4939,13 @@
    "cedillacomb: kink of 3.8\u00b0 at (35, -97)"
   ],
   "ExtraBold": [
+   "K: kink of 8.4\u00b0 at (632, 631)",
+   "K: kink of 5.3\u00b0 at (579, 122)",
+   "K.straight: extreme without a point near (392.0, 692.5)",
+   "K.straight: kink of 2.6\u00b0 at (368, 673)",
+   "K.straight: kink of 5.3\u00b0 at (579, 122)",
+   "K.roman: extreme without a point near (426.0, 692.0)",
+   "K.roman: kink of 4.3\u00b0 at (402, 673)",
    "A: 2.8-unit stub at (415, 589)",
    "V: kink of 2.2\u00b0 at (252, 655)",
    "W: kink of 2.6\u00b0 at (234, 664)",
@@ -4923,6 +4953,14 @@
    "cedillacomb: kink of 3.6\u00b0 at (35, -98)"
   ],
   "HUD": [
+   "K: kink of 7.1\u00b0 at (545, 95)",
+   "K.straight: extreme without a point near (424.0, 695.5)",
+   "K.straight: kink of 5.1\u00b0 at (381, 661)",
+   "K.straight: kink of 8.6\u00b0 at (540, 99)",
+   "K.straight: kink of 7.1\u00b0 at (545, 95)",
+   "K.roman: extreme without a point near (444.5, 695.5)",
+   "K.roman: kink of 1.7\u00b0 at (402, 661)",
+   "K.roman: kink of 3.9\u00b0 at (422, 677)",
    "W: kink of 2.8\u00b0 at (917, 670)",
    "M: kink of 2.1\u00b0 at (67, 84)",
    "M: kink of 2.1\u00b0 at (805, 84)",
@@ -4958,6 +4996,17 @@
    "R: kink of 8.5\u00b0 at (223, 8)",
    "R: kink of 8.5\u00b0 at (29, 8)",
    "K: kink of 8.5\u00b0 at (29, 8)",
+   "K: kink of 2.6\u00b0 at (466, 667)",
+   "K: kink of 2.1\u00b0 at (489, 706)",
+   "K: kink of 7.1\u00b0 at (676, 708)",
+   "K: kink of 3.8\u00b0 at (619, 631)",
+   "K.straight: kink of 8.5\u00b0 at (29, 8)",
+   "K.straight: kink of 3.1\u00b0 at (356, 633)",
+   "K.straight: kink of 7.4\u00b0 at (672, 712)",
+   "K.straight: kink of 8.7\u00b0 at (186, 349)",
+   "K.roman: kink of 8.5\u00b0 at (29, 8)",
+   "K.roman: kink of 7.8\u00b0 at (446, 712)",
+   "K.roman: kink of 8.5\u00b0 at (663, 712)",
    "A: kink of 1.6\u00b0 at (545, 153)",
    "A: kink of 6.3\u00b0 at (181, 8)",
    "A: kink of 3.3\u00b0 at (394, 611)",
@@ -4988,6 +5037,14 @@
    "cedillacomb: kink of 2.6\u00b0 at (-31, -171)"
   ],
   "SemiBold": [
+   "K: kink of 7.1\u00b0 at (545, 95)",
+   "K.straight: extreme without a point near (424.0, 695.5)",
+   "K.straight: kink of 5.1\u00b0 at (381, 661)",
+   "K.straight: kink of 8.6\u00b0 at (540, 99)",
+   "K.straight: kink of 7.1\u00b0 at (545, 95)",
+   "K.roman: extreme without a point near (444.5, 695.5)",
+   "K.roman: kink of 1.7\u00b0 at (402, 661)",
+   "K.roman: kink of 3.9\u00b0 at (422, 677)",
    "W: kink of 2.8\u00b0 at (917, 670)",
    "M: kink of 2.1\u00b0 at (67, 84)",
    "M: kink of 2.1\u00b0 at (805, 84)",
@@ -5177,6 +5234,42 @@
    ]
   ],
   "K": [
+   [
+    66,
+    24
+   ],
+   [
+    48,
+    18
+   ],
+   [
+    66,
+    24
+   ],
+   [
+    48,
+    18
+   ]
+  ],
+  "K.roman": [
+   [
+    66,
+    -5
+   ],
+   [
+    48,
+    -46
+   ],
+   [
+    66,
+    -6
+   ],
+   [
+    48,
+    -41
+   ]
+  ],
+  "K.straight": [
    [
     66,
     24

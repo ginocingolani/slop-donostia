@@ -7,8 +7,9 @@ dated lintels); nothing here is traced from any font or image: the shapes are nu
 """
 import math
 
-from geometry import (Contour, Serif, add, bar, diag, diag_through, diff, edge_x, edge_y, hobby, inter, length,
-                      line_cubic, mirror_x, mul, polygon, rect, ring, rotate180, shift, stem, stroke, sub, union, unit)
+from geometry import (Contour, Serif, add, bar, curved_serif, diag, diag_through, diff, edge_x, edge_y, hobby, inter,
+                      length, line_cubic, mirror_x, mul, polygon, rect, ring, rotate180, shift, stem, stroke, sub, union,
+                      unit)
 
 CAP = 720
 OVERSHOOT = 13
@@ -345,17 +346,48 @@ def P(m):
     return G(diff(shape, c1), W, m.sp, None, top=W * 0.44)
 
 
-def r_leg(m, xj, yj, xe, name):
+def r_leg(m, xj, yj, xe, name, turn=None):
     """The long leg of R (and the leg of K): leaves the junction heading down and right, bottoms out on the baseline,
-    then flicks up beyond the bowl. xj, yj: start; xe: x of the flick's end"""
+    then flicks up beyond the bowl. xj, yj: start; xe: x of the flick's end. turn: for K's longer leg, the leg runs
+    as a straight diagonal until `turn` units above its low point and only then rounds into R's flick"""
     a, b = m.v(60, 92), m.v(48, 70)
     k = m.c                          # curvature: a rounder leg, a longer and higher flick
     yb = b - m.o * 0.6               # spine low point: the stroke's underside just under the baseline
     xb = xe - m.v(118, 132) - 26 * k
+    flick = hobby((xb, yb), (1, 0), (xe + 6 * k, yb + m.v(40, 46) + 30 * k), (0.82 - 0.22 * k, 0.58 + 0.22 * k),
+                  tension=1.0 - 0.1 * k)
+    if turn is not None:
+        # a straight diagonal from the start, tangent to a circle of radius R that sets the leg down on the baseline
+        # at the low point, then the flick
+        R = turn * (1 + 0.35 * k)
+        cx, cy = xb, yb + R
+        dx, dy = cx - xj, cy - yj
+        dist = math.hypot(dx, dy)
+        alpha = -(math.atan2(dy, dx) - math.asin(min(R / dist, 0.99)))   # the diagonal's slope below horizontal
+        phi = -math.pi / 2 - alpha
+        T = (cx + R * math.cos(phi), cy + R * math.sin(phi))
+        d = (math.cos(alpha), -math.sin(alpha))
+        if k:   # with curvature the diagonal sags a little
+            mid = add(lerp2((xj, yj), T, 0.5), mul((-d[1], d[0]), -9 * k))
+            spine = [hobby((xj, yj), d, mid, d), hobby(mid, d, T, d)]
+        else:
+            spine = [line_cubic((xj, yj), T)]
+        spine += [arc_to(T, d, (xb, yb), (1, 0), R), flick]
+        n = len(spine)
+        return stroke(spine, a, b, knots=[(0, 1.02), (n - 2, 0.99), (n - 1, 0.96), (n, 0.74)], name=name)
     seg1 = hobby((xj, yj), (0.52 - 0.14 * k, -1), (xb, yb), (1, 0), tension=1.05 - 0.17 * k)
-    seg2 = hobby((xb, yb), (1, 0), (xe + 6 * k, yb + m.v(40, 46) + 30 * k), (0.82 - 0.22 * k, 0.58 + 0.22 * k),
-                 tension=1.0 - 0.1 * k)
-    return stroke([seg1, seg2], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name)
+    return stroke([seg1, flick], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name)
+
+
+def lerp2(p, q, t):
+    return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+
+
+def arc_to(p, tp, q, tq, R):
+    """A cubic circular arc of radius R from p (heading tp) to q (heading tq)"""
+    ang = math.acos(max(-1.0, min(1.0, tp[0] * tq[0] + tp[1] * tq[1])))
+    h = 4 / 3 * math.tan(ang / 4) * R
+    return (p, add(p, mul(unit(tp), h)), sub(q, mul(unit(tq), h)), q)
 
 
 @glyph('R', 0x52, 0x72)
@@ -372,29 +404,107 @@ def R(m):
     return G(shape, Wb, m.sp, m.v(30, 22), top=Wb * 0.42)
 
 
-@glyph('K', 0x4B, 0x6B)
-def K(m):
-    s, C = m.stem, m.C
-    W = m.v(566, 628)
-    xj, yj = s - m.v(8, 12), m.v(300, 296)
-    # the arm: a gentle arc from the stem up to the cap line, ending square with short serifs
-    a, b = m.v(54, 84), m.v(46, 68)
-    top_x = W - m.v(60, 70)
-    arm_dir0 = (0.86, 0.52)
-    arm = stroke([hobby((xj, yj), arm_dir0, (top_x, C + 40), (0.40, 1), tension=1.0)], a, b,
-                 knots=[(0, 0.96), (1, 1.04)], name='K arm')
-    arm = diff(arm, rect(-100, C, W + 300, C + 300))
+def k_frame(m):
+    """What the three Ks share: the advance-setting width W (the arm's reach at the cap line, as wide as N), the
+    crotch X where arm and leg part on the stem's right edge, and the flick's end (R's leg, at the same overhang)"""
+    s = m.stem
+    W = m.v(604, 672)
+    X = (s + m.v(6, 8), m.v(352, 348))
+    return s, W, X, W + m.v(14, 16)
+
+
+def arm_top_serifs(m, arm, W):
+    """Short flared serifs on both sides of an arm's end, cut level on the cap line (the straight cut; with curvature
+    the arm's nib swells towards its end instead, see K)"""
+    C = m.C
     sr, sl = m.serif.scaled(0.95), m.serif.scaled(0.6)
     xr, xl = edge_x(arm, C - 1, 'max'), edge_x(arm, C - 1, 'min')
     xr2, xl2 = edge_x(arm, C - sr.h, 'max'), edge_x(arm, C - sl.h, 'min')
     serif_r = polygon([(xr2 - 30, C - sr.h), (xr2, C - sr.h), (xr + sr.e, C - sr.t), (xr + sr.e, C), (xr - 30, C)])
     serif_l = polygon([(xl2 + 30, C - sl.h), (xl2, C - sl.h), (xl - sl.e, C - sl.t), (xl - sl.e, C), (xl + 30, C)])
-    leg = r_leg(m, s + m.v(30, 40), m.v(392, 388), W + m.v(54, 58), 'K')
-    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, serif_r, serif_l, leg])
-    # ink trap where the arm's upper edge meets the stem
-    ys = edge_y(inter(arm, rect(s, 0, s + 1, C)), s + 0.5, 'max')
-    shape = trap_at(shape, (s, ys), m.trap)
-    return G(shape, W, m.sp, m.v(24, 18), top=W * 0.36)
+    return [serif_r, serif_l]
+
+
+def crotch_trap(m, shape, X):
+    return trap_at(shape, X, m.trap)
+
+
+@glyph('K', 0x4B, 0x6B)
+def K(m):
+    """The curved Basque K, a 20th-century convention owned as such: arm and leg part from one open crotch on the
+    stem; the arm, as heavy as the thick diagonals, leaves low and sweeps up to the cap line; the leg is R's leg,
+    with R's flick"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    k = m.c
+    a, b = m.v(64, 96), m.v(52, 76)          # as heavy as the thick diagonals at 45 degrees
+    top = (W - a * 0.95, C + 60)
+    start = (s * 0.42, X[1] + b * 0.55)
+    if k:   # the arm flares into the cap line by itself, like the stems' ends
+        knots = [(0, 1.02), (0.62, 0.97), (0.9, 1.0 + 0.16 * k), (1, 1.0 + 0.42 * k)]
+    else:
+        knots = [(0, 1.02), (1, 0.97)]
+    arm = stroke([hobby(start, (0.80, 0.60 + 0.04 * k), top, (0.30 - 0.06 * k, 1), tension=1.0 - 0.08 * k)],
+                 a, b, knots=knots, name='K arm')
+    arm = diff(arm, rect(-100, C, W + 300, C + 300))
+    leg = r_leg(m, s * 0.42, X[1] - b * 0.35, xe, 'K', turn=m.v(104, 120))
+    parts = [stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg] + ([] if k else arm_top_serifs(m, arm, W))
+    shape = inter(union(parts), rect(-200, -200, xe + 300, C + 2))
+    return G(crotch_trap(m, shape, X), W, m.sp, m.v(24, 18), top=W * 0.36)
+
+
+def straight_stroke(pb, pt, thick, y0, y1, serifs, bend=None, clip_x=None):
+    """A straight (or bowed) diagonal of perpendicular thickness `thick` along the centreline pb-pt, cut level at y0
+    and y1, kept right of clip_x"""
+    path = diag(*diag_through(pb, pt, thick, y0, y1), serifs, bend=bend)
+    return path if clip_x is None else inter(path, rect(clip_x, -300, 3000, 1300))
+
+
+def through_edge(X, d, thick, side):
+    """A centreline point for a stroke of direction d whose `side` edge (+1 right, -1 left, horizontally) passes
+    through X"""
+    hw = thick / 2 / max(abs(unit(d)[1]), 1e-6)
+    return (X[0] - side * hw, X[1])
+
+
+@glyph('K.straight')
+def K_straight(m):
+    """K with a straight arm, its end flared level on the cap line, and R's kicked leg"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    th = m.thick * 0.96
+    d = (W - X[0] - m.v(40, 46), C - X[1])
+    c0 = through_edge(X, d, th, 1)
+    pt = add(c0, mul(d, (C - c0[1]) / d[1]))
+    pb = add(c0, mul(d, -1.2))
+    arm = straight_stroke(pb, pt, th, pb[1], C, {'tr': m.serif.scaled(1.15), 'tl': m.serif.scaled(0.7)},
+                          bend=bow(m, -8), clip_x=s * 0.5)
+    leg = r_leg(m, s * 0.42, X[1] - m.v(52, 76) * 0.35, xe, 'K', turn=m.v(104, 120))
+    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg])
+    return G(crotch_trap(m, shape, X), W, m.sp, m.v(24, 18), top=W * 0.36)
+
+
+@glyph('K.roman')
+def K_roman(m):
+    """The plain inscription K: a thin straight arm and a thick straight leg meeting at the stem, all three standing
+    on flared feet"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    Wl = W + m.v(26, 44)                      # the leg's foot reaches a little past the arm
+    tha, thl = m.thin, m.thick * 0.94
+    da = (W - X[0] - m.v(44, 50), C - X[1])
+    ca = through_edge(X, da, tha, 1)
+    arm = straight_stroke(add(ca, mul(da, -1.2)), add(ca, mul(da, (C - ca[1]) / da[1])), tha,
+                          ca[1] - 1.2 * da[1], C, {'tr': m.serif, 'tl': m.serif.scaled(0.7)},
+                          bend=bow(m, -6), clip_x=s * 0.5)
+    dl = (Wl - m.v(70, 96) - X[0], -X[1])     # down to the foot
+    cl = through_edge(X, dl, thl, 1)
+    foot = add(cl, mul(dl, -cl[1] / dl[1]))
+    top_ = add(cl, mul(dl, -1.0))
+    leg = straight_stroke(foot, top_, thl, 0, top_[1], {'br': m.serif.scaled(1.05)},
+                          bend=bow(m, -7), clip_x=s * 0.5)
+    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg])
+    return G(crotch_trap(m, shape, X), Wl, m.sp, None, top=W * 0.36)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
