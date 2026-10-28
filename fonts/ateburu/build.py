@@ -79,7 +79,13 @@ HUD_CURV = 0
 # True bakes the dotted i (ss01) into the HUD subset as a required contextual feature (rclt), so it applies with no
 # CSS, through the HUD's letter-spacing (which turns calt off) and in the minimap's canvas text. False: as before.
 HUD_SS01 = False
-MODEL = VariationModel([{'wght': m.t, 'CURV': m.c} for m in MASTERS], axisOrder=['wght', 'CURV'])
+# What the HUD sets in Ateburu: place names only, in Basque, Spanish, Catalan, Galician, Portuguese and French. Their
+# letters and the punctuation names take; anything else falls back to the next font in the CSS stack.
+HUD_UNICODES = sorted(ord(ch) for ch in set(
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    'ÀÁÂÃÄÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝàáâãäçèéêëìíîïñòóôõöùúûüýÿŸÆæŒœĿŀ'
+    '  !"&\'(),-./:;?¡¿·–—‘’‚“”„«»‹›…•€'))
+MODEL =VariationModel([{'wght': m.t, 'CURV': m.c} for m in MASTERS], axisOrder=['wght', 'CURV'])
 
 
 def scalars(t, c=0.0):
@@ -641,7 +647,7 @@ def main():
     options.notdef_outline = True
     options.recalc_timestamp = False
     sub = subset.Subsetter(options)
-    sub.populate(unicodes=list(hud.getBestCmap().keys()))
+    sub.populate(unicodes=[u for u in HUD_UNICODES if u in hud.getBestCmap()])
     sub.subset(hud)
     if HUD_SS01:
         for rec in hud['GSUB'].table.FeatureList.FeatureRecord:
