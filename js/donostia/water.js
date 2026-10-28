@@ -329,7 +329,8 @@ function createWaterMaterial(terrain, fieldsTex) {
     .and(p.z.greaterThan(context.z0)).and(p.z.lessThan(context.z0 + context.depth));
   const floors = select(inCore, floorHeights(core), select(inContext, floorHeights(context), vec3(-60.0))).toVar();
   // against a wall (a step of metres between neighbouring samples) the water keeps the depth of the bed at its foot
-  const seaFloor = mix(floors.x, floors.y, smoothstep(2.0, 4.0, floors.z.sub(floors.y))).toVar();
+  const walled = smoothstep(2.0, 4.0, floors.z.sub(floors.y)).toVar();
+  const seaFloor = mix(floors.x, floors.y, walled).toVar();
   // the plane rides the tide and the ponds sit at their own levels: depth is measured from the surface itself
   const depth = max(p.y.sub(seaFloor), 0.0);
 
@@ -452,8 +453,11 @@ function createWaterMaterial(terrain, fieldsTex) {
     c.assign(mix(c, vec3(0.018, 0.115, 0.145), smoothstep(1.5, 7.0, d)));
     c.assign(mix(c, vec3(0.008, 0.042, 0.075), smoothstep(7.0, 20.0, d)));
     c.assign(mix(c, vec3(0.005, 0.026, 0.055), smoothstep(20.0, 45.0, d)));
-    // over rock (a steep bottom) the shallows stay dark & weedy instead of turquoise
-    const rocky = smoothstep(0.12, 0.4, fwidth(floors.x).div(max(fwidth(p.x).add(fwidth(p.z)), 0.02)));
+    // over rock (a steep bottom) the shallows stay dark & weedy instead of turquoise; not against a wall (nor a pixel
+    // beside it), where the bilinear floor's steepness is the wall's: it drew the 2 m cells along the Pico del Loro's
+    // wall as dark squares
+    const rocky = smoothstep(0.12, 0.4, fwidth(floors.x).div(max(fwidth(p.x).add(fwidth(p.z)), 0.02)))
+      .mul(float(1.0).sub(clamp(walled.add(fwidth(walled)), 0.0, 1.0)));
     c.assign(mix(c, mix(vec3(0.035, 0.07, 0.05), c, smoothstep(1.0, 6.0, d)), rocky.mul(float(1.0).sub(river))));
     // the Urumea & the ponds: green, silty, the bed lost within a metre
     const silt = noise2D(p.xz.mul(0.006).add(7.3));

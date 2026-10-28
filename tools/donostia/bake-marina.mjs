@@ -22,14 +22,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HERE, loadLayer, lonLatToLocal, scanRings, pointInRing, encodePNG, previewDir, licenceComment, log } from './lib.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
-import { nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
+import { nearestWall, wallIndex, visibleWalls } from '../../js/donostia/shore-walls.js';
 import { inPort, HARBOUR, MOUTH, slipwayRing } from './port.mjs';
 
 const ROOT = path.resolve(HERE, '../..');
 const OUT = path.join(ROOT, 'js/donostia/data-marina.js');
 const PREVIEW = previewDir();
 const { GEO } = await import(pathToFileURL(path.join(ROOT, 'js/donostia/geodata.js')).href);
-const walls = GEO.terrain.walls || [];
+// (the quays' walls: not the hidden runs where the terrain steps down under a flight of quay steps)
+const walls = visibleWalls(GEO.terrain.walls || []);
 const wallsIndex = wallIndex(walls, 16, 12);
 const stairs = GEO.terrain.stairs || [];
 

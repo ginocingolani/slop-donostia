@@ -514,9 +514,10 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     const lit = marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
       .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film));
     // The faces the 2 m grid still draws as steep ramps (a wall's ends, a flight's flanks, the quays and abutments the
-    // shore walls leave out, Urgull's crags): weathered stone rather than the surface's sand or paving stretched down
-    // them. The natural ground has its own rock on the steep faces.
-    const steepFace = smoothstep(0.3, 0.5, slope).mul(inCore).mul(float(1).sub(eq(wid, S.natural)));
+    // shore walls leave out): weathered stone rather than the surface's sand or paving stretched down them. The soft
+    // surfaces (the woods, gardens and hedges on a hillside) keep their own ground up to the crags, past 60°; the
+    // natural ground has its own rock on the steep faces.
+    const steepFace = smoothstep(mix(0.5, 0.3, hard), mix(0.7, 0.5, hard), slope).mul(inCore).mul(float(1).sub(eq(wid, S.natural)));
     const faceStone = mix(C.rockA, C.rockB, nM).mul(nF.mul(0.2).add(0.88)).mul(smoothstep(-0.5, 3.0, y).mul(0.3).add(0.7));
     return mix(lit, faceStone, steepFace);
   })();

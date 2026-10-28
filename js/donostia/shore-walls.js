@@ -84,6 +84,29 @@ export function nearestWall(walls, x, z, maxDist, index = null) {
   return best;
 }
 
+// The nearest point of each wall within maxDist of (x, z), as nearestWall's, nearest first
+export function nearestWalls(walls, x, z, maxDist, index = null) {
+  const segs = index ? index.near(x, z) : segments(walls);
+  const best = new Map();
+  for (const s of segs) {
+    const [ax, az, bx, bz, wi, vi, , len] = s;
+    const dx = (bx - ax) / len, dz = (bz - az) / len;
+    const t = ((x - ax) * dx + (z - az) * dz) / len;
+    const tc = Math.max(0, Math.min(1, t));
+    const px = ax + (bx - ax) * tc, pz = az + (bz - az) * tc;
+    const dist = Math.hypot(x - px, z - pz);
+    if (dist >= maxDist || dist >= (best.get(wi)?.dist ?? Infinity)) continue;
+    const p = walls[wi].p, k = 4 * vi;
+    const n = p.length / 4;
+    best.set(wi, {
+      wall: wi, seg: vi, x: px, z: pz, nx: -dz, nz: dx, d: (x - px) * -dz + (z - pz) * dx, dist,
+      deck: p[k + 2] + (p[k + 6] - p[k + 2]) * tc, foot: p[k + 3] + (p[k + 7] - p[k + 3]) * tc, t: tc,
+      end: (t <= 0 && vi === 0) || (t >= 1 && vi === n - 2)
+    });
+  }
+  return [...best.values()].sort((a, b) => a.dist - b.dist);
+}
+
 // Bucket index of the wall segments (cell metres) for nearestWall within `pad` metres
 export function wallIndex(walls, cell = 16, pad = REACH) {
   const buckets = new Map();
@@ -104,12 +127,16 @@ export function wallIndex(walls, cell = 16, pad = REACH) {
 // The samples of a terrain grid { x0, z0, w, h, res } (samples at cell centres) that the walls move. Every sample that
 // shares a triangle (the terrain's quads split along the (i+1, j)-(i, j+1) diagonal, js/donostia/terrain.js) with a sample
 // on the other side of a wall line goes onto the line: the low side's onto the foot of the face (behind the crest line
-// by the batter), the high side's onto the crest. Returns Map(sample index -> { side: +1 low / -1 high, x, z (where
-// it goes), wall, deck, foot }); `sides` (Int8Array, optional) receives the side of every sample within reach of a wall.
+// by the batter), the high side's onto the crest. A sample between two walls closer than a couple of cells (a quay
+// below a raised walk, a flight's cheek and the quay's face) may share triangles across both, and goes onto the one
+// with the taller step (the nearer one unless the other is STEP_PREFER taller): left off it, the triangle across that
+// wall would stand as a fin square to it. Returns Map(sample index -> { side: +1 low / -1 high, x, z (where it goes),
+// wall, deck, foot }); `sides` (Int8Array, optional) receives the side of every sample within reach of a wall (of the
+// nearest).
 export function wallSnaps(walls, grid, sides = null) {
   const { x0, z0, w, h, res } = grid;
   const index = wallIndex(walls);
-  const near = new Map(); // sample -> nearest wall point
+  const near = new Map(); // sample -> the nearest point of each wall within reach, nearest first
   for (const s of segments(walls)) {
     const [ax, az, bx, bz] = s;
     const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - REACH - x0) / res - 0.5));
@@ -119,32 +146,36 @@ export function wallSnaps(walls, grid, sides = null) {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const k = j * w + i;
       if (near.has(k)) continue;
-      const q = nearestWall(walls, x0 + (i + 0.5) * res, z0 + (j + 0.5) * res, REACH, index);
-      near.set(k, q);
+      near.set(k, nearestWalls(walls, x0 + (i + 0.5) * res, z0 + (j + 0.5) * res, REACH, index));
     }
   }
-  const sideOf = (k) => {
-    const q = near.get(k);
+  // the side of a sample (+1 low, -1 high) of one wall's line, 0 beyond its ends or out of reach
+  const sideOn = (k, wall) => {
+    const q = near.get(k)?.find((o) => o.wall === wall);
     return q && !q.end ? (q.d > 0 ? 1 : -1) : 0;
   };
-  if (sides) for (const k of near.keys()) sides[k] = sideOf(k);
+  if (sides) for (const [k, qs] of near) sides[k] = qs.length ? sideOn(k, qs[0].wall) : 0;
+  // the six neighbours a triangle shares with a sample
+  const nb = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
   const snaps = new Map();
-  for (const [k, q] of near) {
-    const side = sideOf(k);
-    if (!side) continue;
+  for (const [k, qs] of near) {
     const i = k % w, j = (k - i) / w;
-    // the six neighbours a triangle shares with this sample
-    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
-    let crosses = false;
-    for (const [a, b] of nb) {
-      const ii = i + a, jj = j + b;
-      if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
-      const kk = jj * w + ii;
-      const o = sideOf(kk);
-      if (o === -side && near.get(kk).wall === q.wall) { crosses = true; break; }
+    let pick = null, pickSide = 0;
+    for (const q of qs) {
+      const side = sideOn(k, q.wall);
+      if (!side) continue;
+      let crosses = false;
+      for (const [a, b] of nb) {
+        const ii = i + a, jj = j + b;
+        if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
+        if (sideOn(jj * w + ii, q.wall) === -side) { crosses = true; break; }
+      }
+      if (!crosses) continue;
+      if (!pick || q.deck - q.foot > pick.deck - pick.foot + STEP_PREFER) { pick = q; pickSide = side; }
     }
-    if (!crosses) continue;
-    snaps.set(k, { side, wall: q.wall, seg: q.seg, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot, back: 0 });
+    if (!pick) continue;
+    const q = pick;
+    snaps.set(k, { side: pickSide, wall: q.wall, seg: q.seg, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot, back: 0 });
   }
   // Where the line bends, the terrain's face between two samples on it (an edge of a triangle) is a chord of the bend,
   // which stands in front of the masonry where the line turns away from its low side: both samples go back by as much
@@ -165,6 +196,7 @@ export function wallSnaps(walls, grid, sides = null) {
 }
 
 const SAG_MAX = 0.45; // m
+const STEP_PREFER = 1; // m
 
 // How far the chord between two points on a wall line (on segments s.seg & o.seg) stands in front of the vertices
 // between them (on the low side)

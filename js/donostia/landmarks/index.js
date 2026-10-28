@@ -26,6 +26,7 @@ import * as laPerla from './la-perla.js';
 import * as dabadaba from './dabadaba.js';
 import * as aiete from './aiete.js';
 import * as konstituzio from './konstituzio-plaza.js';
+import * as maskorGain from './maskor-gain.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
@@ -63,7 +64,8 @@ const MODELS = [
   [laPerla, []],
   [dabadaba, []],
   [aiete, ['aiete-jauregia', 'aiete-kulturetxea']],
-  [konstituzio, []]
+  [konstituzio, []],
+  [maskorGain, []]
 ];
 
 export function buildLandmarks(GEO, terrain) {

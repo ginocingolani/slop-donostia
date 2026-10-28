@@ -19,9 +19,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
+import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, pointInRing, previewDir, pngText, log } from './lib.mjs';
+import { inPort, HARBOUR, urgullWoods } from './port.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 import { BEACH_ACCESS } from '../../js/donostia/data-beach-access.js';
+import { WALL, nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT = path.join(ROOT, 'data', 'donostia');
@@ -142,13 +144,18 @@ for (const layer of LAYERS) {
 
 // Under every mapped layer, from the 2 m terrain bake (B channel = GEO.terrain.classes, 7 = water): sea & river beds,
 // and the quays: flat unmapped ground a few metres above the water next to it (the port, the river walls, Sagüés),
-// which the municipal map leaves blank and would otherwise come out as meadow
-const PORT = { minX: -330, maxX: 170, minZ: -270, maxZ: -20 }; // as tools/donostia/walls.mjs
+// which the municipal map leaves blank and would otherwise come out as meadow; in the port also the ramp the 2 m grid
+// leaves between a quay and the water (QUAY_RAMP), and the woods on Urgull's slopes over it (urgullWoods)
 const terrainFile = fs.readFileSync(path.join(OUT, 'terrain-core.png'));
 const terrainPNG = await decodePNG(terrainFile.buffer.slice(terrainFile.byteOffset, terrainFile.byteOffset + terrainFile.byteLength));
 const TW = terrainPNG.width, TH = terrainPNG.height, TRES = 2;
 if (TW * TRES !== W || TH * TRES !== H) throw new Error('terrain-core.png does not match the core extent');
-const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
+const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay / S.woodland
+// 2 m cells: where a shore wall stops short (at a flight of steps, a pier's end, a corner the search missed) the grid
+// keeps the quay's edge as a ramp down to the water, which would come out as meadow, scrub and wet weed; any unmapped
+// cell of the harbour no higher than the flat quay within this reach, or level along one of the grid's axes, is the
+// quay's
+const QUAY_RAMP = 3;
 {
   const px = terrainPNG.data;
   const height = new Float32Array(TW * TH);
@@ -170,12 +177,40 @@ const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
     // (in the port, all of it however far from the water and down to the foot of the old port's slipway; a cell beside
     // a quay wall counts its slope on its flat side)
     const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
-    const port = x >= PORT.minX && x <= PORT.maxX && z >= PORT.minZ && z <= PORT.maxZ;
+    const port = inPort(x, z);
     if (terrainBase[k] || (toWater[k] > 15 && !port) || h < (port ? 0 : 1.2) || h > 9) continue;
     const across = (a, b) => (port ? Math.min(Math.abs(a - h), Math.abs(h - b)) * 2 : Math.abs(a - b));
     const slope = Math.max(across(height[k + 1], height[k - 1]), across(height[k + TW], height[k - TW])) / (2 * TRES);
     if (slope < 0.12) terrainBase[k] = S.quay;
   }
+  // the quays' ramps (QUAY_RAMP), from the flat quay found above
+  let ramps = 0, woods = 0;
+  const flat = terrainBase.slice();
+  for (let j = QUAY_RAMP; j < TH - QUAY_RAMP; j++) for (let i = QUAY_RAMP; i < TW - QUAY_RAMP; i++) {
+    const k = j * TW + i, h = height[k];
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    // (the harbour's side only: the moles' seaward foot stays the wet rock under their cubes)
+    if (terrainBase[k] || !inPort(x, z) || h < -0.3 || h > 9 || !pointInRing(x, z, HARBOUR)) continue;
+    let deck = -Infinity;
+    for (let b = -QUAY_RAMP; b <= QUAY_RAMP; b++) for (let a = -QUAY_RAMP; a <= QUAY_RAMP; a++) {
+      const n = k + b * TW + a;
+      if (flat[n] === S.quay && height[n] > deck) deck = height[n];
+    }
+    // (or level one way: a strip of quay a cell wide between a wall's foot and the water, under a raised walk)
+    const one = (a, b) => Math.min(Math.abs(a - h), Math.abs(h - b)) / TRES;
+    const level = Math.min(one(height[k + 1], height[k - 1]), one(height[k + TW], height[k - TW])) < 0.12;
+    if (h <= deck + 0.3 || level) { terrainBase[k] = S.quay; ramps++; }
+  }
+  // Urgull's wooded slopes over the port (port.mjs)
+  for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) {
+    const k = j * TW + i;
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    if (terrainBase[k]) continue;
+    const grad = Math.hypot(height[k + 1] - height[k - 1], height[k + TW] - height[k - TW]) / (2 * TRES);
+    if (urgullWoods(x, z, height[k], grad)) { terrainBase[k] = S.woodland; woods++; }
+  }
+  log(`port: ${ramps * TRES * TRES} m² of the quays' ramps down to the water paved; ${woods * TRES * TRES} m² of Urgull's ` +
+    `slopes over it wooded`);
 }
 // Under a land bridge's deck (js/donostia/data-bridges.js, so bake-bridges.mjs runs first): the municipal map draws the
 // road on the bridge in plan, so its carriageway and bike lane would be painted down the embankments and across the
@@ -219,6 +254,28 @@ const underDeck = new Uint8Array(TW * TH);
   }
   log(`ground under land bridges: ${cells * TRES * TRES} m² repainted (embankments grass, no bike lanes from the deck)`);
 }
+// The beaches' sea walls (GEO.terrain.walls of La Concha's & Zurriola's kinds, found by build.mjs): in places the
+// municipal beach reaches over the wall's top (where the walk round the Pico del Loro leaves La Concha's promenade), and
+// its sand would lie on the paving behind the coping. Behind such a wall, within ON_WALL of its line, the sand gives way
+// to the surface further inland (the promenade's paving where none is found). onWall: the 1 m texels within reach.
+const { GEO } = await import(pathToFileURL(path.join(HERE, '../../js/donostia/geodata.js')).href);
+const beachWalls = (GEO.terrain.walls || []).filter((w) => w.t === WALL.concha || w.t === WALL.zurriola);
+const beachWallIndex = wallIndex(beachWalls, 16, 4);
+const ON_WALL = 3, INLAND = 4; // m
+const onWall = new Uint8Array(W * H);
+for (const w of beachWalls) {
+  for (let k = 0; k + 4 < w.p.length; k += 4) {
+    const ax = w.p[k], az = w.p[k + 1], bx = w.p[k + 4], bz = w.p[k + 5], l = Math.hypot(bx - ax, bz - az);
+    for (let t = 0; t <= l; t += 0.5) {
+      const x = ax + ((bx - ax) * t) / (l || 1), z = az + ((bz - az) * t) / (l || 1);
+      for (let b = -ON_WALL - 1; b <= ON_WALL + 1; b++) for (let a = -ON_WALL - 1; a <= ON_WALL + 1; a++) {
+        const i = Math.floor(x - CORE.minX) + a, j = Math.floor(z - CORE.minZ) + b;
+        if (i >= 0 && j >= 0 && i < W && j < H) onWall[j * W + i] = 1;
+      }
+    }
+  }
+}
+let offWall = 0;
 lap('sources');
 
 // --- 1/7 m raster in strips: surfaces, then distances to their edges and to the kerbs ----------------------------------
@@ -349,7 +406,7 @@ function columnDistances(feature, rows, out) {
 
 {
   const stripRows = STRIP * SS + 2 * MARGIN;
-  const rowSea = new Float32Array(TW), rowQuay = new Float32Array(TW);
+  const rowSea = new Float32Array(TW), rowQuay = new Float32Array(TW), rowWood = new Float32Array(TW);
   const cls = new Uint8Array(FW * stripRows);
   const f1 = new Uint8Array(FW * stripRows), f2 = new Uint8Array(FW * stripRows);
   const g1 = new Uint8Array(FW * stripRows), g2 = new Uint8Array(FW * stripRows);
@@ -360,8 +417,8 @@ function columnDistances(feature, rows, out) {
     const rows = (j1 - j0) * SS + 2 * MARGIN;
     const zTop = CORE.minZ - MARGIN / SS + rowBase / SS, zBottom = zTop + rows / SS;
     cls.fill(S.natural, 0, FW * rows);
-    // sea & river beds and quays from the 2 m terrain, each mask interpolated bilinearly and cut at one half so their
-    // outlines run smooth instead of in 2 m steps
+    // sea & river beds, quays and Urgull's woods from the 2 m terrain, each mask interpolated bilinearly and cut at one
+    // half so their outlines run smooth instead of in 2 m steps
     for (let y = 0; y < rows; y++) {
       const tz = (zTop + (y + 0.5) / SS - CORE.minZ) / TRES - 0.5;
       const tj = Math.floor(tz), fz = tz - tj;
@@ -371,12 +428,13 @@ function columnDistances(feature, rows, out) {
         const a = terrainBase[ja * TW + ti], b = terrainBase[jb * TW + ti];
         rowSea[ti] = (a === S.seabed) * (1 - fz) + (b === S.seabed) * fz;
         rowQuay[ti] = (a === S.quay) * (1 - fz) + (b === S.quay) * fz;
+        rowWood[ti] = (a === S.woodland) * (1 - fz) + (b === S.woodland) * fz;
       }
       const base = y * FW;
       for (let ti = -1; ti < TW; ti++) {
         const i0 = Math.max(0, ti), i1 = Math.min(TW - 1, ti + 1);
-        const s0 = rowSea[i0], s1 = rowSea[i1], q0 = rowQuay[i0], q1 = rowQuay[i1];
-        if (!s0 && !s1 && !q0 && !q1) continue;
+        const s0 = rowSea[i0], s1 = rowSea[i1], q0 = rowQuay[i0], q1 = rowQuay[i1], w0 = rowWood[i0], w1 = rowWood[i1];
+        if (!s0 && !s1 && !q0 && !q1 && !w0 && !w1) continue;
         // raster columns between the centres of 2 m cells ti and ti + 1
         const xa = CORE.minX + (ti + 0.5) * TRES, c0 = Math.max(0, Math.ceil((xa - fx0) * SS - 0.5));
         const c1 = Math.min(FW - 1, Math.floor((xa + TRES - fx0) * SS - 0.5));
@@ -384,6 +442,7 @@ function columnDistances(feature, rows, out) {
           const fxx = (fx0 + (c + 0.5) / SS - xa) / TRES;
           if (s0 + (s1 - s0) * fxx > 0.5) cls[base + c] = S.seabed;
           else if (q0 + (q1 - q0) * fxx > 0.5) cls[base + c] = S.quay;
+          else if (w0 + (w1 - w0) * fxx > 0.5) cls[base + c] = S.woodland;
         }
       }
     }
@@ -411,6 +470,28 @@ function columnDistances(feature, rows, out) {
     }
     fillAccesses(cls, rows);
     clearSlivers(cls, rows);
+    // no sand on top of the beaches' walls (see onWall)
+    for (let y = 0; y < rows; y++) {
+      const z = zTop + (y + 0.5) / SS, tj = Math.floor(z - CORE.minZ);
+      if (tj < 0 || tj >= H) continue;
+      for (let x = 0; x < FW; x++) {
+        const c = cls[y * FW + x];
+        if (c !== S.beach && c !== S.seabed) continue;
+        const wx = fx0 + (x + 0.5) / SS, ti = Math.floor(wx - CORE.minX);
+        if (ti < 0 || ti >= W || !onWall[tj * W + ti]) continue;
+        const q = nearestWall(beachWalls, wx, z, ON_WALL, beachWallIndex);
+        if (!q || q.end || q.d >= 0) continue;
+        let inland = S.pedestrian;
+        for (let t = 0.25; t <= INLAND; t += 0.25) {
+          const xx = Math.round((wx - q.nx * t - fx0) * SS - 0.5), yy = Math.round((z - q.nz * t - zTop) * SS - 0.5);
+          if (xx < 0 || yy < 0 || xx >= FW || yy >= rows) break;
+          const o = cls[yy * FW + xx];
+          if (o !== S.beach && o !== S.seabed && o !== S.natural) { inland = o; break; }
+        }
+        cls[y * FW + x] = inland;
+        offWall++;
+      }
+    }
     // edge cells, on both sides of an edge: any change of surface (f1); a carriageway against a kerbed surface (f2)
     f1.fill(0, 0, FW * rows);
     f2.fill(0, 0, FW * rows);
@@ -457,6 +538,7 @@ function columnDistances(feature, rows, out) {
     }
   }
 }
+log(`no sand on the beaches' walls: ${(offWall / (SS * SS)).toFixed(0)} m² behind them repainted`);
 lap('surface raster & edge distances');
 
 const surfaceAt = (x, z) => {

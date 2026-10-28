@@ -8,23 +8,29 @@ import { BOATS } from './data-boats.js';
 
 // js/donostia/boats.js
 // The boats moored in the port, where geoEuskadi's 2025 orthophoto shows them (tools/donostia/digitise-boats.mjs ->
-// bake-boats.mjs -> js/donostia/data-boats.js): low-poly procedural hulls in seven families, each scaled per boat to its
-// measured length & beam.
+// bake-boats.mjs -> js/donostia/data-boats.js): low-poly procedural hulls in seven classes, each scaled per boat to its
+// measured length & beam. The bake gives each boat its class (from its basin, its row & its size), its paints and its
+// options (the optional fitting of its class, an outboard).
 // - sail: a 10 m cruiser with a cabin trunk, a cockpit and the sail furled on the boom under its cover; the rig (mast,
 //   boom, spreaders, stays, the masthead's all-round light) is a mesh of its own that casts no shadow
 // - motor: an 8 m planing cruiser with a cabin and a windscreen forward, a cockpit aft under an optional canopy
-// - open: a 4.5 m open boat with thwarts, a bow deck, an outboard and (some) a steering console
-// - txalupa: the 6 m Basque open boat, painted all over with a contrasting sheer stripe, its sheer swept up at the bow
+// - open: a 4.5 m open boat with thwarts, a bow deck, (most) an outboard and (some) a steering console
+// - txipironera: the 5.5 m wooden boat the port's people fish squid from: its sheer swept up at the bow, painted all
+//   over with a contrasting gunwale stripe, open with thwarts & an engine box, or under a small wheelhouse; (some) an
+//   outboard
 // - rib: a 5.5 m RIB, its tubes in their colour, a console and an outboard
 // - passenger: a 15 m passenger boat with a saloon and an open upper deck under a wheelhouse
-// - fishing: a 12 m inshore trawler with a wheelhouse, a mast and a gantry (none in the 2025 photo; ready for more)
-// Every mesh (family x level of detail) draws its instances from one storage buffer, a slice each (as the trees do), so
+// - fishing: a 12 m inshore fishing boat with its wheelhouse (in its own paint) forward, a mast and a gantry
+// - catamaran: the 18 m bay-tours catamaran, two hulls under a saloon with an open upper deck of benches, blue stripes
+// - launch: a 12 m open passenger launch, benches in rows, orange life rafts forward
+// The island ferries are js/donostia/ferries.js's, on this module's builder & material (exported below).
+// Every mesh (class x level of detail) draws its instances from one storage buffer, a slice each (as the trees do), so
 // all of them share one shader & one pipeline per pass. Paints come per vertex (a fixed paint, or the boat's hull, deck
 // or accent colour, which come per boat); the hull's antifouling, boot top & sheer stripe are drawn from the height.
 // The vertex stage rides each hull on the sea's level (water.js's seaLevel uniform, so the tide lifts it) with a gentle
-// heave, roll & pitch of its own. Near the camera the full models; beyond NEAR the far levels (hull, cabin, mast); the
-// rigging, small fittings & the far level beyond FAR drop out. Hulls & cabins cast shadows, the rigging doesn't. At
-// night the masthead lights glow (cityUniforms.uInteriorGlow).
+// heave, roll & pitch of its own, and folds away the optional parts a boat goes without. Near the camera the full
+// models; beyond NEAR the far levels (hull, cabin, mast); the rigging, small fittings & the far level beyond FAR drop
+// out. Hulls & cabins cast shadows, the rigging doesn't. At night the masthead lights glow (cityUniforms.uInteriorGlow).
 // buildBoats(seaLevel) -> Object3D | null; its userData.update(dt, elapsed, camera) picks the levels as the camera moves.
 
 const NEAR = 240; // m: full models within, far levels beyond
@@ -38,10 +44,12 @@ const SPECS = {
   sail: { L: 10, B: 3.3, k: 0.85 },
   motor: { L: 8, B: 2.9, k: 0.75 },
   open: { L: 4.5, B: 1.75, k: 0.6 },
-  txalupa: { L: 6, B: 2.0, k: 0.7 },
+  txipironera: { L: 5.5, B: 2.0, k: 0.7 },
   rib: { L: 5.5, B: 2.3, k: 0.6 },
   passenger: { L: 15, B: 5.5, k: 0.5 },
-  fishing: { L: 12, B: 4.2, k: 0.7 }
+  fishing: { L: 12, B: 4.2, k: 0.7 },
+  catamaran: { L: 18.4, B: 6.4, k: 0.4 },
+  launch: { L: 12, B: 4.4, k: 0.6 }
 };
 
 // --- paints ------------------------------------------------------------------------------------------------------------
@@ -53,22 +61,24 @@ const P = (hex, rough, take = [0, 0, 0, 0]) => {
 };
 const HULL = P(0xffffff, 0.32, [1, 0, 0, 0]);
 const DECK = P(0xffffff, 0.55, [0, 1, 0, 0]);
-const ACCENT = P(0xffffff, 0.8, [0, 0, 1, 0]); // canvas: sail covers, canopies; a RIB's tubes; a txalupa's stripe
+const ACCENT = P(0xffffff, 0.8, [0, 0, 1, 0]); // canvas: sail covers, canopies; a RIB's tubes; a fishing boat's wheelhouse
 const GLASS = P(0x0b1014, 0.08);
 const STEEL = P(0xb9bcc0, 0.35);
 const DARK = P(0x1a1c1e, 0.5); // engines, fenders' & mast fittings' black
 const TEAK = P(0x8a6a48, 0.75);
-const WOOD = P(0x9c7a52, 0.7); // a txalupa's thwarts & varnished gunwale
+const WOOD = P(0x9c7a52, 0.7); // a txipironera's thwarts & varnished gunwale
 const NONSLIP = P(0xd8d6cf, 0.8);
 const LIGHT = P(0xfff6e0, 0.3, [0, 0, 0, 1]);
-const INSIDE = 2; // the part of an open boat's inside, shaded darker towards its floor
+// parts (aPart.y): the optional fitting of a class (shown with option 1), an open boat's inside (shaded darker towards
+// its floor), an outboard (shown with option 2)
+const OPTIONAL = 1, INSIDE = 2, OUTBOARD = 3;
 
 // --- geometry ------------------------------------------------------------------------------------------------------------
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
 // Non-indexed triangles with position, normal, aPaint (rgb + roughness), aTint (hull, deck, accent, glow weights) and
-// aPart (x: depth below the sheer, m, for the stripes; y: the part: 1 an optional fitting, 2 an open boat's inside)
+// aPart (x: depth below the sheer, m, for the stripes; y: the part, OPTIONAL, INSIDE or OUTBOARD)
 class Builder {
   constructor() {
     this.pos = [];
@@ -174,7 +184,7 @@ function hullShape(h) {
   return { halfBeam, sheer, keel, z };
 }
 
-function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
+function addHull(b, h, { open = false, wall = 0.05, floor = 0.15, gunwale = WOOD } = {}) {
   const { halfBeam, sheer, keel, z } = hullShape(h);
   const ts = Array.from({ length: h.stations + 1 }, (_, i) => {
     const u = i / h.stations;
@@ -234,7 +244,7 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
       b.quad(a0, b0, b1, a1, DECK);
       b.quad(a1, b1, b2, a2, DECK);
     }
-    return { halfBeam, sheer, z };
+    return { halfBeam, sheer, keel, z };
   }
   // An open boat: the gunwale (wall thick), the inner sides down to the floor, the floor
   for (let i = 0; i < ts.length - 1; i++) {
@@ -245,10 +255,10 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
       const o = (k) => V(hb[k] * side, s[k], zz[k]), n = (k) => V(inner[k] * side, s[k], zz[k]);
       const f = (k) => V(fl[k] * side, floor, zz[k]);
       if (side > 0) {
-        b.quad(o(0), n(0), n(1), o(1), WOOD);
+        b.quad(o(0), n(0), n(1), o(1), gunwale);
         b.quad(n(0), f(0), f(1), n(1), DECK, INSIDE);
       } else {
-        b.quad(o(0), o(1), n(1), n(0), WOOD);
+        b.quad(o(0), o(1), n(1), n(0), gunwale);
         b.quad(n(0), n(1), f(1), f(0), DECK, INSIDE);
       }
     }
@@ -257,7 +267,7 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
   // the inside of the transom
   const hb0 = halfBeam(0), in0 = Math.max(0, hb0 - wall), z0 = z(0) + wall;
   b.quad(V(-in0, sheer(0), z0), V(-hb0 * 0.72, floor, z0), V(hb0 * 0.72, floor, z0), V(in0, sheer(0), z0), DECK, INSIDE);
-  return { halfBeam, sheer, z };
+  return { halfBeam, sheer, keel, z };
 }
 
 // A flat-topped deck patch over the bow of an open boat, from t to the stem
@@ -272,13 +282,13 @@ function bowDeck(b, shape, t0, rise = 0.02) {
 }
 
 // An outboard engine on the transom: the cowling and the leg down into the water
-function outboard(b, shape, size = 1) {
+function outboard(b, shape, size = 1, part = 0) {
   const z0 = shape.z(0) - 0.16 * size, y0 = shape.sheer(0) - 0.05 * size;
-  b.frustum(y0, 0.15 * size, z0 - 0.22 * size, z0 + 0.12 * size, y0 + 0.42 * size, 0.12 * size, z0 - 0.18 * size, z0 + 0.06 * size, DARK);
-  b.box(0, y0 - 0.6 * size, z0 - 0.04 * size, 0.08 * size, 0.6 * size, 0.16 * size, DARK, { top: false });
+  b.frustum(y0, 0.15 * size, z0 - 0.22 * size, z0 + 0.12 * size, y0 + 0.42 * size, 0.12 * size, z0 - 0.18 * size, z0 + 0.06 * size, DARK, { part });
+  b.box(0, y0 - 0.6 * size, z0 - 0.04 * size, 0.08 * size, 0.6 * size, 0.16 * size, DARK, { top: false, part });
 }
 
-// --- the families ----------------------------------------------------------------------------------------------------------
+// --- the classes -----------------------------------------------------------------------------------------------------------
 
 const SAIL_HULL = { L: 10, B: 3.3, transom: 0.86, widest: 0.42, entry: 1.35, sheer: [0.85, 0.95, 1.18], keel: 0.5,
   section: [[0, 0], [0.45, 0.12], [0.8, 0.35], [0.96, 0.62], [1, 1]] };
@@ -303,7 +313,7 @@ function sailBody(lod) {
     b.box(0, deckAt(0.2) - 0.01, (zk0 + zk1) / 2, w * 2, 0.03, zk1 - zk0, TEAK);
     for (const s of [-1, 1]) b.box(s * w, deckAt(0.2), (zk0 + zk1) / 2, 0.08, 0.28, zk1 - zk0, DECK);
     // the pulpit's & pushpit's rails, in the hull's colour from afar
-    b.bar(V(-0.35, deckAt(0.98) + 0.62, shape.z(0.93)), V(0.35, deckAt(0.98) + 0.62, shape.z(0.93)), 0.035, STEEL, 1);
+    b.bar(V(-0.35, deckAt(0.98) + 0.62, shape.z(0.93)), V(0.35, deckAt(0.98) + 0.62, shape.z(0.93)), 0.035, STEEL);
   }
   // the sail furled on the boom under its cover: a ridge tapering aft from the mast
   const zm = shape.z(MAST_T), za = shape.z(0.14), yb = deckAt(MAST_T) + 0.95;
@@ -352,12 +362,12 @@ function motorBody(lod) {
     b.frustum(y0 + 0.78, w - 0.12, zc0, zc1 - 0.85, y0 + 0.86, w - 0.14, zc0 + 0.05, zc1 - 0.95, DECK);
     // the cockpit's sole, a step down in teak
     b.box(0, shape.sheer(0.2) - 0.02, shape.z(0.19), (shape.halfBeam(0.2) - 0.16) * 2, 0.03, shape.z(0.34) - shape.z(0.03), TEAK);
-    // the canopy over the cockpit, on two bows (optional: part 1)
+    // the canopy over the cockpit, on two bows (optional)
     const zt0 = shape.z(0.1), zt1 = shape.z(0.36), yt = y0 + 1.75;
-    b.box(0, yt, (zt0 + zt1) / 2, w * 2 + 0.1, 0.06, zt1 - zt0, ACCENT, { part: 1, bottom: true });
+    b.box(0, yt, (zt0 + zt1) / 2, w * 2 + 0.1, 0.06, zt1 - zt0, ACCENT, { part: OPTIONAL, bottom: true });
     for (const s of [-1, 1]) {
-      b.bar(V(s * w, y0, zt0 + 0.2), V(s * w, yt, zt0 + 0.2), 0.04, STEEL, 1);
-      b.bar(V(s * w, y0 + 0.86, zt1), V(s * w, yt, zt1 - 0.1), 0.04, STEEL, 1);
+      b.bar(V(s * w, y0, zt0 + 0.2), V(s * w, yt, zt0 + 0.2), 0.04, STEEL, OPTIONAL);
+      b.bar(V(s * w, y0 + 0.86, zt1), V(s * w, yt, zt1 - 0.1), 0.04, STEEL, OPTIONAL);
     }
     // the bow rail
     b.bar(V(-0.4, shape.sheer(0.95) + 0.55, shape.z(0.9)), V(0.4, shape.sheer(0.95) + 0.55, shape.z(0.9)), 0.035, STEEL);
@@ -378,26 +388,39 @@ function openBody(lod) {
   bowDeck(b, shape, 0.8);
   // thwarts
   for (const t of [0.3, 0.6]) b.box(0, shape.sheer(t) - 0.22, shape.z(t), shape.halfBeam(t) * 1.9, 0.05, 0.28, DECK);
-  // a steering console amidships (optional: part 1)
-  b.box(0.15, 0.16, shape.z(0.48), 0.5, 0.75, 0.45, DECK, { part: 1 });
-  b.frustum(0.91, 0.25, shape.z(0.48) + 0.05, shape.z(0.48) + 0.22, 1.12, 0.25, shape.z(0.48) + 0.05, shape.z(0.48) + 0.1, GLASS, { part: 1, x: 0.15 });
-  outboard(b, shape, 0.8);
+  // a steering console amidships (optional), the outboard (optional)
+  b.box(0.15, 0.16, shape.z(0.48), 0.5, 0.75, 0.45, DECK, { part: OPTIONAL });
+  b.frustum(0.91, 0.25, shape.z(0.48) + 0.05, shape.z(0.48) + 0.22, 1.12, 0.25, shape.z(0.48) + 0.05, shape.z(0.48) + 0.1, GLASS, { part: OPTIONAL, x: 0.15 });
+  outboard(b, shape, 0.8, OUTBOARD);
   return b.build();
 }
 
-const TXALUPA_HULL = { L: 6, B: 2.0, transom: 0.62, widest: 0.45, entry: 1.25, sheer: [0.78, 0.68, 1.12], keel: 0.32,
+const TXIPI_HULL = { L: 5.5, B: 2.0, transom: 0.6, widest: 0.45, entry: 1.2, sheer: [0.74, 0.64, 1.08], keel: 0.32,
   section: [[0, 0], [0.5, 0.18], [0.88, 0.42], [1, 1]] };
 
-function txalupaBody(lod) {
+function txipironeraBody(lod) {
   const b = new Builder();
-  const shape = addHull(b, { ...TXALUPA_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.88, 0.42], [1, 1]] : TXALUPA_HULL.section },
-    { open: !lod, floor: 0.2, wall: 0.06 });
-  if (lod) return b.build();
-  bowDeck(b, shape, 0.86, 0.0);
-  for (const t of [0.22, 0.48, 0.72]) b.box(0, shape.sheer(t) - 0.24, shape.z(t), shape.halfBeam(t) * 1.9, 0.06, 0.3, WOOD);
-  // the engine's box aft of amidships, and a small post
-  b.box(0, 0.2, shape.z(0.36), 0.6, 0.5, 0.8, DECK);
+  const shape = addHull(b, { ...TXIPI_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.88, 0.42], [1, 1]] : TXIPI_HULL.section },
+    { open: !lod, floor: 0.2, wall: 0.06, gunwale: HULL });
+  // the wheelhouse (optional) amidships: a small white box, windows all round under its roof (raked forward), a mast &
+  // its light on top
+  const zw0 = shape.z(0.26), zw1 = shape.z(0.47), ww = shape.halfBeam(0.36) - 0.32, part = OPTIONAL;
+  if (lod) {
+    b.frustum(shape.sheer(0.36) - 0.05, ww, zw0, zw1, 0.95, ww, zw0, zw1, DECK, { top: false, part });
+    b.frustum(0.95, ww, zw0, zw1, 1.32, ww - 0.03, zw0, zw1 - 0.18, GLASS, { part });
+    return b.build();
+  }
+  bowDeck(b, shape, 0.84, 0.0);
+  for (const t of [0.16, 0.68]) b.box(0, shape.sheer(t) - 0.24, shape.z(t), shape.halfBeam(t) * 1.9, 0.06, 0.3, WOOD);
+  // the engine's box amidships, a bitt at the bow
+  b.box(0, 0.2, shape.z(0.38), 0.55, 0.45, 0.75, DECK);
   b.bar(V(0, shape.sheer(0.9), shape.z(0.9)), V(0, shape.sheer(0.9) + 0.35, shape.z(0.9)), 0.08, WOOD);
+  b.frustum(0.2, ww, zw0, zw1, 0.95, ww, zw0, zw1, DECK, { top: false, part });
+  b.frustum(0.95, ww, zw0, zw1, 1.3, ww - 0.03, zw0 + 0.02, zw1 - 0.18, GLASS, { top: false, part });
+  b.box(0, 1.3, (zw0 + zw1) / 2 - 0.06, ww * 2 + 0.1, 0.05, zw1 - zw0 + 0.02, DECK, { part, bottom: true });
+  b.bar(V(0, 1.35, zw0 + 0.2), V(0, 2.1, zw0 + 0.2), 0.035, STEEL, part);
+  b.box(0, 2.1, zw0 + 0.2, 0.08, 0.08, 0.08, LIGHT, { part });
+  outboard(b, shape, 0.7, OUTBOARD);
   return b.build();
 }
 
@@ -480,24 +503,136 @@ const FISHING_HULL = { L: 12, B: 4.2, transom: 0.8, widest: 0.45, entry: 1.5, sh
 function fishingBody(lod) {
   const b = new Builder();
   const shape = addHull(b, { ...FISHING_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.9, 0.4], [1, 1]] : FISHING_HULL.section });
-  const y0 = shape.sheer(0.55), zw0 = shape.z(0.48), zw1 = shape.z(0.66);
+  // the wheelhouse forward of amidships, in its own paint (the accent)
+  const y0 = shape.sheer(0.6), zw0 = shape.z(0.52), zw1 = shape.z(0.7);
   if (lod) {
-    b.frustum(y0, 1.3, zw0, zw1, y0 + 1.3, 1.3, zw0, zw1 - 0.05, DECK, { top: false });
+    b.frustum(y0, 1.3, zw0, zw1, y0 + 1.3, 1.3, zw0, zw1 - 0.05, ACCENT, { top: false });
     b.frustum(y0 + 1.3, 1.3, zw0, zw1 - 0.05, y0 + 2.1, 1.2, zw0, zw1 - 0.3, GLASS);
   } else {
-    b.frustum(y0, 1.3, zw0, zw1, y0 + 1.3, 1.3, zw0, zw1 - 0.05, DECK, { top: false });
+    b.frustum(y0, 1.3, zw0, zw1, y0 + 1.3, 1.3, zw0, zw1 - 0.05, ACCENT, { top: false });
     b.frustum(y0 + 1.3, 1.3, zw0, zw1 - 0.05, y0 + 2.0, 1.25, zw0, zw1 - 0.3, GLASS, { top: false });
-    b.box(0, y0 + 2.0, (zw0 + zw1) / 2 - 0.1, 2.8, 0.12, zw1 - zw0 + 0.2, DECK);
+    b.box(0, y0 + 2.0, (zw0 + zw1) / 2 - 0.1, 2.8, 0.12, zw1 - zw0 + 0.2, ACCENT);
     // the mast with its lights over the wheelhouse, the gantry over the stern
     b.bar(V(0, y0 + 2.1, zw0 + 0.5), V(0, y0 + 6.5, zw0 + 0.5), 0.12, STEEL);
     b.box(0, y0 + 6.5, zw0 + 0.5, 0.18, 0.18, 0.18, LIGHT);
-    for (const s of [-1, 1]) b.bar(V(s * 1.5, shape.sheer(0.05), shape.z(0.05)), V(s * 1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), 0.12, ACCENT);
-    b.bar(V(-1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), V(1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), 0.12, ACCENT);
+    for (const s of [-1, 1]) b.bar(V(s * 1.5, shape.sheer(0.05), shape.z(0.05)), V(s * 1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), 0.12, STEEL);
+    b.bar(V(-1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), V(1.2, shape.sheer(0.05) + 3.2, shape.z(0.05)), 0.12, STEEL);
+    // the net drum on the after deck
+    b.frustum(shape.sheer(0.25), 0.9, shape.z(0.22), shape.z(0.32), shape.sheer(0.25) + 0.9, 0.9, shape.z(0.22), shape.z(0.32), DARK);
   }
   return b.build();
 }
 
-const BODIES = { sail: sailBody, motor: motorBody, open: openBody, txalupa: txalupaBody, rib: ribBody, passenger: passengerBody, fishing: fishingBody };
+// another builder's triangles moved across by dx (a catamaran's hulls)
+function append(b, o, dx) {
+  for (let k = 0; k < o.pos.length; k += 3) b.pos.push(o.pos[k] + dx, o.pos[k + 1], o.pos[k + 2]);
+  for (const key of ['nrm', 'paint', 'tint', 'part']) for (const v of o[key]) b[key].push(v);
+}
+
+const CAT_HULL = { L: 18.4, B: 1.9, transom: 0.86, widest: 0.5, entry: 1.15, sheer: [1.55, 1.6, 2.05], keel: 0.95,
+  section: [[0, 0], [0.42, 0.14], [0.84, 0.42], [1, 1]] };
+const CAT_B = 6.4; // the model's beam over both hulls
+const GREEN = P(0x2f7352, 0.6); // the catamaran's fenders
+const ORANGE = P(0xe0662a, 0.6); // life rafts
+
+// The catamaran (the bay tours' Ciudad de San Sebastián, after its photos): two slender hulls under a bridge deck, the
+// saloon on it with a band of windows down each side and a raked windscreen forward, the open upper deck on its roof
+// with benches in rows, rails all round and a steel arch aft; the deck between the bows in the accent, as the stripes
+function catamaranBody(lod) {
+  const b = new Builder();
+  const hx = CAT_B / 2 - CAT_HULL.B / 2;
+  let shape = null;
+  for (const s of [-1, 1]) {
+    const one = new Builder();
+    shape = addHull(one, { ...CAT_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.84, 0.42], [1, 1]] : CAT_HULL.section });
+    append(b, one, s * hx);
+  }
+  const { z } = shape, W = CAT_B / 2 - 0.08;
+  // the bridge deck between the hulls, its underside clear of the water; a blue band along its sides
+  const yd = 1.6, zb0 = z(0.01), zb1 = z(0.8);
+  b.box(0, 1.0, (zb0 + zb1) / 2, W * 2, yd - 1.0, zb1 - zb0, DECK, { bottom: true });
+  b.box(0, 1.28, (zb0 + zb1) / 2, W * 2 + 0.04, 0.1, zb1 - zb0 + 0.02, ACCENT, { top: false });
+  // the deck between the bows, in the accent
+  const zf1 = z(0.93);
+  b.quad(V(-hx + 0.6, yd, zb1), V(-hx + 0.6, yd, zf1), V(hx - 0.6, yd, zf1), V(hx - 0.6, yd, zb1), ACCENT);
+  // the saloon: white below, the band of windows, a white band under the upper deck, which overhangs the windscreen
+  const zs0 = z(0.07), zs1 = z(0.72), ws = W - 0.25;
+  b.frustum(yd, ws, zs0, zs1, yd + 0.75, ws, zs0, zs1 - 0.15, DECK, { top: false });
+  b.frustum(yd + 0.75, ws, zs0, zs1 - 0.15, yd + 1.7, ws - 0.04, zs0, zs1 - 0.95, GLASS, { top: false });
+  const yu = yd + 2.05; // the upper deck
+  b.frustum(yd + 1.7, ws - 0.04, zs0, zs1 - 0.95, yu, W, zs0 - 0.2, zs1 - 0.3, DECK);
+  if (lod) return b.build();
+  // the upper deck's rails, the arch over its after end with a light, its benches in two blocks either side of an aisle;
+  // the white posts between the saloon's windows
+  const zu0 = zs0 - 0.2, zu1 = zs1 - 0.3, yr = yu + 0.95;
+  for (const s of [-1, 1]) {
+    for (let zz = zs0 + 0.9; zz < zs1 - 1.3; zz += 1.15) b.box(s * (ws - 0.01), yd + 0.75, zz, 0.08, 0.95, 0.14, DECK, { top: false });
+    b.bar(V(s * (W - 0.05), yr, zu0), V(s * (W - 0.05), yr, zu1), 0.05, STEEL);
+    for (let zz = zu0; zz <= zu1 + 0.01; zz += (zu1 - zu0) / 6) b.bar(V(s * (W - 0.05), yu, zz), V(s * (W - 0.05), yr, zz), 0.04, STEEL);
+    b.bar(V(s * (W - 0.3), yu, z(0.16)), V(s * (W - 0.3), yu + 2.1, z(0.16)), 0.1, STEEL);
+    for (let zz = z(0.2); zz < zu1 - 1.2; zz += 0.85) {
+      const x0 = s * 0.55, x1 = s * (W - 0.35);
+      b.box((x0 + x1) / 2, yu, zz, Math.abs(x1 - x0), 0.45, 0.42, DECK);
+      b.box((x0 + x1) / 2, yu + 0.45, zz - 0.19, Math.abs(x1 - x0), 0.4, 0.06, DECK);
+    }
+  }
+  b.bar(V(-(W - 0.05), yr, zu0), V(W - 0.05, yr, zu0), 0.05, STEEL);
+  b.bar(V(-(W - 0.05), yr, zu1), V(W - 0.05, yr, zu1), 0.05, STEEL);
+  b.bar(V(-(W - 0.3), yu + 2.1, z(0.16)), V(W - 0.3, yu + 2.1, z(0.16)), 0.1, STEEL);
+  b.box(0, yu + 2.15, z(0.16), 0.14, 0.14, 0.14, LIGHT);
+  // the rails round the bows and the after deck, the green fenders forward
+  for (const s of [-1, 1]) {
+    const xo = s * (hx + 0.8), xi = s * (hx - 0.6);
+    b.bar(V(xo, yd + 0.9, zs1), V(s * hx, shape.sheer(0.98) + 0.85, z(0.97)), 0.04, STEEL);
+    b.bar(V(xi, yd + 0.9, zs1), V(s * hx, shape.sheer(0.98) + 0.85, z(0.97)), 0.04, STEEL);
+    b.bar(V(s * W, yd + 0.9, zb0 + 0.1), V(s * W, yd + 0.9, zs0), 0.04, STEEL);
+    b.box(s * (CAT_B / 2 + 0.15), 0.9, z(0.86), 0.4, 0.45, 0.4, GREEN);
+  }
+  b.bar(V(-W, yd + 0.9, zb0 + 0.1), V(W, yd + 0.9, zb0 + 0.1), 0.04, STEEL);
+  return b.build();
+}
+
+const LAUNCH_HULL = { L: 12, B: 4.4, transom: 0.9, widest: 0.45, entry: 1.7, sheer: [1.0, 1.0, 1.35], keel: 0.7,
+  section: [[0, 0], [0.6, 0.15], [0.92, 0.4], [1, 1]] };
+
+// An open passenger launch (the Lasta landing's, after the orthophoto): an open hull, white inside, benches across it in
+// two blocks either side of an aisle, the orange life rafts forward of them, a short deck at the bow, rails on stanchions
+function launchBody(lod) {
+  const b = new Builder();
+  const shape = addHull(b, { ...LAUNCH_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.92, 0.4], [1, 1]] : LAUNCH_HULL.section },
+    { open: !lod, floor: 0.35, wall: 0.08, gunwale: HULL });
+  if (lod) {
+    for (const s of [-1, 1]) b.box(s * 0.9, shape.sheer(0.7) - 0.1, shape.z(0.73), 0.8, 0.4, 1.2, ORANGE);
+    return b.build();
+  }
+  bowDeck(b, shape, 0.84, 0.02);
+  for (let t = 0.07; t < 0.64; t += 0.06) {
+    for (const s of [-1, 1]) {
+      const x0 = s * 0.35, x1 = s * (shape.halfBeam(t) - 0.2), zc = shape.z(t);
+      b.box((x0 + x1) / 2, 0.35, zc, Math.abs(x1 - x0), 0.45, 0.4, DECK);
+      b.box((x0 + x1) / 2, 0.8, zc - 0.18, Math.abs(x1 - x0), 0.4, 0.05, DECK);
+    }
+  }
+  // the life rafts in their canisters, the helm's console beside them, a mast with its light
+  for (const [x, t] of [[-0.9, 0.7], [0.9, 0.7], [-0.6, 0.77], [0.6, 0.77]]) b.box(x, 0.35, shape.z(t), 0.7, 0.55, 0.75, ORANGE);
+  b.box(0, 0.35, shape.z(0.68), 0.7, 0.85, 0.5, DECK);
+  b.bar(V(0, shape.sheer(0.8), shape.z(0.8)), V(0, shape.sheer(0.8) + 2.0, shape.z(0.8)), 0.06, STEEL);
+  b.box(0, shape.sheer(0.8) + 2.0, shape.z(0.8), 0.12, 0.12, 0.12, LIGHT);
+  for (const s of [-1, 1]) {
+    for (let k = 0; k <= 6; k++) {
+      const t = 0.04 + (0.8 * k) / 6, x = s * (shape.halfBeam(t) - 0.04);
+      b.bar(V(x, shape.sheer(t), shape.z(t)), V(x, shape.sheer(t) + 0.75, shape.z(t)), 0.035, STEEL);
+    }
+    b.bar(V(s * (shape.halfBeam(0.04) - 0.04), shape.sheer(0.04) + 0.75, shape.z(0.04)),
+      V(s * (shape.halfBeam(0.84) - 0.04), shape.sheer(0.84) + 0.75, shape.z(0.84)), 0.04, STEEL);
+  }
+  return b.build();
+}
+
+const BODIES = {
+  sail: sailBody, motor: motorBody, open: openBody, txipironera: txipironeraBody, rib: ribBody, passenger: passengerBody,
+  fishing: fishingBody, catamaran: catamaranBody, launch: launchBody
+};
 
 // --- material ------------------------------------------------------------------------------------------------------------
 
@@ -506,9 +641,9 @@ const SLOTS = 5; // vec4s per instance in the storage buffer
 
 /**
  * One material for every boat mesh. Each instance: [x, z, sin, cos of the heading], [scale across, up, along, phase],
- * [hull rgb, roll], [deck rgb, options], [accent rgb, family's stripe]; a mesh's instances start at its instanceBase.
+ * [hull rgb, roll], [deck rgb, options], [accent rgb, class's stripe]; a mesh's instances start at its instanceBase.
  */
-function createBoatMaterial(instances, seaLevel) {
+export function createBoatMaterial(instances, seaLevel) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0.0, roughness: 0.5 });
   const base = uniform(0, 'uint').onObjectUpdate(({ object }) => object.userData.instanceBase);
   const index = instanceIndex.add(base).mul(SLOTS);
@@ -523,8 +658,10 @@ function createBoatMaterial(instances, seaLevel) {
   mat.positionNode = Fn(() => {
     const g = positionGeometry, n = normalGeometry;
     const phase = scale.w, roll = hull.w;
-    // an optional fitting (part 1) the boat goes without (its options flag) folds away to its middle
-    const shown = float(1).sub(step(0.5, part.y).mul(step(part.y, 1.5)).mul(step(0.5, deck.w)));
+    // an optional fitting or an outboard the boat goes without (its options' bits 1 & 2) folds away to its middle
+    const outboard = step(1.5, deck.w), fitting = deck.w.sub(outboard.mul(2));
+    const shown = float(1).sub(step(0.5, part.y).mul(step(part.y, 1.5)).mul(float(1).sub(fitting)))
+      .sub(step(2.5, part.y).mul(float(1).sub(outboard)));
     const p = g.mul(scale.xyz).mul(shown).toVar();
     // heave, roll & pitch: slow swell periods, each boat at its own phase, smaller boats livelier
     const t = time;
@@ -548,8 +685,8 @@ function createBoatMaterial(instances, seaLevel) {
   mat.colorNode = Fn(() => {
     const own = tint.x.add(tint.y).add(tint.z);
     const c = paint.xyz.mul(float(1).sub(own)).add(hull.xyz.mul(tint.x)).add(deck.xyz.mul(tint.y)).add(accent.xyz.mul(tint.z)).toVar();
-    // on the hull's sides: antifouling below the waterline, a dark boot top above it, the sheer stripe (a txalupa's
-    // broad and in the accent, the others' a thin cove line)
+    // on the hull's sides: antifouling below the waterline, a dark boot top above it, the sheer stripe in the accent (a
+    // txipironera's gunwale stripe broad, the others' a thin cove line)
     const y = localY;
     const boot = smoothstep(-0.005, 0.005, y).mul(float(1).sub(smoothstep(0.075, 0.085, y)));
     const anti = float(1).sub(smoothstep(-0.01, 0.0, y));
@@ -560,13 +697,16 @@ function createBoatMaterial(instances, seaLevel) {
     c.assign(mix(c, accent.xyz, stripe.mul(onHull)));
     c.assign(mix(c, vec3(0.12, 0.03, 0.025), anti.mul(onHull)));
     // an open boat's inside darkens towards its floor, out of the sky's light
-    const inside = step(1.5, part.y);
+    const inside = step(1.5, part.y).mul(step(part.y, 2.5));
     return c.mul(mix(float(1), smoothstep(0.0, 0.8, y).mul(0.45).add(0.5), inside));
   })();
   mat.roughnessNode = paint.w;
   mat.emissiveNode = vec3(1.0, 0.93, 0.78).mul(tint.w.mul(night().mul(7.0).add(0.15)));
   return mat;
 }
+
+// the builder, hull, paints & instance layout js/donostia/ferries.js builds the island ferries with
+export { Builder, addHull, V, P, HULL, DECK, ACCENT, GLASS, STEEL, DARK, NONSLIP, LIGHT, SLOTS };
 
 // --- build -------------------------------------------------------------------------------------------------------------------
 
@@ -577,10 +717,13 @@ const hash = (i, k) => {
   h ^= h >>> 13;
   return (h >>> 0) / 4294967296;
 };
-const srgb = (v) => {
+export const srgb = (v) => {
   const c = new THREE.Color().setHex(v, THREE.SRGBColorSpace);
   return [c.r, c.g, c.b];
 };
+const STRIDE = 10; // integers per boat in BOATS.boats
+// the sheer stripe's depth per class (m): a txipironera's gunwale stripe, a passenger boat's band, a cove line
+const STRIPES = { txipironera: 0.12, passenger: 0.25, sail: 0.05, fishing: 0.0, catamaran: 0.1, launch: 0.05 };
 
 /**
  * The port's boats. seaLevel: the water's level uniform (js/donostia/water.js userData.seaLevel), so the hulls ride the
@@ -589,34 +732,30 @@ const srgb = (v) => {
 export function buildBoats(seaLevel = null) {
   try {
     const level = seaLevel || uniform(0);
-    const { families, boats: flat } = BOATS;
-    const N = flat.length / 9;
+    const { classes, boats: flat } = BOATS;
+    const N = flat.length / STRIDE;
     if (!N) return null;
-    // per boat: its family and its five vec4s
+    // per boat: its class and its five vec4s
     const fam = new Uint8Array(N), rows = new Float32Array(N * SLOTS * 4), at = new Float32Array(N * 2);
     for (let i = 0; i < N; i++) {
-      const [xc, zc, hd, lc, bc, f, hullHex, deckHex, accentHex] = flat.slice(i * 9, i * 9 + 9);
-      const name = families[f], spec = SPECS[name];
+      const [xc, zc, hd, lc, bc, f, options, hullHex, deckHex, accentHex] = flat.slice(i * STRIDE, (i + 1) * STRIDE);
+      const name = classes[f], spec = SPECS[name];
       const x = xc / 100, z = zc / 100, h = (hd / 10) * (Math.PI / 180), length = lc / 100, beam = bc / 100;
       const sy = Math.pow(length / spec.L, spec.k);
       // small boats roll more (radians); a little bit each of its own
       const roll = (0.022 / Math.sqrt(Math.max(1, length / 4))) * (0.7 + 0.6 * hash(i, 1));
-      // optional fittings: an open boat's console, a motor boat's canopy (where the photo shows its colour), outboards
-      const hasAccent = accentHex !== deckHex && accentHex !== 0xdedacd;
-      const skip = name === 'open' ? hash(i, 2) < 0.55 : name === 'motor' ? !hasAccent && hash(i, 3) < 0.75 : false;
-      const stripe = name === 'txalupa' ? 0.14 : name === 'passenger' ? 0.25 : name === 'sail' ? 0.05 : 0.035;
       rows.set([x, z, Math.sin(h), Math.cos(h), beam / spec.B, sy, length / spec.L, hash(i, 4) * 6.2832,
-        ...srgb(hullHex), roll, ...srgb(deckHex), skip ? 1 : 0, ...srgb(accentHex), stripe], i * SLOTS * 4);
+        ...srgb(hullHex), roll, ...srgb(deckHex), options, ...srgb(accentHex), STRIPES[name] ?? 0.035], i * SLOTS * 4);
       fam[i] = f;
       at[i * 2] = x;
       at[i * 2 + 1] = z;
     }
 
-    // Meshes: per family a near & a far level, and the sailboats' rigging near & far; each a slice of the storage buffer
-    // as long as its family
-    const counts = families.map((_, f) => fam.reduce((n, g) => n + (g === f ? 1 : 0), 0));
+    // Meshes: per class a near & a far level, and the sailboats' rigging near & far; each a slice of the storage buffer
+    // as long as its class
+    const counts = classes.map((_, f) => fam.reduce((n, g) => n + (g === f ? 1 : 0), 0));
     const levels = [];
-    families.forEach((name, f) => {
+    classes.forEach((name, f) => {
       if (!counts[f]) return;
       levels.push({ f, name: `Boats_${name}`, geo: BODIES[name](0), from: 0, to: NEAR, shadow: true });
       levels.push({ f, name: `Boats_${name}_far`, geo: BODIES[name](1), from: NEAR, to: FAR, shadow: true });
@@ -687,7 +826,7 @@ export function buildBoats(seaLevel = null) {
       relevel(camera.position);
     };
     group.userData.stats = () => ({
-      boats: N, perFamily: Object.fromEntries(families.map((f, i) => [f, counts[i]])),
+      boats: N, perClass: Object.fromEntries(classes.map((f, i) => [f, counts[i]])),
       meshes: levels.map((l, m) => ({ name: l.name, triangles: l.geo.attributes.position.count / 3, instances: meshes[m].geometry.instanceCount }))
     });
     return group;

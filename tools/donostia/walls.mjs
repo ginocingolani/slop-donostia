@@ -9,6 +9,7 @@
 // found again by a later one.
 
 import { WALL, nearestWall } from '../../js/donostia/shore-walls.js';
+import { pointInRing } from './lib.mjs';
 
 const STEP = 0.5; // m between profile samples
 const HALF = 9; // m each side of the shoreline
@@ -16,6 +17,9 @@ const SEARCH = 7; // m: the drop must lie this close to the shoreline
 const WALL_MIN = 1.4; // m: lower steps are kerbs, low terraces & rocks
 const STEEP = 0.25; // m of fall per STEP that still belongs to the face (a 1 in 2 slope)
 const DECK = [0.5, 4.5]; // m behind the crest over which the promenade level is taken
+const WALK = 2, WALK_RISE = 0.6; // m: the narrowest walk along a wall that a bank may rise behind; the most it rises across
+const FALLS = 3; // the falls tried in each profile
+const JOIN_MISSES = 5; // by a beach, the profiles between two runs of one wall that may miss it
 const SPREAD0 = 1.8; // m: how far the 1 m LiDAR spreads a plumb wall's fall (10 to 90 %)
 // Ground classes (GEO.terrain.classes) a wall may hold up: paving & roads, the beach-front gardens; flat unmapped ground
 // (natural) only where very flat (the port's & the river's quays, which the municipal map leaves blank)
@@ -44,38 +48,65 @@ function resample(pts, closed) {
   });
 }
 
-// The wall in the profile square to the shoreline at node P, or null. u runs along the normal (-tz, tx).
-function profileWall(dtm, P, classAt) {
+// The wall in the profile square to the shoreline at node P, or null. u runs along the normal (-tz, tx). beach: P lies on
+// a beach's edge (the falls after the steepest are tried, and a walk with a bank behind it holds a wall up).
+function profileWall(dtm, P, classAt, beach) {
   const nx = -P.tz, nz = P.tx;
   const N = Math.round((2 * HALF) / STEP) + 1;
-  let h = new Float64Array(N);
+  const h = new Float64Array(N);
   for (let i = 0; i < N; i++) {
     const u = -HALF + i * STEP;
     h[i] = dtm.sample(P.x + nx * u, P.z + nz * u);
     if (!Number.isFinite(h[i])) return null;
   }
-  // the steepest 3 m fall near the shoreline, in either direction
+  // the steepest 3 m fall near the shoreline, in either direction; by a beach, the next steepest too while none makes a
+  // wall (behind the walk round the Pico del Loro, Miramar's garden bank falls faster than the sea wall in front of it)
   const span = Math.round(1.5 / STEP), reach = Math.round(SEARCH / STEP), mid = (N - 1) / 2;
-  let best = 0, at = -1;
+  const falls = [];
   for (let i = Math.max(span, mid - reach); i <= Math.min(N - 1 - span, mid + reach); i++) {
     const d = h[i - span] - h[i + span];
-    if (Math.abs(d) > Math.abs(best)) { best = d; at = i; }
+    if (Math.abs(d) >= WALL_MIN) falls.push([i, d]);
   }
-  if (Math.abs(best) < WALL_MIN) return null;
-  // turn the profile so the low side lies at +u
-  const s = Math.sign(best);
-  if (s < 0) { h = h.reverse(); at = N - 1 - at; }
+  falls.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || a[0] - b[0]);
+  const tried = [];
+  for (const [i, d] of falls) {
+    if (tried.some((t) => Math.abs(t - i) <= 2 * span)) continue; // (one try per fall)
+    if (tried.push(i) > (beach ? FALLS : 1)) break;
+    // turn the profile so the low side lies at +u
+    const w = d > 0 ? profileFall(h, i, 1, P, classAt, beach) : profileFall(h.slice().reverse(), N - 1 - i, -1, P, classAt, beach);
+    if (w) return w;
+  }
+  return null;
+}
+
+// The wall of the fall at `at` in the profile h (turned so the low side lies at +u; s: +1 as sampled, -1 turned), or null
+function profileFall(h, at, s, P, classAt, beach) {
+  const N = h.length, nx = -P.tz, nz = P.tx;
   let top = at, toe = at;
   while (top > 0 && h[top - 1] - h[top] > STEEP) top--;
   while (toe < N - 1 && h[toe] - h[toe + 1] > STEEP) toe++;
   const crest = h[top], foot = h[toe];
-  // the promenade behind: flat
-  const deckSamples = [];
-  for (let i = top - Math.round(DECK[1] / STEP); i <= top - Math.round(DECK[0] / STEP); i++) if (i >= 0) deckSamples.push(h[i]);
+  // the promenade behind: flat; or, by a beach, a walk WALK wide or more along the wall with the ground behind it only
+  // rising (the walk round the Pico del Loro under Miramar's gardens, Ondarreta's end climbing to it): the walk's level
+  const deckSamples = [], walk = [];
+  let rising = true;
+  for (let i = top - Math.round(DECK[1] / STEP); i <= top - Math.round(DECK[0] / STEP); i++) {
+    if (i < 0) continue;
+    deckSamples.push(h[i]);
+    if (i >= top - Math.round(WALK / STEP)) walk.push(h[i]);
+    if (i > 0 && h[i - 1] < h[i] - 0.1) rising = false;
+  }
   if (deckSamples.length < 4) return null;
   deckSamples.sort((a, b) => a - b);
-  const deck = deckSamples[deckSamples.length >> 1];
-  const rough = deckSamples[deckSamples.length - 1] - deckSamples[0];
+  let deck = deckSamples[deckSamples.length >> 1];
+  let rough = deckSamples[deckSamples.length - 1] - deckSamples[0];
+  if (beach && rough > 1.2 && rising && walk.length >= 3) {
+    const walkRough = Math.max(...walk) - Math.min(...walk);
+    if (walkRough <= WALK_RISE) {
+      deck = median(walk);
+      rough = walkRough;
+    }
+  }
   const height = Math.min(crest, deck + 0.3) - foot;
   const extent = (toe - top) * STEP;
   if (height < WALL_MIN || deck - foot < WALL_MIN || crest - deck > 1.3 || rough > 1.2) return null;
@@ -144,7 +175,7 @@ function simplify(pts, tol) {
 
 /**
  * dtm: the 1 m Grid (lib.mjs) with sample(x, z); classAt(x, z): ground class of the 2 m core; guides: shorelines in
- * priority order, { pts (flat x, z), closed, type(x, z) -> WALL id }; exclude(x, z): no wall here (stairs down to the
+ * priority order, { pts (flat x, z), closed, type(x, z) -> WALL id, beach (a beach's edge) }; exclude(x, z): no wall here (stairs down to the
  * beach, buildings that stand in the wall's line, bridges). Returns [{ t, b, p: [x, z, deck, foot, ...] }].
  */
 export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () => {} }) {
@@ -160,7 +191,7 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
     const nodes = resample(guide.pts, guide.closed);
     const hits = nodes.map((P) => {
       if (P.x < bounds.minX || P.x > bounds.maxX || P.z < bounds.minZ || P.z > bounds.maxZ) return null;
-      const w = profileWall(dtm, P, classAt);
+      const w = profileWall(dtm, P, classAt, guide.beach);
       if (!w || exclude(w.x, w.z) || claimed.has(ck(w.x, w.z))) return null;
       return w;
     });
@@ -176,6 +207,19 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       cur.push({ k, hit: w, node: nodes[k] });
     });
     flush();
+    // by a beach, two runs a few metres apart, facing the same way at the same level with nothing between them that cuts
+    // a wall (stairs, a building), are one wall the profiles lost for a moment (where the walk round the Pico del Loro
+    // leaves La Concha's promenade, its LiDAR dips)
+    if (guide.beach) {
+      for (let r = runs.length - 1; r > 0; r--) {
+        const a = runs[r - 1], b = runs[r], e = a[a.length - 1].hit, f = b[0].hit;
+        if (b[0].k - a[a.length - 1].k - 1 > JOIN_MISSES || e.s !== f.s || Math.abs(e.deck - f.deck) > 1) continue;
+        const l = Math.hypot(f.x - e.x, f.z - e.z);
+        let clear = true;
+        for (let t = 0; t <= l && clear; t += 0.5) clear = !exclude(e.x + ((f.x - e.x) * t) / (l || 1), e.z + ((f.z - e.z) * t) / (l || 1));
+        if (clear) runs.splice(r - 1, 2, a.concat(b));
+      }
+    }
     // a closed shoreline's run that wraps round its start
     if (guide.closed && runs.length > 1) {
       const first = runs[0], last = runs[runs.length - 1];
@@ -353,6 +397,199 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => fa
   return out;
 }
 
+// --- the port's flights cut into its quays ----------------------------------------------------------------------------
+
+// js/donostia/shore.js builds each flight as solid steps of about this rise (its RISE)
+const STEP_RISE = 0.17;
+// A flight this many times longer than wide runs down along a quay's face
+const NARROW = 3;
+const STAIR_THIN = 0.6; // m
+
+// The plane detectStairs fits to the LiDAR inside a narrow flight down a quay's face falls across it, to the water (the
+// 1 m LiDAR smears the face over its width): it falls along its length instead, to the lowest LiDAR across it (the
+// municipal outline and the LiDAR can disagree by a metre) from the farther end, a riser under the quay beside it (the
+// quay round its ends bleeds into the samples there, which a straight fit would follow). A flight the municipal map
+// cuts into pieces (the ferry's, a wedge along the Kaiko quay in four) is fitted whole, each piece keeping its stretch
+// of the one slope: fitted one by one, they fell each its own way, a sawtooth. group: the pieces (sharing edges, in
+// one line). Changes the pieces; true if it did.
+function alongFace(group, at) {
+  const P = group.flatMap((st) => st.p);
+  const n = P.length / 2;
+  let cx = 0, cz = 0;
+  for (let k = 0; k < P.length; k += 2) { cx += P[k]; cz += P[k + 1]; }
+  cx /= n; cz /= n;
+  // its length: along the edge (of any piece) that boxes all the pieces tightest
+  let lx = 1, lz = 0, a0 = 0, a1 = 0, b0 = 0, b1 = 0, area = Infinity;
+  for (const st of group) {
+    const p = st.p, m = p.length / 2;
+    for (let i = 0; i < m; i++) {
+      const j = (i + 1) % m, dx = p[2 * j] - p[2 * i], dz = p[2 * j + 1] - p[2 * i + 1], l = Math.hypot(dx, dz);
+      if (l < 0.5) continue;
+      const ex = dx / l, ez = dz / l;
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (let k = 0; k < P.length; k += 2) {
+        const u = (P[k] - cx) * ex + (P[k + 1] - cz) * ez, v = -(P[k] - cx) * ez + (P[k + 1] - cz) * ex;
+        u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+      }
+      const box = (u1 - u0) * (v1 - v0);
+      if (box >= area) continue;
+      area = box;
+      [lx, lz, a0, a1, b0, b1] = u1 - u0 >= v1 - v0 ? [ex, ez, u0, u1, v0, v1] : [-ez, ex, v0, v1, -u1, -u0];
+    }
+  }
+  const wx = -lz, wz = lx;
+  const len = a1 - a0;
+  if (len < 3 || len < NARROW * (b1 - b0)) return false;
+  // across it every half metre along it, inside the pieces: the lowest & the middle LiDAR
+  const S = [];
+  const inside = (x, z) => group.some((st) => pointInRing(x, z, st.p));
+  for (let a = a0 + 0.3; a <= a1 - 0.3; a += 0.5) {
+    const v = [];
+    for (const f of [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]) {
+      const x = cx + lx * a + wx * (b0 + f * (b1 - b0)), z = cz + lz * a + wz * (b0 + f * (b1 - b0));
+      if (inside(x, z)) v.push(at(x, z));
+    }
+    const ok = v.filter(Number.isFinite);
+    if (ok.length >= 2) S.push([a, Math.min(...ok), median(ok)]);
+  }
+  if (S.length < 4) return false;
+  const low = S.reduce((m, q) => (q[1] < m[1] ? q : m));
+  const aTop = low[0] - a0 < a1 - low[0] ? a1 : a0;
+  // the quay beside it: the higher of its long sides, 2 m out
+  const beside = (b) => median([0.25, 0.5, 0.75].map((f) => at(cx + lx * (a0 + f * len) + wx * b, cz + lz * (a0 + f * len) + wz * b))
+    .filter(Number.isFinite));
+  const quay = Math.max(beside(b1 + 2), beside(b0 - 2));
+  // (its head a riser under the quay: the LiDAR's middle there takes some of the drop to the water)
+  const top = Math.min(quay + 0.02, Math.max(quay - STEP_RISE, ...S.filter((q) => Math.abs(q[0] - aTop) < 1.5).map((q) => q[2])));
+  const bot = Math.max(0.3, low[1]);
+  if (!(top - bot >= 0.6)) return false;
+  // y = top at aTop, bot at the lowest point (shoreStairs and shore.js keep to [bot, top] beyond)
+  const g = (bot - top) / (low[0] - aTop), dir = g < 0 ? 1 : -1;
+  const y = (x, z) => Math.min(top, Math.max(bot, top + g * ((x - cx) * lx + (z - cz) * lz - aTop)));
+  for (const st of group) {
+    let hi = -Infinity, lo = Infinity;
+    for (let k = 0; k < st.p.length; k += 2) { const v = y(st.p[k], st.p[k + 1]); hi = Math.max(hi, v); lo = Math.min(lo, v); }
+    Object.assign(st, {
+      top: r2(hi), bot: r2(lo), ux: Math.round(lx * dir * 1000) / 1000, uz: Math.round(lz * dir * 1000) / 1000,
+      plane: [g * lx, g * lz, top - g * aTop, cx, cz]
+    });
+  }
+  return true;
+}
+
+// The port's pieces of flights in chains: those that share an edge (two vertices within 0.3 m) belong together
+function flights(port) {
+  const parent = port.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const shared = (a, b) => {
+    let c = 0;
+    for (let i = 0; i < a.length; i += 2) for (let j = 0; j < b.length; j += 2) if (Math.hypot(a[i] - b[j], a[i + 1] - b[j + 1]) < 0.3) c++;
+    return c >= 2;
+  };
+  for (let i = 0; i < port.length; i++) for (let j = i + 1; j < port.length; j++) if (shared(port[i].p, port[j].p)) parent[find(i)] = find(j);
+  const groups = new Map();
+  port.forEach((st, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(st); });
+  return [...groups.values()];
+}
+
+/**
+ * The port's quay steps (detectStairs' pieces inside PORT) run down along a quay's face or out of a notch cut into it,
+ * which the 2 m terrain keeps as a bank round them. The narrow flights down a face, of one piece or a chain of them, are
+ * turned to fall along it (alongFace: the pieces change). Every side of a piece is walked every half metre, the 1 m LiDAR
+ * 1.5-3 m out telling what lies beyond: the quay QUAY_MIN or more above the steps and level (a cheek: a quay wall from
+ * the quay down to the flight, QUAY_MIN or more above it), or the water (the quay's face under the flight: a hidden
+ * wall, so the terrain steps down there, the flight's own stone going on down to the harbour's bed); or the next piece,
+ * the quay at the head, a pontoon at the foot, a wall of `walls` already there (nothing). Runs of 1 m or more of one kind
+ * become walls (the low side on the left of travel). Slivers under STAIR_THIN wide (a flight's edge drawn along a quay's
+ * face) are no flights here. Returns { walls, deep: Set of the pieces with a face on the water }.
+ */
+export function stairWalls({ dtm, stairs, walls: shore = [], log = () => {} }) {
+  const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
+  const port = stairs.filter((st) => {
+    if (!inBox(PORT, st.p[0], st.p[1])) return false;
+    let area = 0, perimeter = 0;
+    for (let i = 0, n = st.p.length / 2, j = n - 1; i < n; j = i++) {
+      area += st.p[2 * j] * st.p[2 * i + 1] - st.p[2 * i] * st.p[2 * j + 1];
+      perimeter += Math.hypot(st.p[2 * i] - st.p[2 * j], st.p[2 * i + 1] - st.p[2 * j + 1]);
+    }
+    return Math.abs(area) / perimeter >= STAIR_THIN / 2;
+  });
+
+  const walls = [], deep = new Set();
+  let cheeks = 0, faces = 0, turned = 0;
+  // (a chain of pieces in one line as one flight, else each piece on its own)
+  for (const group of flights(port)) {
+    if (group.length > 1 && alongFace(group, at)) turned += group.length;
+    else for (const st of group) if (alongFace([st], at)) turned++;
+  }
+  for (const st of port) {
+    const { p, top, bot, ux, uz } = st;
+    const n = p.length / 2;
+    // the steps' treads, as shore.js cuts them: slices square to the fall from s0 (the head) to s1
+    let s0 = Infinity, s1 = -Infinity;
+    for (let k = 0; k < p.length; k += 2) { const s = p[k] * ux + p[k + 1] * uz; s0 = Math.min(s0, s); s1 = Math.max(s1, s); }
+    const steps = top > bot ? Math.max(1, Math.round((top - bot) / STEP_RISE)) : 1;
+    const tread = (x, z) => {
+      const i = Math.min(steps - 1, Math.max(0, Math.floor((((x * ux + z * uz) - s0) / Math.max(s1 - s0, 1e-6)) * steps)));
+      return top - ((top - bot) * i) / steps;
+    };
+    const inOther = (x, z) => port.some((o) => o !== st && pointInRing(x, z, o.p));
+    // samples round the ring: { x, z, kind ('cheek' | 'face' | null), out (the side away from the piece), level }
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const ax = p[2 * i], az = p[2 * i + 1], bx = p[2 * j], bz = p[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
+      if (len < 0.3) continue;
+      const tx = (bx - ax) / len, tz = (bz - az) / len;
+      // (the side away from the piece: the left normal unless the piece lies there)
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      const sg = pointInRing(mx - tz * 0.2, mz + tx * 0.2, p) ? -1 : 1;
+      const ox = -tz * sg, oz = tx * sg;
+      const m = Math.max(1, Math.round(len / 0.5));
+      for (let q = 0; q <= m; q++) {
+        const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
+        const pt = { x, z, kind: null, ox, oz, edge: i };
+        pts.push(pt);
+        // (not along a wall already there: the quay's edge round the notch the flight is cut into)
+        if (q === 0 || q === m || inOther(x + ox * 0.75, z + oz * 0.75) || nearestWall(shore, x, z, 0.8)) continue;
+        const beyond = [1.5, 2, 2.5, 3].map((t) => at(x + ox * t, z + oz * t)).filter(Number.isFinite);
+        if (beyond.length < 3) continue;
+        const level = median(beyond), spread = Math.max(...beyond) - Math.min(...beyond);
+        const h = tread(x, z);
+        if (spread > QUAY_FLAT) continue;
+        if (level <= QUAY_SEA && h > level + 0.3) Object.assign(pt, { kind: 'face', deck: h - STEP_RISE - 0.12, foot: level });
+        else if (level >= h + QUAY_MIN) Object.assign(pt, { kind: 'cheek', deck: level, foot: h - STEP_RISE });
+      }
+    }
+    // runs of one kind along one side (a corner ends a run: a wall turns with the quay, not round a piece's corner)
+    let run = [];
+    const flush = () => {
+      let len = 0;
+      for (let k = 1; k < run.length; k++) len += Math.hypot(run[k].x - run[k - 1].x, run[k].z - run[k - 1].z);
+      if (run.length >= 2 && len >= 1) {
+        const kind = run[0].kind;
+        // low side on the left of travel (-dz, dx): the water beyond a face, the flight inside a cheek
+        const a = run[0], b = run[run.length - 1], dx = b.x - a.x, dz = b.z - a.z;
+        const lowOut = kind === 'face';
+        const leftIsOut = -dz * a.ox + dx * a.oz > 0;
+        const pts2 = leftIsOut === lowOut ? run : [...run].reverse();
+        const wall = { t: WALL.quay, b: 0, p: pts2.flatMap((q) => [q.x, q.z, q.deck, q.foot].map(r2)) };
+        if (kind === 'face') { wall.h = [0, pts2.length - 1]; deep.add(st); faces++; } else cheeks++;
+        walls.push(wall);
+      }
+      run = [];
+    };
+    for (const pt of pts) {
+      if (run.length && (!pt.kind || pt.kind !== run[0].kind || pt.edge !== run[0].edge)) flush();
+      if (pt.kind) run.push(pt);
+    }
+    flush();
+  }
+  log(`port stairs: ${port.length} pieces (${turned} narrow flights turned to fall along a quay's face), ${cheeks} ` +
+    `cheeks and ${faces} faces on the water (hidden) as walls`);
+  return { walls, deep };
+}
+
 // --- the port's quays where the search finds only scraps ----------------------------------------------------------------
 
 // The search above finds the north basin's north quay only in short runs (boats moored along it, the smear of its edge
@@ -367,10 +604,36 @@ const QUAY_BOXES = [
 ];
 const QUAY_MIN = 0.8; // m
 const QUAY_RUN = 3; // m: shorter runs are left out
+// Elsewhere in the port (PORT) the search misses the quays' faces by the flights of steps cut into them, round the
+// piers' rounded ends, where boats moored along a quay lift the LiDAR and along the west mole's raised walk (over the old
+// port's square, by the Aquarium): there a quay's edge stands as a wall only where it plainly is one, the LiDAR level
+// (within QUAY_FLAT) on the quay behind and, in front, the water (the LiDAR's sea, 0 m) or a level square QUAY_MIN or
+// more below. A flight down the edge, a ramp, a bank or an edge drawn inside the quay is no wall.
+const QUAY_FLAT = 0.5; // m: the spread of the LiDAR over a level side, 1.5-4 m from the edge
+const QUAY_STRIP = 2; // m
+const QUAY_GAP = 3; // m
+
+// Round a closed ring of samples { wall, maybe, s }: the gaps of QUAY_GAP or less between two wall samples with the low
+// side on one side, every sample of which might be a wall on that side, become wall
+function bridge(pts) {
+  const N = pts.length, max = Math.round(QUAY_GAP / 0.5);
+  for (let a = 0; a < N; a++) {
+    const A = pts[a], B = pts[(a + 1) % N];
+    if (!A.wall || B.wall) continue;
+    let k = 1;
+    while (k <= max + 1 && !pts[(a + k) % N].wall) k++;
+    const C = pts[(a + k) % N];
+    if (k > max + 1 || !C.wall || C.s !== A.s) continue;
+    const gap = [];
+    for (let j = 1; j < k; j++) gap.push(pts[(a + j) % N]);
+    if (gap.every((p) => p.maybe && p.s === A.s)) for (const p of gap) p.wall = true;
+  }
+}
+const QUAY_SEA = 0.6; // m
 
 /**
- * dtm: the 1 m Grid; walls: detectWalls' runs. Returns the walls with the quays' edges in QUAY_BOXES added (and the runs
- * the search found along them dropped).
+ * dtm: the 1 m Grid; walls: detectWalls' runs. Returns the walls with the quays' edges in QUAY_BOXES and the port's plain
+ * quay walls added (and the runs the search found along them dropped).
  */
 export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
   const inAny = (x, z, pad = 0) => QUAY_BOXES.some((b) => x >= b.minX - pad && x <= b.maxX + pad && z >= b.minZ - pad && z <= b.maxZ + pad);
@@ -382,6 +645,14 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
       // samples every half metre round the ring: { x, z, wall, s (+1: the low side on the ring's left (-tz, tx)) }
       const pts = [];
       const n = r.length / 2;
+      // (a hole under QUAY_STRIP thick is a strip on the quay, a crane track or a kerb a metre inside its edge: no wall
+      // outside the boxes)
+      let area = 0, perimeter = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        area += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
+        perimeter += Math.hypot(r[2 * i] - r[2 * j], r[2 * i + 1] - r[2 * j + 1]);
+      }
+      const strip = r !== f.g[0] && Math.abs(area) / Math.max(perimeter, 1e-6) < QUAY_STRIP / 2;
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * j], bz = r[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
@@ -392,7 +663,9 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
           const p = { x, z, wall: false };
           pts.push(p);
-          if (!inAny(x, z, 2)) continue; // (the boxes with 2 m to spare: their corners)
+          // (the boxes with 2 m to spare: their corners; elsewhere in the port, the plain walls only)
+          const boxed = inAny(x, z, 2);
+          if (!boxed && (strip || !inBox(PORT, x, z))) continue;
           const side = (sg, ts) => ts.map((t) => at(x + sg * nx * t, z + sg * nz * t)).filter(Number.isFinite);
           const plus = side(1, [1.5, 2, 2.5, 3, 3.5, 4]), minus = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]);
           if (plus.length < 3 || minus.length < 3) continue;
@@ -400,9 +673,25 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           const deck = median(s > 0 ? minus : plus);
           const foot = Math.min(...side(s, [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]));
           if (deck - foot < QUAY_MIN) continue;
+          if (!boxed) {
+            // (the quay level, and the water from 2.5 m out (the LiDAR smears a plumb face over the first metres) or a
+            // level square: an edge drawn a metre or two inside a quay's coping, a flight or a bank fall across the
+            // samples of one side; one that falls short of this between two that pass, a boat moored alongside or a
+            // jog in the edge, may bridge them)
+            const spread = (v) => Math.max(...v) - Math.min(...v);
+            const high = s > 0 ? minus : plus, low = s > 0 ? plus : minus;
+            const sea = low.slice(2).every((v) => v <= QUAY_SEA);
+            if (high.length < 6 || low.length < 6 || spread(high) > QUAY_FLAT ||
+              (!sea && (spread(low) > QUAY_FLAT || median(low) > deck - QUAY_MIN))) {
+              Object.assign(p, { maybe: true, s, deck, foot });
+              continue;
+            }
+          }
           Object.assign(p, { wall: true, s, deck, foot });
         }
       }
+      // the gaps of QUAY_GAP or less between two wall samples on the same side, all of whose samples might be one
+      bridge(pts);
       // runs of wall samples with the low side on one side, round the ring (starting after a gap)
       const N = pts.length, start = pts.findIndex((p) => !p.wall);
       if (start < 0) continue;
@@ -441,7 +730,7 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
     }
   }
   // the runs the search found along these edges give way (split where they come within 2.5 m of one)
-  const near = (x, z) => inAny(x, z, 3) && added.some((w) => {
+  const near = (x, z) => (inAny(x, z, 3) || inBox(PORT, x, z)) && added.some((w) => {
     for (let k = 0; k + 4 < w.p.length; k += 4) {
       const ax = w.p[k], az = w.p[k + 1], dx = w.p[k + 4] - ax, dz = w.p[k + 5] - az, l2 = dx * dx + dz * dz || 1e-12;
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
@@ -502,6 +791,139 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
   return [...out, ...added];
 }
 
+// --- the gaps between the port's walls ----------------------------------------------------------------------------------
+
+// The search's runs, the quays' edges and the flights' cheeks stop a metre or two short of each other at the jogs and
+// corners of the quays, and the 2 m grid leaves a bank, a fin, in every gap. Where one of the port's walls ends within
+// JOIN_GAP of where another starts, going on the same way round the quay (neither turning back) with the water or the
+// lower ground on the same side, they become one wall. Hidden walls stay as they are.
+const JOIN_GAP = 3; // m
+
+/**
+ * dtm: the 1 m Grid; walls: GEO.terrain.walls, joined in place; stairs: the flights no join crosses. Returns the Set of
+ * the walls that grew.
+ */
+export function joinPortWalls({ dtm, walls, stairs = [], log = () => {} }) {
+  // (never across a flight: the quays' walls cut along its sides stay cut, stairWalls)
+  const overFlight = (ax, az, bx, bz) => {
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.25);
+    for (let k = 1; k < n; k++) {
+      const x = ax + ((bx - ax) * k) / n, z = az + ((bz - az) * k) / n;
+      if (stairs.some((st) => pointInRing(x, z, st.p))) return true;
+    }
+    return false;
+  };
+  const port = (w) => !w.h && inBox(PORT, w.p[0], w.p[1]);
+  const dir = (p, k0, k1) => { const dx = p[k1] - p[k0], dz = p[k1 + 1] - p[k0 + 1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+  const grown = new Set();
+  let joins = 0;
+  for (let joined = true; joined;) {
+    joined = false;
+    for (const a of walls) {
+      if (!port(a)) continue;
+      const k = a.p.length, tx = a.p[k - 4], tz = a.p[k - 3];
+      let best = null, bestD = JOIN_GAP;
+      for (const b of walls) {
+        if (b === a || !port(b)) continue;
+        const gx = b.p[0] - tx, gz = b.p[1] - tz, gap = Math.hypot(gx, gz);
+        if (gap >= bestD) continue;
+        if (gap > 0.3) {
+          if (overFlight(tx, tz, b.p[0], b.p[1])) continue;
+          const j = [gx / gap, gz / gap], u = dir(a.p, k - 8, k - 4), v = dir(b.p, 0, 4);
+          if (u[0] * j[0] + u[1] * j[1] < 0.3 || v[0] * j[0] + v[1] * j[1] < 0.3) continue;
+          // the low side of the gap, on its left
+          const mx = (tx + b.p[0]) / 2, mz = (tz + b.p[1]) / 2;
+          const low = dtm.sample(mx - j[1] * 2.5, mz + j[0] * 2.5);
+          if (!(low <= Math.min(a.p[k - 2], b.p[2]) - QUAY_MIN)) continue;
+        }
+        best = b;
+        bestD = gap;
+      }
+      if (!best) continue;
+      a.p = [...a.p, ...best.p];
+      walls.splice(walls.indexOf(best), 1);
+      grown.delete(best);
+      grown.add(a);
+      joins++;
+      joined = true;
+      break;
+    }
+  }
+  log(`port walls: ${joins} gaps of up to ${JOIN_GAP} m between them closed`);
+  return grown;
+}
+
+// --- the port's buildings the LiDAR keeps as ground ---------------------------------------------------------------------
+
+// The bare-earth LiDAR keeps as ground the port's buildings built into a slope under a terrace: the Aquarium, under its
+// terraces at the Paseo Nuevo's level 12 m over the old port's square, and the stores under the west mole's walk. The 2 m
+// grid smears their faces into banks standing 2-3 m in front of the facades. A building (ERAIKINA) in PORT whose edge
+// falls EMBED_DROP or more on at least half its length is one of them: along its edges, wherever the LiDAR 1.5-4 m
+// inside lies QUAY_MIN or more above the ground 2.5-5 m outside, a hidden wall (the terrain steps at the facade, which is
+// the building's own: its extrusion's or its landmark's).
+const EMBED_DROP = 3; // m
+
+/**
+ * dtm: the 1 m Grid. Returns hidden walls (h: every segment) round the port's embedded buildings.
+ */
+export function buildingFaces({ dtm, loadLayer, log = () => {} }) {
+  const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
+  const out = [];
+  let buildings = 0;
+  for (const f of loadLayer('c500_ERAIKINA.json').features) {
+    const r = f.g[0];
+    if (!r || r.length < 8) continue;
+    let all = true;
+    for (let k = 0; k < r.length; k += 2) all &&= inBox(PORT, r[k], r[k + 1]);
+    if (!all) continue;
+    // samples every half metre round the ring: { x, z, wall, deck, foot, ox, oz (outwards) }
+    const pts = [];
+    let embedded = 0;
+    const n = r.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * j], bz = r[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-6) continue;
+      let ox = (bz - az) / len, oz = -(bx - ax) / len;
+      if (pointInRing((ax + bx) / 2 + ox * 0.2, (az + bz) / 2 + oz * 0.2, r)) { ox = -ox; oz = -oz; }
+      const m = Math.max(1, Math.round(len / 0.5));
+      for (let q = 0; q < m; q++) {
+        const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
+        const side = (sg, ts) => ts.map((t) => at(x + sg * ox * t, z + sg * oz * t)).filter(Number.isFinite);
+        const inside = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]), outside = side(1, [2.5, 3, 3.5, 4, 4.5, 5]);
+        const p = { x, z, wall: false, ox, oz };
+        pts.push(p);
+        if (inside.length < 3 || outside.length < 3) continue;
+        const deck = median(inside), foot = Math.min(...outside);
+        if (deck - median(outside) >= EMBED_DROP) embedded++;
+        if (deck - foot >= QUAY_MIN) Object.assign(p, { wall: true, deck, foot });
+      }
+    }
+    if (embedded < pts.length / 2) continue;
+    buildings++;
+    // runs round the ring (starting after a gap), walked with the outside on the left of travel (-dz, dx)
+    const N = pts.length, start = pts.findIndex((p) => !p.wall);
+    const runs = [];
+    let cur = null;
+    for (let q = 1; q <= N; q++) {
+      const p = pts[(start + q) % N];
+      if (cur && !p.wall) { runs.push(cur); cur = null; }
+      if (p.wall) (cur ||= []).push(p);
+    }
+    if (cur) runs.push(cur);
+    for (const run of runs) {
+      if (run.length < 2 * QUAY_RUN) continue;
+      const a = run[0], b = run[run.length - 1];
+      const pts2 = -(b.z - a.z) * a.ox + (b.x - a.x) * a.oz > 0 ? run : [...run].reverse();
+      const deck = smooth(pts2.map((p) => p.deck)), foot = smooth(pts2.map((p) => p.foot));
+      const kept = simplify(pts2.map((p, k) => ({ x: p.x, z: p.z, deck: deck[k], foot: Math.min(foot[k], deck[k] - QUAY_MIN) })), 0.1);
+      out.push({ t: WALL.quay, b: 0, p: kept.flatMap((p) => [p.x, p.z, p.deck, p.foot].map(r2)), h: [0, kept.length - 1] });
+    }
+  }
+  log(`port buildings kept as ground: ${buildings}, ${out.length} hidden walls at their faces`);
+  return out;
+}
+
 // --- the shorelines & the places without a wall ----------------------------------------------------------------------
 
 const inBox = (b, x, z) => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
@@ -520,14 +942,45 @@ function coastType(x, z, nx, nz) {
   return WALL.quay;
 }
 
+// A beach's edge drawn out round a rock and back to within NOTCH[0] of where it left, over NOTCH[1] to NOTCH[2] of edge
+// (the rock ribs the map draws into the beach under the Pico del Loro's walk): the mouth instead. The profiles along the
+// notch's sides would look along the wall rather than across it, and split its run in two. (Returns the ring itself
+// where it has none.)
+const NOTCH = [2.5, 8, 40]; // m
+function dropNotches(r) {
+  const n = r.length / 2;
+  const at = (i) => [r[2 * (i % n)], r[2 * (i % n) + 1]];
+  let perimeter = 0;
+  for (let i = 0; i < n; i++) perimeter += Math.hypot(at(i + 1)[0] - at(i)[0], at(i + 1)[1] - at(i)[1]);
+  const keep = new Uint8Array(n).fill(1);
+  for (let i = 0; i < n; i++) {
+    if (!keep[i]) continue;
+    const [ax, az] = at(i);
+    let len = 0, cut = 0;
+    for (let s = 1; s < n; s++) {
+      const [px, pz] = at(i + s - 1), [qx, qz] = at(i + s);
+      len += Math.hypot(qx - px, qz - pz);
+      if (len > NOTCH[2] || len > perimeter / 3) break;
+      if (len >= NOTCH[1] && Math.hypot(qx - ax, qz - az) < NOTCH[0]) cut = s;
+    }
+    for (let s = 1; s < cut; s++) keep[(i + s) % n] = 0;
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(r[2 * i], r[2 * i + 1]);
+  return out.length >= 6 ? out : r;
+}
+
 /**
  * The shorelines to look along, in priority order: the edges of the municipal map's beaches; the OSM river & docks at
  * sea level (seaLevel(rings) decides, as build.mjs's water mask); the OSM coastline; the OSM breakwaters.
  */
 export function shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }) {
   const guides = [];
-  for (const f of loadLayer('c500_HONDARTZA.json').features) {
-    for (const r of f.g) if (r.length >= 6) guides.push({ pts: r, closed: true, type: (x) => (x > 400 ? WALL.zurriola : WALL.concha) });
+  // (each beach's edge without its notches, then as drawn, for the walls round them that no run claimed)
+  const beaches = loadLayer('c500_HONDARTZA.json').features.flatMap((f) => f.g.filter((r) => r.length >= 6));
+  const trimmed = beaches.map(dropNotches);
+  for (const r of [...trimmed, ...beaches.filter((r, i) => trimmed[i] !== r)]) {
+    guides.push({ pts: r, closed: true, beach: true, type: (x) => (x > 400 ? WALL.zurriola : WALL.concha) });
   }
   const osm = loadLayer('osm_places.json').elements;
   for (const e of osm) {

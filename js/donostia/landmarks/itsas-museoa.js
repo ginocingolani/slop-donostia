@@ -1,11 +1,14 @@
 import * as THREE from 'three/webgpu';
-import { vec3, clamp, mix, step, smoothstep, fract, uv } from 'three/tsl';
+import { vec3, clamp, mix, step, smoothstep, fract, uv, positionWorld } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { URGULL_PARTS } from '../data-urgull-parts.js';
 import { Parts, wound, cleanRing, insetRing, simplify, hipRoof, pointInRing, distToRing } from './geom.js';
+import { gridLine } from './kit.js';
 
 // js/donostia/landmarks/itsas-museoa.js
-// Euskal Itsas Museoa (Naval Museum, the 18th-c. Consulado building on the old port) and the Aquarium (1928 pavilion at the end of the port by the Paseo Nuevo): stone & white render, pitched roofs.
+// Euskal Itsas Museoa (Naval Museum, the 18th-c. Consulado building on the old port: stone & white render, pitched
+// roofs) and the Aquarium (the 1928 pavilion at the end of the port by the Paseo Nuevo and its extensions: sandstone and
+// grey stone under terraces).
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['itsas-museoa', 'aquariuma'] (footprint ring,
 // at [x, z], buildings, height — see tools/donostia/build.mjs) and ctx = { GEO, terrain, kit }. Return an Object3D in
@@ -17,8 +20,9 @@ import { Parts, wound, cleanRing, insetRing, simplify, hipRoof, pointInRing, dis
 // quay with its tiled roof (14.5 m to the ridge), six dormers on the slope over the port, the square tower at the east
 // end under a pyramid roof (18 m), the lower wings at the north-west corner; heights above the quay, which agree with
 // b5m's LiDAR (ridge ~19 m above sea level). The Aquarium (Sociedad Oceanográfica de Gipuzkoa, 1928) is OSM's point on
-// the 1:500 outline of the Oceanographic Society's building: one storey above the Paseo Nuevo, two more down to the port,
-// under a hip roof (b5m: roof ~20-24 m above sea level), its entrance front facing the square at the end of the port.
+// the 1:500 outline of the Oceanographic Society's building, the whole complex built into the slope under terraces at the
+// Paseo Nuevo's level (~17 m): its faces where the ground falls away, the pavilion's front facing the square at the end
+// of the port over the terrace before its door (8.5 m).
 
 const PARTS = URGULL_PARTS['itsas-museoa'];
 const MAIN = 1510701167, TOWER = 1510701166;
@@ -72,6 +76,14 @@ function windowMaterial() {
   // (no lit rooms in full daylight, unlike the city's blocks: these are museums, closed by then)
   const evening = smoothstep(0.3, 0.6, cityUniforms.uInteriorGlow);
   mat.emissiveNode = warm.mul(lit.mul(cityUniforms.uInteriorGlow).mul(evening).mul(1.4));
+  return mat;
+}
+
+// The Aquarium extensions' cladding: grey stone slabs in courses of 0.6 m
+function greyStoneMaterial() {
+  const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.75 });
+  const base = vec3(0.4, 0.41, 0.4);
+  mat.colorNode = mix(base, base.mul(0.7), gridLine(positionWorld.y, 0.6, 0.008));
   return mat;
 }
 
@@ -172,59 +184,128 @@ function aquariumBuilding(GEO, at) {
   return best;
 }
 
+// The faces of the Oceanographic Society's outline: the whole complex, the 1928 pavilion at its east end and the
+// extensions behind it, built into the slope at the end of the port under terraces at the Paseo Nuevo's level, which the
+// LiDAR keeps as ground (tools/donostia/build.mjs steps the terrain at the outline: GEO.terrain.walls). A face stands
+// along the outline wherever the ground falls away outside it, from that ground up to the terrace, a glass railing on
+// top; the pavilion's, PAVILION m deep from its front, in sandstone ashlar under deep maroon eaves on paired carved
+// brackets, with two storeys of windows round its arched door and the blue AQVARIVM sign along its roof; the rest in
+// the extensions' grey stone. (Read off Wikimedia Commons photographs of the Aquarium, its category.)
+const PAVILION = 16; // m: the 1928 pavilion's depth behind its front
+const FACE_DROP = 1.2; // m the ground falls outside the outline where a face stands
+const FACE = 0.35; // m: the faces' thickness, outside the outline (the terrain's step lies just inside it)
+
 // Returns the index of the 1:500 building the Aquarium replaces, or -1
 function buildAquarium(parts, mats, ctx, site) {
   const { GEO, kit } = ctx;
   const idx = aquariumBuilding(GEO, site.at);
   if (idx < 0) return -1;
   const b = GEO.buildings[idx];
-  const ring = cleanRing(b.g[0]);
-  const low = lowestAlong(ctx, ring);
-  const eave = b.ground + 3.0, rise = 3.2;
-  block(parts, mats, ctx, ring, low, eave, rise, { plinth: 1.6 });
-  addWindows(parts, mats, ctx, ring, [eave - 2.9, eave - 6.6, eave - 10.3], { w: 1.4, h: 2.1, bay: 3.6, seed: 900 });
+  const r = wound(simplify(cleanRing(b.g[0]), 0.3));
+  const n = r.length / 2;
+  const ground = (x, z) => kit.groundAt(ctx, x, z);
 
-  // the entrance front: the end wall on the side of OSM's point, looking down the port, with a projecting centre bay
-  // under a pediment and the door
-  const r = wound(simplify(ring, 0.3));
+  // the front: the end of the long axis on the side of OSM's point, the edge (6 m or more) facing it most squarely
   const axis = kit.orientedBox(r);
   let ex = Math.cos(axis.angle), ez = Math.sin(axis.angle);
   if ((site.at[0] - axis.x) * ex + (site.at[1] - axis.z) * ez < 0) { ex = -ex; ez = -ez; }
-  let face = null, best = -Infinity;
-  for (let i = 0, n = r.length / 2; i < n; i++) {
+  const edges = [];
+  for (let i = 0; i < n; i++) {
     const q = (i + 1) % n;
     const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * q], bz = r[2 * q + 1];
     const len = Math.hypot(bx - ax, bz - az);
-    if (len < 6) continue;
-    const facing = ((bz - az) * ex - (bx - ax) * ez) / len; // outward normal (dz, -dx) · axis
-    if (facing > best) { best = facing; face = { ax, az, bx, bz, len }; }
+    if (len < 0.3) continue;
+    const ux = (bx - ax) / len, uz = (bz - az) / len;
+    let ox = uz, oz = -ux; // outwards
+    if (pointInRing((ax + bx) / 2 + ox * 0.3, (az + bz) / 2 + oz * 0.3, r)) { ox = -ox; oz = -oz; }
+    edges.push({ ax, az, bx, bz, len, ux, uz, ox, oz, facing: ox * ex + oz * ez });
   }
-  if (face) {
-    const { ax, az, bx, bz, len } = face;
-    const ux = (bx - ax) / len, uz = (bz - az) / len, ox = uz, oz = -ux;
-    const cx = (ax + bx) / 2, cz = (az + bz) / 2;
-    const bw = Math.min(7, len * 0.45);
-    const foot = Math.max(kit.groundAt(ctx, cx + ox * 1.2, cz + oz * 1.2), kit.groundAt(ctx, cx + ox * 2.5, cz + oz * 2.5));
-    const y0 = Math.min(foot, low) - 0.6;
-    parts.add(mats.render, box(bw, eave + 0.9 - y0, 0.8, cx + ox * 0.4, y0, cz + oz * 0.4, ux, uz));
-    parts.add(mats.stone, box(bw + 0.5, 0.5, 1.0, cx + ox * 0.45, eave + 0.4, cz + oz * 0.45, ux, uz));
-    // pediment: a low triangle over the bay
-    const tri = new THREE.Shape();
-    tri.moveTo(-bw / 2 - 0.25, 0);
-    tri.lineTo(bw / 2 + 0.25, 0);
-    tri.lineTo(0, 1.9);
-    tri.lineTo(-bw / 2 - 0.25, 0);
-    const ped = new THREE.ExtrudeGeometry(tri, { depth: 0.9, bevelEnabled: false });
-    // (extruded inwards from 0.9 m out, so the basis stays right-handed)
-    _m.makeBasis(new THREE.Vector3(ux, 0, uz), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-ox, 0, -oz));
-    ped.applyMatrix4(_m.setPosition(cx + ox * 0.9, eave + 0.9, cz + oz * 0.9));
-    parts.add(mats.stone, ped);
-    // the door in a stone surround
-    const door = box(2.4, 3.4, 0.2, cx + ox * 0.85, foot, cz + oz * 0.85, ux, uz);
-    door.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(door.attributes.position.count * 2).fill(0.05), 2));
-    parts.add(mats.window, door);
-    parts.add(mats.stone, box(3.0, 3.8, 0.12, cx + ox * 0.82, foot - 0.1, cz + oz * 0.82, ux, uz));
+  const front = edges.filter((e) => e.len >= 6).reduce((best, e) => (!best || e.facing > best.facing ? e : best), null);
+  if (!front) return -1;
+  // how far a point lies behind the front: the pavilion is the outline's first PAVILION m
+  const depth = (x, z) => (front.ax - x) * front.ox + (front.az - z) * front.oz;
+
+  // the faces: runs along each edge (1 m steps) where the ground outside lies FACE_DROP or more under the terrace inside
+  let terrace = -Infinity; // the pavilion's roof: the terrace over its front
+  for (const e of edges) {
+    const steps = Math.max(1, Math.round(e.len));
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const { s0, s1, top, bottom } = run;
+      const L = s1 - s0, mx = e.ax + e.ux * (s0 + L / 2), mz = e.az + e.uz * (s0 + L / 2);
+      const stone = depth(mx, mz) < PAVILION ? mats.stone : mats.grey;
+      const fx = mx + e.ox * FACE / 2, fz = mz + e.oz * FACE / 2;
+      parts.add(stone, box(L + FACE, top - bottom, FACE, fx, bottom, fz, e.ux, e.uz));
+      // a coping, and the glass railing on it
+      parts.add(stone, box(L + FACE + 0.1, 0.2, FACE + 0.15, fx, top, fz, e.ux, e.uz));
+      const rail = box(L, 1.0, 0.04, mx + e.ox * 0.12, top + 0.2, mz + e.oz * 0.12, e.ux, e.uz);
+      rail.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(rail.attributes.position.count * 2).fill(0.99), 2));
+      parts.add(mats.glass, rail);
+      if (e === front) terrace = Math.max(terrace, top);
+      run = null;
+    };
+    for (let k = 0; k <= steps; k++) {
+      const s = (e.len * k) / steps, x = e.ax + e.ux * s, z = e.az + e.uz * s;
+      const inside = Math.max(ground(x - e.ox * 2.5, z - e.oz * 2.5), ground(x - e.ox * 4, z - e.oz * 4));
+      const outside = Math.min(ground(x + e.ox, z + e.oz), ground(x + e.ox * 2.5, z + e.oz * 2.5), ground(x + e.ox * 4, z + e.oz * 4));
+      if (inside - outside < FACE_DROP) { flush(); continue; }
+      if (!run) run = { s0: s, s1: s, top: inside, bottom: outside - 0.6 };
+      run.s1 = s;
+      run.top = Math.max(run.top, inside);
+      run.bottom = Math.min(run.bottom, outside - 0.6);
+    }
+    flush();
   }
+  if (!Number.isFinite(terrace)) return -1;
+
+  // the pavilion's eaves: a deep maroon fascia along its front and its sides, 1.3 m out, on paired brackets
+  const eave = terrace - 0.7;
+  for (const e of edges) {
+    if (e !== front && Math.abs(e.facing) > 0.5) continue;
+    // (the stretch of the edge within the pavilion's depth)
+    const d0 = depth(e.ax, e.az), d1 = depth(e.bx, e.bz);
+    if (Math.min(d0, d1) > PAVILION) continue;
+    const t0 = d0 <= PAVILION ? 0 : (d0 - PAVILION) / (d0 - d1), t1 = d1 <= PAVILION ? 1 : (PAVILION - d0) / (d1 - d0);
+    const from = e.len * Math.min(t0, t1), L = e.len * Math.abs(t1 - t0);
+    if (L < 1) continue;
+    const mx = e.ax + e.ux * (from + L / 2), mz = e.az + e.uz * (from + L / 2);
+    parts.add(mats.maroon, box(L + 1.3, 0.45, 1.3, mx + e.ox * 0.65, eave, mz + e.oz * 0.65, e.ux, e.uz));
+    const pairs = Math.max(1, Math.floor(L / 3.6));
+    for (let k = 0; k < pairs; k++) {
+      const s = from + (L * (k + 0.5)) / pairs;
+      for (const off of [-0.22, 0.22]) {
+        const bx = e.ax + e.ux * (s + off) + e.ox * 0.45, bz = e.az + e.uz * (s + off) + e.oz * 0.45;
+        parts.add(mats.maroon, box(0.9, 1.3, 0.2, bx, eave - 1.3, bz, e.ox, e.oz));
+      }
+    }
+  }
+
+  // the front: the blue sign over the eaves, two storeys of windows in maroon frames round the arched door
+  const { ax, az, len, ux, uz, ox, oz } = front;
+  const at = (d, s = 0) => [ax + ux * (len / 2 + s) + ox * d, az + uz * (len / 2 + s) + oz * d];
+  const base = Math.max(ground(...at(3)), ground(...at(5)));
+  const signW = Math.min(len - 1.5, 13), [sx, sz] = at(0.2);
+  parts.add(mats.sign, box(signW, 1.15, 0.15, sx, terrace - 0.05, sz, ux, uz));
+  const letters = 8, pitch = (signW - 1) / letters, [lx, lz] = at(0.3);
+  for (let k = 0; k < letters; k++) {
+    const s = -signW / 2 + 0.5 + pitch * (k + 0.5);
+    parts.add(mats.letters, box(pitch * 0.62, 0.72, 0.05, lx + ux * s, terrace + 0.16, lz + uz * s, ux, uz));
+  }
+  const storey = (eave - 1.3 - base) / 2;
+  let draw = 900;
+  for (const [h, sill] of [[2.0, base + 1.0], [1.6, base + storey + 0.9]]) {
+    for (const s of [-0.36, -0.2, 0.2, 0.36].map((f) => f * len)) {
+      const [wx, wz] = at(FACE + 0.02, s);
+      parts.add(mats.maroon, box(1.5, h + 0.3, 0.08, wx, sill - 0.15, wz, ux, uz));
+      const pane = box(1.2, h, 0.08, wx + ox * 0.03, sill, wz + oz * 0.03, ux, uz);
+      pane.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pane.attributes.position.count * 2).fill(hash(++draw)), 2));
+      parts.add(mats.window, pane);
+    }
+  }
+  const [dx, dz] = at(FACE + 0.02);
+  parts.add(mats.stone, box(3.4, 4.2, 0.3, dx, base, dz, ux, uz));
+  parts.add(mats.door, box(1.7, 3.0, 0.3, dx + ox * 0.03, base, dz + oz * 0.03, ux, uz));
   // (the site is an OSM point, so build.mjs found no 1:500 building under it: build() names this one in
   // userData.hide)
   return idx;
@@ -234,9 +315,16 @@ function buildAquarium(parts, mats, ctx, site) {
 
 export function build(sites, ctx) {
   const { kit } = ctx;
+  const glass = windowMaterial();
   const mats = {
-    render: kit.materials.whiteRender, stone: kit.materials.sandstone, tiles: kit.materials.terracotta, window: windowMaterial()
+    render: kit.materials.whiteRender, stone: kit.materials.sandstone, tiles: kit.materials.terracotta, window: glass,
+    // the Aquarium's: the extensions' grey stone, the pavilion's maroon woodwork (its door too), its sign, the letters
+    // on it in the museum's white, the railings in the windows' glass
+    grey: greyStoneMaterial(), maroon: new THREE.MeshStandardNodeMaterial({ color: 0x5b1f2b, roughness: 0.55 }),
+    sign: new THREE.MeshStandardNodeMaterial({ color: 0x223c78, roughness: 0.4, metalness: 0.1 }),
+    letters: kit.materials.whiteRender, glass, door: null
   };
+  mats.door = mats.maroon;
   const parts = new Parts();
   const hide = [], skipped = [];
   for (const site of sites) {

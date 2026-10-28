@@ -6,8 +6,9 @@
 // and the buildings of js/donostia/geodata.js. Run it after tools/donostia/build.mjs.
 //
 // - Trees: the centroid of every tree pit (ZUHAITZ_TXORKOA), OSM natural=tree nodes (merged into the pit they mark, or
-//   added), blue-noise scatter over the woodland masses (ZuhaiztiGuneak) and a sparse one over the gardens
-//   (LORATEGI_EREMUA); nothing inside a building, on a carriageway, rail or water. Each tree gets a species by place
+//   added), blue-noise scatter over the woodland masses (ZuhaiztiGuneak) and Urgull's unmapped slopes over the port
+//   (port.mjs), and a sparse one over the gardens (LORATEGI_EREMUA); nothing inside a building, on a carriageway, rail
+//   or water. Each tree gets a species by place
 //   (tamarisks along La Concha, Ondarreta & Alderdi Eder, London planes in the ensanche, pines & evergreens in the hill
 //   woods...) and a scale that keeps its crown off the nearest wall.
 // - La Concha's railing: the landward edge of the Kontxa & Ondarreta beach polygons where the promenade (sidewalk or
@@ -26,6 +27,7 @@ import { pathToFileURL } from 'node:url';
 import {
   HERE, FRAME, loadLayer, lonLatToLocal, scanRings, ringArea, ringBounds, encodePNG, previewDir, licenceComment, log
 } from './lib.mjs';
+import { urgullWoods } from './port.mjs';
 
 const ROOT = path.resolve(HERE, '../..');
 const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
@@ -461,6 +463,10 @@ const woods = new Uint8Array(R.w * R.h);
 for (const f of loadLayer('c500_ZuhaiztiGuneak.json').features) scanRings(f.g, R.x0, R.z0, 1, R.w, R.h, (i, j) => { woods[j * R.w + i] = 1; });
 stats.woodland = scatter((k, x, z) => woods[k] && (surf[k] === G.woodland || surf[k] === G.garden) && wallDist[k] > 2 &&
   slopeAt(x, z) < 1.7, 7.2, 1, 7001, 'wood');
+// 3b. Urgull's slopes over the port, which the municipal woodland stops short of and the orthophoto shows wooded
+//     (urgullWoods, tools/donostia/port.mjs; bake-ground.mjs gives them the woods' ground)
+stats.woodland += scatter((k, x, z) => surf[k] === G.natural && wallDist[k] > 2 && slopeAt(x, z) < 1.7 &&
+  urgullWoods(x, z, terrain.heightAt(x, z), slopeAt(x, z)), 7.2, 1, 7011, 'wood');
 
 // 4. Gardens: a tree here and there, where the lawn has room round it
 const roomy = (x, z, r) => {
@@ -558,6 +564,7 @@ const POST_W = [0.46, 0.62, 0]; // m along the railing: a stone pillar, a lamp p
 // on a monument, end on one], ...] }
 function bakeRailings(cuts = []) {
   const runs = [];
+  setbackPoints = 0;
   for (const ring of bayBeaches) {
     // resample the closed ring every metre
     const pts = [];
@@ -703,7 +710,7 @@ function bakeRailings(cuts = []) {
         return [0, 1, 2].map((i) => (a[i] + 2 * b[i] + 3 * p[i] + 2 * c[i] + e[i]) / 9);
       });
     }
-    out.push(simplify3(pts, 0.06));
+    out.push(keepBehindFaces(pts));
   }
   // down the ramps that carry it (their open sides; the sea on the (-dz, dx) side of each run)
   for (const flat of BEACH_ACCESS.barandilla || []) {
@@ -712,6 +719,52 @@ function bakeRailings(cuts = []) {
     if (pts.length >= 2) { out.push(pts); abut.push([false, false]); }
   }
   return { runs: out, abut };
+}
+
+// A railing's smoothed line, thinned (to 6 cm), kept SETBACK behind the masonry's face where it stands on a shore wall's
+// coping: the smoothing cuts the wall's bends and the thinning its curves, and the plinth's skirt down behind the face
+// (js/donostia/streetscape.js) came through the masonry as a flat grey board (by La Concha's arcade). The smoothed points
+// go back square to the nearest wall, then the thinned line takes back the points where a segment still comes nearer
+// than SETBACK_MIN. (Points well in front of a wall, on a terrace or a landing, are left alone.)
+const SETBACK = 0.25, SETBACK_MIN = 0.19; // m behind the face
+let setbackPoints = 0;
+function keepBehindFaces(pts) {
+  const coping = (x, z, min) => {
+    const q = nearestWall(WALLS, x, z, 1.5);
+    return q && !q.end && q.d > -min && q.d < 0.5 ? q : null;
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    for (const p of pts) {
+      const q = coping(p[0], p[2], SETBACK - 0.005);
+      if (q) { p[0] -= q.nx * (q.d + SETBACK); p[2] -= q.nz * (q.d + SETBACK); }
+    }
+  }
+  const thin = simplify3(pts, 0.06);
+  for (let guard = 0; guard < 2 * pts.length; guard++) {
+    let bad = null;
+    for (let k = 0; k + 1 < thin.length && !bad; k++) {
+      const a = thin[k], b = thin[k + 1], l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      for (let s = 0.25; s < l - 0.05; s += 0.25) {
+        const x = a[0] + ((b[0] - a[0]) * s) / l, z = a[2] + ((b[2] - a[2]) * s) / l, q = coping(x, z, SETBACK_MIN);
+        if (q) { bad = { k, x, y: a[1] + ((b[1] - a[1]) * s) / l, z, q }; break; }
+      }
+    }
+    if (!bad) break;
+    // the run's own point nearest the trouble, between the segment's ends; between two neighbours (round a corner of the
+    // wall), the trouble itself put back
+    const i0 = pts.indexOf(thin[bad.k]), i1 = pts.indexOf(thin[bad.k + 1]);
+    let p;
+    if (i0 >= 0 && i1 - i0 >= 2) {
+      p = pts[i0 + 1];
+      for (let i = i0 + 2; i < i1; i++) if (Math.hypot(pts[i][0] - bad.x, pts[i][2] - bad.z) < Math.hypot(p[0] - bad.x, p[2] - bad.z)) p = pts[i];
+    } else {
+      const { q } = bad;
+      p = [bad.x - q.nx * (q.d + SETBACK), bad.y, bad.z - q.nz * (q.d + SETBACK)];
+    }
+    thin.splice(bad.k + 1, 0, p);
+    setbackPoints++;
+  }
+  return thin;
 }
 
 // Inside a part of the beaches' stairs & ramps (by more than 0.1 m)
@@ -925,7 +978,8 @@ const railLength = railings.reduce((s, r) => s + runFrame(r).L, 0);
 const pillarCount = railingPosts.reduce((s, p) => s + p.filter((v, i) => i % 2 && v === 0).length, 0);
 log(`railing: ${railings.length} runs, ${railLength.toFixed(0)} m, ${railings.reduce((s, r) => s + r.length, 0)} vertices, ` +
   `${pillarCount} pillars, ${promenadeLamps.length} lamp pedestals; ${railingCuts.length} openings & monuments, ` +
-  `monuments ${monuments.filter((_, i) => i % 6 === 0).join(' ')}`);
+  `monuments ${monuments.filter((_, i) => i % 6 === 0).join(' ')}; ${setbackPoints} points kept to hold the line back ` +
+  `from the walls' faces`);
 
 // --- street lamps & benches (OSM) --------------------------------------------------------------------------------------
 
