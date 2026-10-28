@@ -203,6 +203,13 @@ def gsub2():
     L.append(f"  sub [{' '.join(left)}] O' by o.small;")
     L.append('} ss02;')
     L.append('')
+    # ss03: inscription unicase, from the lowercase codepoints
+    import unicase as UC
+    L.append('feature ss03 {')
+    L.append('  featureNames { name "Inscription unicase: e n m d t z r h q b typed in lowercase"; };')
+    L.append(f'  sub [{" ".join(UC.UNICASE)}] by [{" ".join(c + ".unc" for c in UC.UNICASE)}];')
+    L.append('} ss03;')
+    L.append('')
     # ss05: plain figures
     L.append('feature ss05 {')
     L.append('  featureNames { name "Plain figures: closed 4, straight 7, plain 5"; };')
