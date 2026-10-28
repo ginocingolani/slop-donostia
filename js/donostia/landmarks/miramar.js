@@ -224,7 +224,7 @@ function createTileMaterial() {
   const fw = fwidth(yc).max(0.001);
   const course = smoothstep(fw, float(0).sub(fw), fract(yc).sub(0.12)).mul(smoothstep(0.5, 0.2, fw));
   const tone = mx_noise_float(positionWorld.mul(vec3(2.2, 3.3, 2.2))).mul(0.07).add(mx_noise_float(positionWorld.mul(0.2)).mul(0.06)).add(1.0);
-  mat.colorNode = vec3(0.15, 0.075, 0.056).mul(tone).mul(float(1).sub(course.mul(0.3)));
+  mat.colorNode = vec3(0.13, 0.068, 0.05).mul(tone).mul(float(1).sub(course.mul(0.3)));
   return mat;
 }
 
@@ -499,8 +499,12 @@ export function build(sites, ctx) {
   });
 
   // --- the tower's top: a stone cornice, the belvedere, the octagonal tiled roof, its dormers and finial ---------------
-  // (an 8-sided cylinder turned onto the octagons' corners, its radius theirs)
-  const octAt = (o) => (rTop, rBottom, y0, y1) => new THREE.CylinderGeometry(rTop, rBottom, y1 - y0, 8).rotateY(-Math.PI / 8).translate(o.u, (y0 + y1) / 2, o.v);
+  // (an 8-sided cylinder turned onto the octagons' corners, its radius theirs, flat-shaded facet by facet)
+  const octAt = (o) => (rTop, rBottom, y0, y1) => {
+    const g = new THREE.CylinderGeometry(rTop, rBottom, y1 - y0, 8).toNonIndexed();
+    g.computeVertexNormals();
+    return g.rotateY(-Math.PI / 8).translate(o.u, (y0 + y1) / 2, o.v);
+  };
   {
     const T = TOWER, top = T.top, oct = octAt(T);
     put(M.stone, oct(R + 0.3, R + 0.18, EAVE - 0.3, EAVE + 0.12), STONE); // where the octagon leaves the square base
