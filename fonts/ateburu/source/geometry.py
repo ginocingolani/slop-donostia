@@ -295,15 +295,15 @@ def _bracket(tip, edge_pt, edge_dir_away, toward, s):
 
 def curved_serif(s, room, c=None):
     """The serif s at curvature c (default: CURV): its bracket climbs further up the stroke (up to 2.6 times, never
-    more than a third of the stroke's length `room`), leaves the tip more steeply and runs into the stroke more
-    gently, so the stroke flares over its last third instead of standing on a bracketed foot; the reach grows a little
-    and the tip's end face shrinks. At c = 0, s itself."""
+    more than a third of the stroke's length `room`), leaves the tip along its end face (at c = 1 the end face runs
+    smoothly into the flare) and runs into the stroke more gently, so the stroke flares over its last third instead of
+    standing on a bracketed foot; the reach grows a little and the end face shrinks. At c = 0, s itself."""
     c = CURV if c is None else c
     if not c:
         return s
     h = s.h + (min(s.h * 2.6, max(s.h, room * 0.33)) - s.h) * c
     return Serif(s.e * (1 + 0.15 * c), s.t * (1 - 0.45 * c), h,
-                 s.a1 + (0.28 - s.a1) * c, s.a2 + (0.32 - s.a2) * c, s.a3 + (0.58 - s.a3) * c)
+                 s.a1 * (1 - c), s.a2 + (0.36 - s.a2) * c, s.a3 + (0.58 - s.a3) * c)
 
 
 def stem(x0, x1, y0, y1, serif=None, bl=True, br=True, tl=True, tr=True, flare_l=0.0, flare_r=0.0, sb=None, st=None):
@@ -593,10 +593,17 @@ def _curved_bar(x0, x1, y0, y1, left, right, bend):
     def mv(p):
         return (p[0], p[1] + disp(p[0]))
 
+    def mv_ctrl(cp, end):
+        """a control point moves with the tangent of the displacement at its curve's end, so the curve stays tangent
+        to the bent edges it meets"""
+        if not bend:
+            return cp
+        return (cp[0], cp[1] + disp(end[0]) + slope(end[0], cp[0]) * (cp[0] - end[0]))
+
     c = Contour(mv(start))
     for pc in pieces:
         if pc[0] == 'C':
-            c.C(mv(pc[2]), mv(pc[3]), mv(pc[4]))
+            c.C(mv_ctrl(pc[2], pc[1]), mv_ctrl(pc[3], pc[4]), mv(pc[4]))
             continue
         p, q = pc[1], pc[2]
         if not bend or abs(q[0] - p[0]) < 1e-6:

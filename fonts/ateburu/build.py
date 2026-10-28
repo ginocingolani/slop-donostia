@@ -43,6 +43,7 @@ from fontTools.ttLib import TTFont, newTable  # noqa: E402
 from fontTools.varLib import build as varlib_build  # noqa: E402
 from fontTools.varLib.models import VariationModel  # noqa: E402
 
+import features as F  # noqa: E402
 import geometry  # noqa: E402
 import glyphs as G  # noqa: E402
 import qa  # noqa: E402
@@ -244,16 +245,23 @@ def pair_white(left_prof, right_prof, depth2):
     return closest + total / len(ZONE), closest
 
 
-KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one'}
+KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one', 'K.straight', 'K.roman'}
 KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
                                      'quotedblright', 'quoteleft', 'quotedblleft', 'hyphen', 'exclam', 'question',
                                      'parenright', 'four', 'seven'}
 REQUIRED_PAIRS = [('A', 'T'), ('T', 'A'), ('L', 'T'), ('R', 'A'), ('R', 'T'), ('Y', 'A'), ('A', 'V'), ('K', 'O'),
                   ('T', 'X'), ('T', 'Z'), ('T', 'S')]
 CLASSES = {
-    'A': ['A', 'Aacute', 'Agrave'], 'E': ['E', 'Eacute', 'Egrave'], 'I': ['I', 'Iacute'],
+    'A': ['A', 'Aacute', 'Agrave'], 'E': ['E', 'Eacute', 'Egrave'],
+    'I': ['I', 'Iacute', 'Igrave', 'Idieresis', 'i', 'iacute', 'igrave', 'idieresis'],
     'O': ['O', 'Oacute', 'Ograve'], 'U': ['U', 'Uacute', 'Udieresis'], 'N': ['N', 'Ntilde'], 'C': ['C', 'Ccedilla'],
+    # the accented short i kern as the dotted one
+    'i.short.lozenge': ['i.short.lozenge', 'iacute.short', 'igrave.short', 'idieresis.short'],
+    'i.shortplain.lozenge': ['i.shortplain.lozenge', 'iacute.shortplain', 'igrave.shortplain', 'idieresis.shortplain'],
+    'i.tallplain.lozenge': ['i.tallplain.lozenge', 'iacute.tallplain', 'igrave.tallplain', 'idieresis.tallplain'],
 }
+# alternates kerned like the rest (the dotted i's, the Ks)
+KERN_ALTERNATES = ['K.straight', 'K.roman'] + [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS]
 
 
 def kerning(drawn, tt, sb):
@@ -263,7 +271,7 @@ def kerning(drawn, tt, sb):
     letters = [c for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
     extra = ['period', 'comma', 'colon', 'semicolon', 'periodcentered', 'hyphen', 'quoteright', 'quotedblright',
              'quoteleft', 'quotedblleft', 'exclam', 'question', 'parenright', 'one', 'four', 'seven', 'zero']
-    names = letters + extra
+    names = letters + extra + KERN_ALTERNATES
     per_master = []
     for mi, m in enumerate(MASTERS):
         D2 = 2 * depth_of(m)
@@ -367,18 +375,21 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
         anchors[name] = (lsb_i + mix([g.top for g in gs], sc), lsb_i + mix([g.bottom for g in gs], sc))
         for u in G.GLYPHS[name][0]:
             cmap[u] = name
-    for name, uni, base, mark in G.COMPOSITES:
+    short_dy = int(round(mix([G.short_i_accent_shift(m) for m in MASTERS], sc)))
+    for name, unis, base, mark, place in G.COMPOSITES:
         pen = TTGlyphPen(glyf)
         pen.addComponent(base, (1, 0, 0, 1, 0, 0))
-        top, bottom = anchors[base]
-        x = bottom if mark == 'cedillacomb' else top
-        pen.addComponent(mark, (1, 0, 0, 1, int(round(x)), 0))
+        if mark:
+            top, bottom = anchors[base]
+            x = bottom if mark == 'cedillacomb' else top
+            pen.addComponent(mark, (1, 0, 0, 1, int(round(x)), short_dy if place == 'short' else 0))
         glyph = pen.glyph()
         glyph.components[0].flags |= 0x0200  # USE_MY_METRICS
         glyf[name] = glyph
         hmtx[name] = hmtx[base]
-        cmap[uni] = name
-        cmap[G.LOWER[name]] = name
+        anchors[name] = anchors[base]
+        for u in unis:
+            cmap[u] = name
 
     fb = FontBuilder(UPM, isTTF=True)
     fb.font.recalcTimestamp = False
@@ -412,14 +423,15 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
 
 
 def kern_fea(kern, mi):
-    lines = []
+    lines = ['languagesystem DFLT dflt;', 'languagesystem latn dflt;', '', F.gsub()]
+    cname = {k: k.replace('.', '_') for k in CLASSES}
     for k, members in CLASSES.items():
-        lines.append(f'@L_{k} = [{" ".join(members)}];')
-        lines.append(f'@R_{k} = [{" ".join(members)}];')
+        lines.append(f'@L_{cname[k]} = [{" ".join(members)}];')
+        lines.append(f'@R_{cname[k]} = [{" ".join(members)}];')
     lines.append('feature kern {')
     for (a, b), vals in sorted(kern.items()):
-        la = f'@L_{a}' if a in CLASSES else a
-        rb = f'@R_{b}' if b in CLASSES else b
+        la = f'@L_{cname[a]}' if a in CLASSES else a
+        rb = f'@R_{cname[b]}' if b in CLASSES else b
         lines.append(f'  pos {la} {rb} {vals[mi]};')
     lines.append('} kern;')
     return '\n'.join(lines) + '\n'

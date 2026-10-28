@@ -8,8 +8,8 @@ dated lintels); nothing here is traced from any font or image: the shapes are nu
 import math
 
 from geometry import (Contour, Serif, add, bar, curved_serif, diag, diag_through, diff, edge_x, edge_y, hobby, inter,
-                      length, line_cubic, mirror_x, mul, polygon, rect, ring, rotate180, shift, stem, stroke, sub, union,
-                      unit)
+                      length, line_cubic, mirror_x, mul, oval, polygon, rect, ring, rotate180, shift, stem, stroke, sub,
+                      union, unit)
 
 CAP = 720
 OVERSHOOT = 13
@@ -164,7 +164,7 @@ def H(m):
     ]), W, m.sp, m.sp)
 
 
-@glyph('I', 0x49, 0x69)
+@glyph('I', 0x49)
 def I(m):
     s = m.stem
     return G(stem(0, s, 0, m.C, m.serif, flare_l=m.flare, flare_r=m.flare), s, m.sp, m.sp)
@@ -1218,19 +1218,97 @@ def cedilla(m):
     return G(stroke(sp, a, b, knots=[(0, 1.0), (1, 1.04), (2, 0.86)], name='cedilla'), 0, 0, 0)
 
 
-# accented capitals: base + mark (name, unicode, base, mark, which anchor)
-COMPOSITES = [
-    ('Aacute', 0xC1, 'A', 'acutecomb.case'), ('Agrave', 0xC0, 'A', 'gravecomb.case'),
-    ('Eacute', 0xC9, 'E', 'acutecomb.case'), ('Egrave', 0xC8, 'E', 'gravecomb.case'),
-    ('Iacute', 0xCD, 'I', 'acutecomb.case'),
-    ('Oacute', 0xD3, 'O', 'acutecomb.case'), ('Ograve', 0xD2, 'O', 'gravecomb.case'),
-    ('Uacute', 0xDA, 'U', 'acutecomb.case'), ('Udieresis', 0xDC, 'U', 'dieresiscomb.case'),
-    ('Ntilde', 0xD1, 'N', 'tildecomb.case'),
-    ('Ccedilla', 0xC7, 'C', 'cedillacomb'),
-]
-LOWER = {'Aacute': 0xE1, 'Agrave': 0xE0, 'Eacute': 0xE9, 'Egrave': 0xE8, 'Iacute': 0xED, 'Oacute': 0xF3,
-         'Ograve': 0xF2, 'Uacute': 0xFA, 'Udieresis': 0xFC, 'Ntilde': 0xF1, 'Ccedilla': 0xE7}
+# ---------------------------------------------------------------------------------------------------------------------
+# the dotted i: the minuscule i of the Iparralde shop signs (PHARMACiE, PALAiS, IBAiA), drawn among the capitals.
+# Four stems (short with serifs, the cap-height stem of I, and both without serifs) and three dots (the lozenge of
+# the interpunct, a round dot, a chisel-cut wedge). The short stem leaves room for the dot inside the cap height; the
+# tall one carries a smaller dot above the cap line, where the accents sit.
 
+I_STEMS = ['short', 'tall', 'shortplain', 'tallplain']
+I_DOTS = ['lozenge', 'round', 'wedge']
+
+
+def idot_size(m, tall):
+    """half width, half height of the lozenge dot: the interpunct's proportions on the short i, the dieresis's on
+    the tall one (it sits in the accent zone)"""
+    return (m.v(54, 68), m.v(62, 78)) if tall else (m.v(60, 76), m.v(80, 98))
+
+
+def short_i_top(m):
+    """The short stem's top: under the dot, which reaches the cap line"""
+    dx, dy = idot_size(m, False)
+    return m.C - 2 * dy - m.v(58, 54)
+
+
+def i_stem(m, kind):
+    s = m.stem
+    top = m.C if kind.startswith('tall') else short_i_top(m)
+    if kind.endswith('plain'):
+        return stem(0, s, 0, top, m.serif, bl=False, br=False, tl=False, tr=False, flare_l=m.flare, flare_r=m.flare)
+    return stem(0, s, 0, top, m.serif, flare_l=m.flare, flare_r=m.flare)
+
+
+def i_dot(m, kind, cx, tall):
+    dx, dy = idot_size(m, tall)
+    bottom = m.C + m.v(50, 48) if tall else short_i_top(m) + m.v(58, 54)
+    if kind == 'lozenge':
+        return lozenge(cx, bottom + dy, dx, dy)
+    if kind == 'round':
+        r = (dx + dy) * 0.56
+        return oval(cx, bottom + r - m.o * 0.5, r, r)
+    # the chisel-cut wedge: flat on top, cut to a point below
+    w, h = dx * 1.24, dy * 1.80
+    return polygon([(cx, bottom - m.op), (cx + w, bottom - m.op + h), (cx - w, bottom - m.op + h)])
+
+
+def make_i(stem_kind, dot_kind):
+    def fn(m):
+        s = m.stem
+        return G(union([i_stem(m, stem_kind), i_dot(m, dot_kind, s / 2, stem_kind.startswith('tall'))]),
+                 s, m.sp, m.sp)
+    return fn
+
+
+def make_dotless(stem_kind):
+    def fn(m):
+        return G(i_stem(m, stem_kind), m.stem, m.sp, m.sp)
+    return fn
+
+
+for _st in I_STEMS:
+    for _dt in I_DOTS:
+        GLYPHS[f'i.{_st}.{_dt}'] = ([], make_i(_st, _dt))
+for _st in ('short', 'shortplain', 'tallplain'):
+    GLYPHS[f'dotlessi.{_st}'] = ([], make_dotless(_st))
+
+
+def short_i_accent_shift(m):
+    """How far an accent drops to sit on the short i where its dot is: its bottom at the dot's bottom"""
+    return short_i_top(m) + m.v(58, 54) - accent_base(m)
+
+
+# composites: (name, unicodes, base, mark or None, placement). Placement None puts the mark on the base's top anchor
+# (the cedilla on its bottom one); 'short' lowers it onto the short i. Lowercase codepoints share the capitals' glyphs,
+# except the i family, which has its own glyphs so that the dotted-i features can tell i from I.
+COMPOSITES = [
+    ('Aacute', [0xC1, 0xE1], 'A', 'acutecomb.case', None), ('Agrave', [0xC0, 0xE0], 'A', 'gravecomb.case', None),
+    ('Eacute', [0xC9, 0xE9], 'E', 'acutecomb.case', None), ('Egrave', [0xC8, 0xE8], 'E', 'gravecomb.case', None),
+    ('Iacute', [0xCD], 'I', 'acutecomb.case', None), ('Igrave', [0xCC], 'I', 'gravecomb.case', None),
+    ('Idieresis', [0xCF], 'I', 'dieresiscomb.case', None),
+    ('Oacute', [0xD3, 0xF3], 'O', 'acutecomb.case', None), ('Ograve', [0xD2, 0xF2], 'O', 'gravecomb.case', None),
+    ('Uacute', [0xDA, 0xFA], 'U', 'acutecomb.case', None), ('Udieresis', [0xDC, 0xFC], 'U', 'dieresiscomb.case', None),
+    ('Ntilde', [0xD1, 0xF1], 'N', 'tildecomb.case', None),
+    ('Ccedilla', [0xC7, 0xE7], 'C', 'cedillacomb', None),
+    # the lowercase i family: by default the same capitals
+    ('i', [0x69], 'I', None, None),
+    ('iacute', [0xED], 'I', 'acutecomb.case', None), ('igrave', [0xEC], 'I', 'gravecomb.case', None),
+    ('idieresis', [0xEF], 'I', 'dieresiscomb.case', None),
+]
+I_ACCENTS = [('acute', 'acutecomb.case'), ('grave', 'gravecomb.case'), ('dieresis', 'dieresiscomb.case')]
+for _acc, _mark in I_ACCENTS:
+    COMPOSITES.append((f'i{_acc}.short', [], 'dotlessi.short', _mark, 'short'))
+    COMPOSITES.append((f'i{_acc}.shortplain', [], 'dotlessi.shortplain', _mark, 'short'))
+    COMPOSITES.append((f'i{_acc}.tallplain', [], 'dotlessi.tallplain', _mark, None))
 
 
 def trap_at(shape, near, depth, mouth=0.5):
