@@ -781,6 +781,10 @@ function writeTerrainPNG(grid, blue, file, text) {
 
 // --- 5. Buildings: municipal 1:500 outlines + b5m measured heights + terrain ------------------------------------------
 
+// A building outline smaller than SLIVER_AREA (m²) and thinner than SLIVER_THICKNESS (twice its area over its perimeter:
+// half its width) is a sliver of a wall
+const SLIVER_AREA = 8, SLIVER_THICKNESS = 0.45;
+
 function bakeBuildings(dtm, districts) {
   const W = CORE.maxX - CORE.minX, H = CORE.maxZ - CORE.minZ;
   const b5m = loadLayer('b5m_buildings.json').features;
@@ -800,7 +804,7 @@ function bakeBuildings(dtm, districts) {
   // emitted keeps each structure to one extrusion (two would z-fight).
   const taken = new Uint8Array(W * H);
   const repeats = new Map();
-  let estimated = 0;
+  let estimated = 0, slivers = 0;
   for (const [file, kind] of sources) {
     for (const f of loadLayer(file).features) {
       const rings = f.g.filter((r) => r.length >= 6);
@@ -848,6 +852,10 @@ function bakeBuildings(dtm, districts) {
         perimeter += Math.hypot(r[2 * q] - r[2 * k], r[2 * q + 1] - r[2 * k + 1]);
       }
       const thickness = (2 * area) / Math.max(perimeter, 1e-6);
+      // a sliver under a metre wide is a wall's or a parapet's stretch drawn as a building (the doors of the stores
+      // under the west mole's walk, Kaiko pasealekua 35-37), not a volume to extrude: it would stand as a free door
+      // frame
+      if (kind === 0 && area < SLIVER_AREA && thickness < SLIVER_THICKNESS) { slivers++; continue; }
 
       let avg, max, est = false;
       if (covered >= 0.3 * Math.max(cells, 1)) {
@@ -885,7 +893,7 @@ function bakeBuildings(dtm, districts) {
   }
   const skipped = [...repeats].map(([file, n]) => `${n} ${file.replace(/^c500_|\.json$/g, '')}`).join(', ');
   log(`buildings: ${out.length} (${estimated} without a b5m height); light buildings already drawn by an earlier ` +
-    `layer skipped: ${skipped || 'none'}`);
+    `layer skipped: ${skipped || 'none'}; ${slivers} slivers of walls left out`);
   return out;
 }
 
