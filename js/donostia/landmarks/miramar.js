@@ -503,6 +503,7 @@ export function build(sites, ctx) {
   const octAt = (o) => (rTop, rBottom, y0, y1) => new THREE.CylinderGeometry(rTop, rBottom, y1 - y0, 8).rotateY(-Math.PI / 8).translate(o.u, (y0 + y1) / 2, o.v);
   {
     const T = TOWER, top = T.top, oct = octAt(T);
+    put(M.stone, oct(R + 0.3, R + 0.18, EAVE - 0.3, EAVE + 0.12), STONE); // where the octagon leaves the square base
     put(M.stone, oct(R + 0.28, R + 0.06, top - 0.12, top + 0.3), STONE);
     put(M.paint, oct(R * 0.97, R * 0.97, top + 0.3, top + 2.55), WHITE);
     for (let k = 0; k < 8; k++) {
