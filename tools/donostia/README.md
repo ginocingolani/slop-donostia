@@ -58,7 +58,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | 1 m terrain (MDT LiDAR 2017, tiles 064_4..6_1..3 and 040_6_8) | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 1 m isobaths | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Building footprints with measured mean / max heights (`GFA_DSET_BU`) | b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
+| Orthophoto 2025 (`ORTO_2025`, WMS), 500 m tiles at 12.5 cm/px over the beaches' accesses, the port and Aiete park: outlines and positions read off it (the port's pontoon widths, the pontoons, gangways and harbour outline the maps lack, the moored boats; the roofs, dormers and chimneys of the Miramar palace and Maskor Gain, the Miramar tower's place); the imagery itself is never committed | Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi | free use with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags) | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | The lights' characters, elevations, ranges and structures, San Sebastián (nos. 1788-1800): [NGA Pub. 113, List of Lights, Radio Aids and Fog Signals](https://msi.nga.mil/Publications/NGALOL) (2019 edition, corrected to Notice to Mariners 26/2019), the check on OSM's seamarks (`bake-seamarks.mjs`) | U.S. National Geospatial-Intelligence Agency | U.S. Government work, no copyright claimed (public domain) |
@@ -92,6 +92,8 @@ mixes them carries each licence for the part that comes from its source.
 | `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them) | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
 | `js/donostia/landmarks/konstituzio-plaza.js` (the square's plan: the arcades' outline, piers and passages, the library's block) | municipal map | CC BY-SA 3.0 |
+| `js/donostia/landmarks/miramar.js` (the palace's plan, wings, bays, turret and light-courts; the gate arch's wing; the roofs and the tower's place, read off the orthophoto) | municipal map, OSM, orthophoto 2025 | CC BY-SA 3.0 + ODbL 1.0, geoEuskadi credit |
+| `js/donostia/landmarks/maskor-gain.js` (the block, its turrets and the back wing; the roof garden and the dome, read off the orthophoto) | municipal map, orthophoto 2025 | CC BY-SA 3.0, geoEuskadi credit |
 | `data/donostia/tifo-portrait.png` | Goiena.eus's photo via Wikimedia Commons (cropped to his portrait's disc, turned to greys, resampled, contrasted) | CC BY-SA 4.0, credit «Goiena.eus, via Wikimedia Commons» |
 | `data/donostia/tifo-banner.png` | nothing outside: drawn by `bake-tifo.mjs` from the design | as the code (MIT) |
 
@@ -200,6 +202,18 @@ map.
   blur), slides the hulls clear of the quays & pontoons that `port_boats.json` was digitised against (as the marina
   is built), eases overlapping hulls apart and picks each boat's hull, deck & accent paints from its photographed
   colours. `BOATS_DEBUG=x,z node tools/donostia/digitise-boats.mjs` logs how the blob at (x, z) was read and cut.
+- Miramar jauregia (`js/donostia/landmarks/miramar.js`) is built on the municipal outline in the palace's own frame:
+  walls take each edge's height and finish from where it lies (the garden front's canted bays one storey high, the
+  loggia, the gallery, the service wing), roofs are rectangles of the plan with jettied half-timbered gables, hips or
+  open ends, dormers and stone chimneys, read against the orthophoto. The outline's octagon at the south-east end is a
+  low stone turret (its roof on the orthophoto is a short octagonal pyramid with a small shadow); the tower stands at
+  the north-west end, where the orthophoto shows its octagonal roof with dormers and a long shadow and where every
+  photograph of the garden front puts it (on the right seen from the bay); the outline leaves it inside the wing's
+  corner. The gate arch's wing past it is OpenStreetMap's (the 1:500 building stops short of it), moved 3.1 m along the
+  palace onto the municipal frame. Maskor Gain (`maskor-gain.js`, Mirakontxa pasealekua 12) replaces its plain
+  extrusion with the turreted block on its outline. For both, materials, storeys and details were read off Wikimedia
+  Commons photographs (Category:Miramar jauregia; the Maskor Gain photographs near Mirakontxa pasealekua), references
+  only: nothing derived from their pixels is committed.
 - Konstituzio plaza (`js/donostia/landmarks/konstituzio-plaza.js`): the square's plan is the municipal map's arcade
   (`EraikinEgitura` `ARKUPEA`: the covered walks, their back walls, the passages to the four streets and the piers,
   drawn as notches in the square's edge), embedded in the square's own frame; the arches' rhythm is fitted to those
