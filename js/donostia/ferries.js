@@ -16,8 +16,9 @@ import { ferryRounds, SERVICE } from './ferry-timeline.js';
 // Built on boats.js's builder & material (its paints, sheer stripe, heave & roll on the sea's level): one instanced mesh
 // of two, its poses written on the CPU each frame; under way, a wake of foam behind each (one more mesh for both).
 // buildFerries(seaLevel, clock) -> Object3D | null. clock() gives the time of day (h) the lighting shows (main.js: the
-// preset's); userData.update(dt, elapsed, camera) moves the ferries; userData.offset (s) shifts their rounds (to look at a
-// ferry under way: slopDebug.world.modules.ferries.userData.offset = 300).
+// preset's); userData.update(dt, elapsed, camera) moves the ferries; userData.offset (s) shifts their rounds, and
+// userData.time (s), when a number, holds them at that moment of their rounds (to look at a ferry under way:
+// slopDebug.world.modules.ferries.userData.time = 300).
 
 const FAR = 2600; // m: nothing beyond
 
@@ -248,17 +249,19 @@ export function buildFerries(seaLevel = null, clock = () => 12) {
     group.name = 'DonostiaFerries';
     group.add(mesh, wakes.mesh);
     group.userData.offset = 0;
+    group.userData.time = null;
 
     // Each frame: the ferries' poses (under way within the service's hours, else at their berths) into the storage
     // buffer, the bounding sphere round both, their wakes
     const poses = rounds.map((r) => r.berth), sphere = geo.boundingSphere;
     group.userData.update = (dt, elapsed, camera) => {
       const hour = clock(), sailing = hour >= SERVICE.from && hour < SERVICE.to;
-      const poseAt = (k, t) => (sailing ? rounds[k].pose(t + group.userData.offset) : rounds[k].berth);
+      const now = typeof group.userData.time === 'number' ? group.userData.time : elapsed + group.userData.offset;
+      const poseAt = (k, t) => (sailing ? rounds[k].pose(t) : rounds[k].berth);
       const a = instances.array;
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
       rounds.forEach((r, k) => {
-        const p = poseAt(k, elapsed), h = (p.heading * Math.PI) / 180;
+        const p = poseAt(k, now), h = (p.heading * Math.PI) / 180;
         poses[k] = p;
         a.set([p.x, p.z, Math.sin(h), Math.cos(h)], k * SLOTS * 4);
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
@@ -268,7 +271,7 @@ export function buildFerries(seaLevel = null, clock = () => 12) {
       sphere.center.set((minX + maxX) / 2, 3, (minZ + maxZ) / 2);
       sphere.radius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 12;
       mesh.visible = camera.position.distanceTo(sphere.center) - sphere.radius < FAR;
-      wakes.update(poses, elapsed, poseAt);
+      wakes.update(poses, now, poseAt);
       wakes.mesh.visible = mesh.visible && sailing;
     };
     group.userData.stats = () => ({ ferries: N, triangles: body.attributes.position.count / 3, poses: poses.map((p) => ({ ...p })) });

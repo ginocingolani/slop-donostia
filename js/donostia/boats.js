@@ -180,7 +180,7 @@ function hullShape(h) {
   return { halfBeam, sheer, keel, z };
 }
 
-function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
+function addHull(b, h, { open = false, wall = 0.05, floor = 0.15, gunwale = WOOD } = {}) {
   const { halfBeam, sheer, keel, z } = hullShape(h);
   const ts = Array.from({ length: h.stations + 1 }, (_, i) => {
     const u = i / h.stations;
@@ -251,10 +251,10 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15 } = {}) {
       const o = (k) => V(hb[k] * side, s[k], zz[k]), n = (k) => V(inner[k] * side, s[k], zz[k]);
       const f = (k) => V(fl[k] * side, floor, zz[k]);
       if (side > 0) {
-        b.quad(o(0), n(0), n(1), o(1), WOOD);
+        b.quad(o(0), n(0), n(1), o(1), gunwale);
         b.quad(n(0), f(0), f(1), n(1), DECK, INSIDE);
       } else {
-        b.quad(o(0), o(1), n(1), n(0), WOOD);
+        b.quad(o(0), o(1), n(1), n(0), gunwale);
         b.quad(n(0), n(1), f(1), f(0), DECK, INSIDE);
       }
     }
@@ -397,7 +397,7 @@ const TXIPI_HULL = { L: 5.5, B: 2.0, transom: 0.6, widest: 0.45, entry: 1.2, she
 function txipironeraBody(lod) {
   const b = new Builder();
   const shape = addHull(b, { ...TXIPI_HULL, stations: lod ? 4 : 10, section: lod ? [[0, 0], [0.88, 0.42], [1, 1]] : TXIPI_HULL.section },
-    { open: !lod, floor: 0.2, wall: 0.06 });
+    { open: !lod, floor: 0.2, wall: 0.06, gunwale: HULL });
   // the wheelhouse (optional) amidships: a small white box, windows all round under its roof (raked forward), a mast &
   // its light on top
   const zw0 = shape.z(0.26), zw1 = shape.z(0.47), ww = shape.halfBeam(0.36) - 0.32, part = OPTIONAL;

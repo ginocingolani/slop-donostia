@@ -16,10 +16,11 @@
 //   small wheelhouse); the big white motor boats, sailboats & dinghies of the marina keep theirs; the passenger boats
 //   moored alongside OSM's ferry pier are the two island ferries.
 // - Paints, per boat a hull, a deck & an accent colour: hulls a gelcoat white unless the photo shows them painted
-//   (painted open & motor boats), decks as photographed (an open boat's: its inside), the accent (a sailboat's sail
-//   cover, a motor boat's canopy, a RIB's tubes) as photographed or the usual navy & canvas. The txipironeras & the
-//   fishing boats are painted as the port's are (Commons photos, raw/refs/boats): a hull in one of their paints (the
-//   photo's where it shows one) and a gunwale stripe in a contrasting one, picked per boat from a hash of its position.
+//   (painted open & motor boats; a third of the motor launches under 7 m dark blue, red, green or black), decks as
+//   photographed (an open boat's: its inside), the accent (a sailboat's sail cover, a motor boat's canopy, a RIB's
+//   tubes) as photographed or the usual navy & canvas. The txipironeras & the fishing boats are painted as the port's
+//   are (Commons photos, raw/refs/boats): a hull in one of their paints and a gunwale stripe in a contrasting one, a
+//   white, grey or pale inside, picked per boat from a hash of its position (the photo's paint where it shows one).
 //   The photo's colours come lifted out of its haze.
 // - Options, per boat: an open boat's console & outboard, a motor boat's canopy (where the photo shows its colour), a
 //   txipironera's wheelhouse or outboard.
@@ -288,13 +289,15 @@ const unveil = (c) => {
   return c.map((v) => Math.max(0, Math.min(232, (m + (v - m) * 1.6) * 0.92)));
 };
 // The port's small boats & fishing boats as the photos show them (raw/refs/boats): the txipironeras' hulls deep or bright
-// blue, red, orange, green or black under a white gunwale stripe, or white under a coloured one, white inside; the
-// fishing boats' hulls black, blue or red, their wheelhouses white or (on a black hull) orange. The island ferries are the
-// Motoras de la Isla's blue, white above.
+// blue, red, orange, green or black under a white gunwale stripe, or white under a coloured one, white, grey or a pale
+// blue or green inside; the fishing boats' hulls black, blue or red, their wheelhouses white or (on a black hull)
+// orange. The island ferries are the Motoras de la Isla's blue, white above.
 const TXIPI_HULLS = [[28, 47, 92], [31, 86, 168], [64, 150, 206], [178, 38, 42], [222, 84, 44], [30, 88, 58], [36, 132, 112], [27, 29, 32]];
 const TXIPI_STRIPES = [[178, 38, 42], [31, 86, 168], [30, 88, 58], [28, 47, 92]];
-const TXIPI_INSIDE = [224, 222, 212];
+const TXIPI_INSIDES = [[224, 222, 212], [224, 222, 212], [198, 202, 202], [172, 202, 216], [180, 208, 186], [162, 208, 202]];
 const FISHING_HULLS = [[27, 29, 32], [36, 82, 160], [178, 34, 36]];
+// the small launches' hulls (a third of the motor boats under 7 m), as the photos show them among the white ones
+const LAUNCH_HULLS = [[28, 47, 92], [150, 32, 36], [30, 80, 55], [31, 86, 168], [24, 26, 30]];
 const FERRY_PAINT = [[31, 108, 196], WHITE, WHITE];
 const pick = (list, t) => list[Math.min(list.length - 1, Math.floor(t * list.length))];
 // [hull, deck, accent]; a hull the photo shows painted all over (its tone well away from grey) keeps that paint; an
@@ -307,7 +310,7 @@ function paints(b) {
     case 'txipironera': {
       // the ones the photo shows painted all over keep their paint; the rest (seen from above: the white gunwale & the
       // inside) one of the port's, a third of them white
-      const inside = chroma(deck) > 35 ? deck : TXIPI_INSIDE;
+      const inside = chroma(deck) > 35 ? deck : pick(TXIPI_INSIDES, hashAt(b, 10));
       if (b.family === 'txalupa') return [unveil(acc || tone), inside, WHITE];
       if (hashAt(b, 6) < 0.3) return [WHITE, inside, pick(TXIPI_STRIPES, hashAt(b, 7))];
       const hull = pick(TXIPI_HULLS, hashAt(b, 8));
@@ -322,7 +325,10 @@ function paints(b) {
     case 'sail': return [WHITE, deck, acc && chroma(acc) > 40 ? acc : NAVY]; // the sail cover
     case 'open': return [painted || WHITE, deck, acc || NAVY]; // (the accent: the console's & seats' covers)
     case 'passenger': return [WHITE, deck, acc || NAVY];
-    default: return [painted || WHITE, deck, acc || CANVAS]; // motor: the canopy
+    default: { // motor: the canopy
+      const launch = b.length < 7 && hashAt(b, 11) < 0.35 ? pick(LAUNCH_HULLS, hashAt(b, 12)) : null;
+      return [painted || launch || WHITE, deck, acc || CANVAS];
+    }
   }
 }
 // Options, bits: 1 the class's optional fitting (an open boat's console, a motor boat's canopy where the photo shows its
