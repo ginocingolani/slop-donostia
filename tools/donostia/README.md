@@ -138,7 +138,11 @@ map.
   inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
   piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
   under the slope, and `shore.js` builds them as solid steps of about 17 cm. The beaches' stairs are not among them:
-  `beach-access.mjs` builds those (below).
+  `beach-access.mjs` builds those (below). In the port (`stairWalls`) a narrow flight down a quay's face (three times
+  longer than wide) falls along it, from its far end to the lowest LiDAR across it, instead of across it to the water;
+  each flight's sides get walls of their own, a cheek where the quay stands 0.8 m or more over the steps and a hidden
+  wall where the flight runs on the water (the terrain steps down there; the flight's stone goes on down to the
+  harbour's bed, its `base`).
 - Beach accesses (`beach-access.mjs` → `js/donostia/data-beach-access.js`, built by `js/donostia/beach-access.js` in the
   shore walls' mesh): every way down from the promenades to La Concha, Ondarreta and Zurriola, inventoried by hand in
   `ACCESS`: each access names the municipal map's stairs (`ESKAILERA`) and ramps (`ARRAPALA`) pieces it is made of, by
@@ -173,12 +177,22 @@ map.
 - The port (`walls.mjs` `quayEdges`, `build.mjs` `harbourBed`, `bake-ground.mjs`): the search finds the north basin's
   north quay only in scraps and the old port slipway's sides not at all, so in two boxes the municipal map's quay edges
   (`KAIA`) stand as walls wherever the LiDAR falls 0.8 m or more across them (the quay behind, the water or the
-  slipway's floor in front), replacing and joining the search's runs. The LiDAR has the harbour's water at 0 m and no
+  slipway's floor in front), replacing and joining the search's runs. Elsewhere in the port the search misses them by
+  the flights cut into the quays, round the piers' rounded ends and where moored boats lift the LiDAR, so there a quay
+  edge stands as a wall where it plainly is one: the LiDAR level on the quay behind and, in front, the water from 2.5 m
+  out or a level square 0.8 m or more below (up to 3 m that fail this between two stretches that pass bridge them; the
+  quays' thin holes, crane tracks and strips inside the edge, are left out). Then `joinPortWalls` joins a wall ending
+  within 3 m of where another starts, going on the same way, and `buildingFaces` gives the buildings the bare-earth
+  LiDAR keeps as ground (the Aquarium under its terraces, the stores under the west mole's walk) hidden walls at their
+  faces, so the terrain steps at the facade. The LiDAR has the harbour's water at 0 m and no
   isobath reaches inside the moles, so both marinas (OSM ways 157022675 and 565482772) and the outer harbour (a ring
   inside the moles) get a dredged bed of -3 m, below the lowest spring tides (-2.2 m): at once against a quay wall,
   over 6 m from any other shore, never shallower than the sea floor's fill (by the mouth, between the moles' heads, it
   is already deeper). In the port every flat unmapped cell is paved as a quay, however far from the water (the old
-  port's square and slipway), a cell beside a quay wall counting its slope on its flat side.
+  port's square and slipway), a cell beside a quay wall counting its slope on its flat side, and so is every unmapped
+  cell of the harbour no higher than the flat quay within 6 m (the ramps the grid leaves where a wall stops short).
+  Urgull's slopes over the port (`port.mjs` `urgullWoods`: above 8 m, steeper than 0.45, which the municipal woodland
+  stops short of) are woodland, as the orthophoto shows, planted by `bake-streetscape.mjs`.
 - Shore rocks (`bake-shore.mjs`): seeded dart throwing over the 2 m cells of each zone (the Paseo Nuevo's apron and
   flysch platforms, the Zurriola dike & the Kursaal's bank of the river mouth, the river walls' toe where the LiDAR found
   the bed above mean sea level, the port's two moles, the OSM bare rock & rocky coastline), never on paving, buildings,
@@ -305,6 +319,12 @@ map.
   record refurbishments.
 - The light-building layers repeat each other (EraikinArinak redraws almost every ESTALPEA shed, BEROTEGIA greenhouse
   and KIOSKOA kiosk): `build.mjs` extrudes a light building only when an earlier outline does not already cover it.
+  A few stretches of wall are drawn as buildings (ERAIKINA): an outline under 8 m² and under 0.9 m wide is left out
+  (16; the four on the west mole's walk by the Aquarium, the doors of the stores under it, stood as free door frames).
+- The Aquarium (`js/donostia/landmarks/itsas-museoa.js`): the faces of the Oceanographic Society's outline where the
+  ground falls away outside it, the 1928 pavilion's in sandstone under maroon eaves with its sign, the extensions' in
+  grey stone; read off Wikimedia Commons photographs of the Aquarium (its category), references only, nothing derived
+  from their pixels committed.
 - Shapefile rings: outer rings run clockwise and holes counter-clockwise; `extract.py` groups them by orientation, so
   a courtyard that touches its building's outline stays a hole.
 - The national Catastro does not cover Gipuzkoa (foral cadastre), hence b5m.
