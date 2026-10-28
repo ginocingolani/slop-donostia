@@ -306,7 +306,9 @@ map.
   with level ground in front stands. A wall that ends by a face's end runs on to it, the two meeting where their lines
   cross (the face's end moved along its line, its openings, up to 1 m, to leave 1.2 m beside them); the municipal
   stairs by these walls are built as the shore's (`walls.mjs`'s `detectStairs`). These walls keep the ground classes:
-  in front of them lies the road, the walk, a courtyard. The portals (`js/donostia/tunnels.js`): the face in masonry
+  in front of them lies the road, the walk, a courtyard. Where the walk round the Pico del Loro is a sample wide between
+  Miramar's garden wall and the sea wall, the garden wall's samples behind it that share a triangle with the sea wall's
+  come down to the walk (else the terrain rose from the sea wall's crest over the garden wall's face in spikes). The portals (`js/donostia/tunnels.js`): the face in masonry
   from under the road to the ground over the bore, a cornice, a parapet with a white railing on the stone portals (a
   plain one on the concrete), a pier in each corner where a retaining wall runs on, and the arch: a semicircle where
   the face is tall enough over a springing of 1.6 m (a road's) or 2.2 m (a path's or a railway's), else a segment
@@ -320,7 +322,8 @@ map.
   garden wall's foot within 2 m, so it stays on the walk round the Pico del Loro, under Miramar's walls. The municipal
   map already leaves the bores out of its roads (the gardens and paths over them are its own), and OSM maps no street
   lamps over them. Left as they were: the cuttings' sides where the map has no wall (the bypass's portals stand in
-  slopes the 2 m grid still smears), the corners of the Pico del Loro footway's two courtyards (6 m wide: a sample in
+  slopes the 2 m grid still smears), small pits in the garden behind Miramar's wall where those samples came down, the
+  corners of the Pico del Loro footway's two courtyards (6 m wide: a sample in
   a corner ramps between the face's top and the side wall's foot beside the corner's pier), the port's and the Paseo
   Nuevo's portals (a shore wall stands there already).
 - Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
