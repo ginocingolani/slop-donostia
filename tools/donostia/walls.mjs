@@ -403,38 +403,54 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => fa
 const STEP_RISE = 0.17;
 // A flight this many times longer than wide runs down along a quay's face
 const NARROW = 3;
+const STAIR_THIN = 0.6; // m
 
 // The plane detectStairs fits to the LiDAR inside a narrow flight down a quay's face falls across it, to the water (the
 // 1 m LiDAR smears the face over its width): it falls along its length instead, to the lowest LiDAR across it (the
-// municipal outline and the LiDAR can disagree by a metre) from the farther end (no higher than the quay beside it; the
-// quay round its ends bleeds into the samples there, which a straight fit would follow). Changes the piece; true if it
-// did.
-function alongFace(st, at) {
-  const { p } = st;
-  const n = p.length / 2;
+// municipal outline and the LiDAR can disagree by a metre) from the farther end, a riser under the quay beside it (the
+// quay round its ends bleeds into the samples there, which a straight fit would follow). A flight the municipal map
+// cuts into pieces (the ferry's, a wedge along the Kaiko quay in four) is fitted whole, each piece keeping its stretch
+// of the one slope: fitted one by one, they fell each its own way, a sawtooth. group: the pieces (sharing edges, in
+// one line). Changes the pieces; true if it did.
+function alongFace(group, at) {
+  const P = group.flatMap((st) => st.p);
+  const n = P.length / 2;
   let cx = 0, cz = 0;
-  for (let k = 0; k < p.length; k += 2) { cx += p[k]; cz += p[k + 1]; }
+  for (let k = 0; k < P.length; k += 2) { cx += P[k]; cz += P[k + 1]; }
   cx /= n; cz /= n;
-  // its length along its longest side
-  let lx = 1, lz = 0, longest = 0;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n, dx = p[2 * j] - p[2 * i], dz = p[2 * j + 1] - p[2 * i + 1], l = Math.hypot(dx, dz);
-    if (l > longest) { longest = l; lx = dx / l; lz = dz / l; }
+  // its length: along the edge (of any piece) that boxes all the pieces tightest
+  let lx = 1, lz = 0, a0 = 0, a1 = 0, b0 = 0, b1 = 0, area = Infinity;
+  for (const st of group) {
+    const p = st.p, m = p.length / 2;
+    for (let i = 0; i < m; i++) {
+      const j = (i + 1) % m, dx = p[2 * j] - p[2 * i], dz = p[2 * j + 1] - p[2 * i + 1], l = Math.hypot(dx, dz);
+      if (l < 0.5) continue;
+      const ex = dx / l, ez = dz / l;
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (let k = 0; k < P.length; k += 2) {
+        const u = (P[k] - cx) * ex + (P[k + 1] - cz) * ez, v = -(P[k] - cx) * ez + (P[k + 1] - cz) * ex;
+        u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+      }
+      const box = (u1 - u0) * (v1 - v0);
+      if (box >= area) continue;
+      area = box;
+      [lx, lz, a0, a1, b0, b1] = u1 - u0 >= v1 - v0 ? [ex, ez, u0, u1, v0, v1] : [-ez, ex, v0, v1, -u1, -u0];
+    }
   }
   const wx = -lz, wz = lx;
-  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-  for (let k = 0; k < p.length; k += 2) {
-    const a = (p[k] - cx) * lx + (p[k + 1] - cz) * lz, b = (p[k] - cx) * wx + (p[k + 1] - cz) * wz;
-    a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
-  }
   const len = a1 - a0;
   if (len < 3 || len < NARROW * (b1 - b0)) return false;
-  // across it every half metre along it: the lowest & the middle LiDAR
+  // across it every half metre along it, inside the pieces: the lowest & the middle LiDAR
   const S = [];
+  const inside = (x, z) => group.some((st) => pointInRing(x, z, st.p));
   for (let a = a0 + 0.3; a <= a1 - 0.3; a += 0.5) {
-    const v = [0.15, 0.3, 0.5, 0.7, 0.85].map((f) => at(cx + lx * a + wx * (b0 + f * (b1 - b0)), cz + lz * a + wz * (b0 + f * (b1 - b0))))
-      .filter(Number.isFinite);
-    if (v.length >= 3) S.push([a, Math.min(...v), median(v)]);
+    const v = [];
+    for (const f of [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]) {
+      const x = cx + lx * a + wx * (b0 + f * (b1 - b0)), z = cz + lz * a + wz * (b0 + f * (b1 - b0));
+      if (inside(x, z)) v.push(at(x, z));
+    }
+    const ok = v.filter(Number.isFinite);
+    if (ok.length >= 2) S.push([a, Math.min(...ok), median(ok)]);
   }
   if (S.length < 4) return false;
   const low = S.reduce((m, q) => (q[1] < m[1] ? q : m));
@@ -443,35 +459,70 @@ function alongFace(st, at) {
   const beside = (b) => median([0.25, 0.5, 0.75].map((f) => at(cx + lx * (a0 + f * len) + wx * b, cz + lz * (a0 + f * len) + wz * b))
     .filter(Number.isFinite));
   const quay = Math.max(beside(b1 + 2), beside(b0 - 2));
-  const top = Math.min(quay + 0.02, Math.max(...S.filter((q) => Math.abs(q[0] - aTop) < 1.5).map((q) => q[2])));
+  // (its head a riser under the quay: the LiDAR's middle there takes some of the drop to the water)
+  const top = Math.min(quay + 0.02, Math.max(quay - STEP_RISE, ...S.filter((q) => Math.abs(q[0] - aTop) < 1.5).map((q) => q[2])));
   const bot = Math.max(0.3, low[1]);
   if (!(top - bot >= 0.6)) return false;
   // y = top at aTop, bot at the lowest point (shoreStairs and shore.js keep to [bot, top] beyond)
   const g = (bot - top) / (low[0] - aTop), dir = g < 0 ? 1 : -1;
-  Object.assign(st, {
-    top: r2(top), bot: r2(bot), ux: Math.round(lx * dir * 1000) / 1000, uz: Math.round(lz * dir * 1000) / 1000,
-    plane: [g * lx, g * lz, top - g * aTop, cx, cz]
-  });
+  const y = (x, z) => Math.min(top, Math.max(bot, top + g * ((x - cx) * lx + (z - cz) * lz - aTop)));
+  for (const st of group) {
+    let hi = -Infinity, lo = Infinity;
+    for (let k = 0; k < st.p.length; k += 2) { const v = y(st.p[k], st.p[k + 1]); hi = Math.max(hi, v); lo = Math.min(lo, v); }
+    Object.assign(st, {
+      top: r2(hi), bot: r2(lo), ux: Math.round(lx * dir * 1000) / 1000, uz: Math.round(lz * dir * 1000) / 1000,
+      plane: [g * lx, g * lz, top - g * aTop, cx, cz]
+    });
+  }
   return true;
+}
+
+// The port's pieces of flights in chains: those that share an edge (two vertices within 0.3 m) belong together
+function flights(port) {
+  const parent = port.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const shared = (a, b) => {
+    let c = 0;
+    for (let i = 0; i < a.length; i += 2) for (let j = 0; j < b.length; j += 2) if (Math.hypot(a[i] - b[j], a[i + 1] - b[j + 1]) < 0.3) c++;
+    return c >= 2;
+  };
+  for (let i = 0; i < port.length; i++) for (let j = i + 1; j < port.length; j++) if (shared(port[i].p, port[j].p)) parent[find(i)] = find(j);
+  const groups = new Map();
+  port.forEach((st, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(st); });
+  return [...groups.values()];
 }
 
 /**
  * The port's quay steps (detectStairs' pieces inside PORT) run down along a quay's face or out of a notch cut into it,
- * which the 2 m terrain keeps as a bank round them. The narrow flights down a face are turned to fall along it
- * (alongFace: the pieces change). Every side of a piece is walked every half metre, the 1 m LiDAR
+ * which the 2 m terrain keeps as a bank round them. The narrow flights down a face, of one piece or a chain of them, are
+ * turned to fall along it (alongFace: the pieces change). Every side of a piece is walked every half metre, the 1 m LiDAR
  * 1.5-3 m out telling what lies beyond: the quay QUAY_MIN or more above the steps and level (a cheek: a quay wall from
- * the quay down to the flight), or the water (the quay's face under the flight: a hidden wall, so the terrain steps down
- * there, the flight's own stone going on down to the harbour's bed); or the next piece, the quay at the head, a
- * pontoon at the foot, a wall of `walls` already there (nothing). Runs of 1 m or more of one kind become walls (the low
- * side on the left of travel). Returns { walls, deep: Set of the pieces with a face on the water }.
+ * the quay down to the flight, QUAY_MIN or more above it), or the water (the quay's face under the flight: a hidden
+ * wall, so the terrain steps down there, the flight's own stone going on down to the harbour's bed); or the next piece,
+ * the quay at the head, a pontoon at the foot, a wall of `walls` already there (nothing). Runs of 1 m or more of one kind
+ * become walls (the low side on the left of travel). Slivers under STAIR_THIN wide (a flight's edge drawn along a quay's
+ * face) are no flights here. Returns { walls, deep: Set of the pieces with a face on the water }.
  */
 export function stairWalls({ dtm, stairs, walls: shore = [], log = () => {} }) {
   const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
-  const port = stairs.filter((st) => inBox(PORT, st.p[0], st.p[1]));
+  const port = stairs.filter((st) => {
+    if (!inBox(PORT, st.p[0], st.p[1])) return false;
+    let area = 0, perimeter = 0;
+    for (let i = 0, n = st.p.length / 2, j = n - 1; i < n; j = i++) {
+      area += st.p[2 * j] * st.p[2 * i + 1] - st.p[2 * i] * st.p[2 * j + 1];
+      perimeter += Math.hypot(st.p[2 * i] - st.p[2 * j], st.p[2 * i + 1] - st.p[2 * j + 1]);
+    }
+    return Math.abs(area) / perimeter >= STAIR_THIN / 2;
+  });
+
   const walls = [], deep = new Set();
   let cheeks = 0, faces = 0, turned = 0;
+  // (a chain of pieces in one line as one flight, else each piece on its own)
+  for (const group of flights(port)) {
+    if (group.length > 1 && alongFace(group, at)) turned += group.length;
+    else for (const st of group) if (alongFace([st], at)) turned++;
+  }
   for (const st of port) {
-    if (alongFace(st, at)) turned++;
     const { p, top, bot, ux, uz } = st;
     const n = p.length / 2;
     // the steps' treads, as shore.js cuts them: slices square to the fall from s0 (the head) to s1
@@ -499,7 +550,7 @@ export function stairWalls({ dtm, stairs, walls: shore = [], log = () => {} }) {
         const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
         const pt = { x, z, kind: null, ox, oz, edge: i };
         pts.push(pt);
-        // (not along a wall already there: a sliver of a flight drawn along a quay's face)
+        // (not along a wall already there: the quay's edge round the notch the flight is cut into)
         if (q === 0 || q === m || inOther(x + ox * 0.75, z + oz * 0.75) || nearestWall(shore, x, z, 0.8)) continue;
         const beyond = [1.5, 2, 2.5, 3].map((t) => at(x + ox * t, z + oz * t)).filter(Number.isFinite);
         if (beyond.length < 3) continue;
@@ -749,9 +800,19 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
 const JOIN_GAP = 3; // m
 
 /**
- * dtm: the 1 m Grid; walls: GEO.terrain.walls, joined in place. Returns the Set of the walls that grew.
+ * dtm: the 1 m Grid; walls: GEO.terrain.walls, joined in place; stairs: the flights no join crosses. Returns the Set of
+ * the walls that grew.
  */
-export function joinPortWalls({ dtm, walls, log = () => {} }) {
+export function joinPortWalls({ dtm, walls, stairs = [], log = () => {} }) {
+  // (never across a flight: the quays' walls cut along its sides stay cut, stairWalls)
+  const overFlight = (ax, az, bx, bz) => {
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.25);
+    for (let k = 1; k < n; k++) {
+      const x = ax + ((bx - ax) * k) / n, z = az + ((bz - az) * k) / n;
+      if (stairs.some((st) => pointInRing(x, z, st.p))) return true;
+    }
+    return false;
+  };
   const port = (w) => !w.h && inBox(PORT, w.p[0], w.p[1]);
   const dir = (p, k0, k1) => { const dx = p[k1] - p[k0], dz = p[k1 + 1] - p[k0 + 1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
   const grown = new Set();
@@ -767,6 +828,7 @@ export function joinPortWalls({ dtm, walls, log = () => {} }) {
         const gx = b.p[0] - tx, gz = b.p[1] - tz, gap = Math.hypot(gx, gz);
         if (gap >= bestD) continue;
         if (gap > 0.3) {
+          if (overFlight(tx, tz, b.p[0], b.p[1])) continue;
           const j = [gx / gap, gz / gap], u = dir(a.p, k - 8, k - 4), v = dir(b.p, 0, 4);
           if (u[0] * j[0] + u[1] * j[1] < 0.3 || v[0] * j[0] + v[1] * j[1] < 0.3) continue;
           // the low side of the gap, on its left

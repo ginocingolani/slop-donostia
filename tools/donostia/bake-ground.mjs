@@ -153,7 +153,8 @@ if (TW * TRES !== W || TH * TRES !== H) throw new Error('terrain-core.png does n
 const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay / S.woodland
 // 2 m cells: where a shore wall stops short (at a flight of steps, a pier's end, a corner the search missed) the grid
 // keeps the quay's edge as a ramp down to the water, which would come out as meadow, scrub and wet weed; any unmapped
-// cell of the port no higher than the flat quay within this reach is the quay's
+// cell of the harbour no higher than the flat quay within this reach, or level along one of the grid's axes, is the
+// quay's
 const QUAY_RAMP = 3;
 {
   const px = terrainPNG.data;
@@ -195,7 +196,10 @@ const QUAY_RAMP = 3;
       const n = k + b * TW + a;
       if (flat[n] === S.quay && height[n] > deck) deck = height[n];
     }
-    if (h <= deck + 0.3) { terrainBase[k] = S.quay; ramps++; }
+    // (or level one way: a strip of quay a cell wide between a wall's foot and the water, under a raised walk)
+    const one = (a, b) => Math.min(Math.abs(a - h), Math.abs(h - b)) / TRES;
+    const level = Math.min(one(height[k + 1], height[k - 1]), one(height[k + TW], height[k - TW])) < 0.12;
+    if (h <= deck + 0.3 || level) { terrainBase[k] = S.quay; ramps++; }
   }
   // Urgull's wooded slopes over the port (port.mjs)
   for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) {

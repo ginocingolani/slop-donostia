@@ -652,10 +652,15 @@ function stepAtWalls(walls, grid, classes, which = null) {
     }
   }
   // Behind: the smear back up to the promenade's level, and nothing over the coping (the Paseo Nuevo's parapet, which
-  // the LiDAR keeps as a hump, is modelled: level with the walk)
+  // the LiDAR keeps as a hump, is modelled: level with the walk). (And in front, a sample that goes onto a wall other
+  // than its nearest, between two walls, down to that wall's foot.)
   for (const [k, s] of snaps) {
-    if (s.side > 0 || (which && !which.has(s.wall))) continue;
+    if (which && !which.has(s.wall)) continue;
     const v = grid.data[k];
+    if (s.side > 0) {
+      if (v > s.foot + 0.1) { grid.data[k] = s.foot; lowered++; }
+      continue;
+    }
     const level = walls[s.wall].t === WALL.paseo ? s.deck : Math.min(Math.max(v, s.deck), s.deck + 0.04);
     if (v < s.deck - 0.15 || v > s.deck + 0.04 || walls[s.wall].t === WALL.paseo) {
       if (Math.abs(level - v) > 0.005) raised++;
@@ -720,13 +725,13 @@ function shoreWalls(dtm, grid, classes) {
 function shoreStairs(dtm, walls, grid, classes, access, faces) {
   // (not the buildings' faces: the stairs round and inside the Aquarium come down no quay)
   const stairs = detectStairs({ dtm, walls: walls.filter((w) => !faces.includes(w)), loadLayer, scanRings, skip: access.claimed, log });
-  // the port's flights cut into its quays: their cheeks and the quay's face under them stand as walls too, the terrain
+  // the port's flights cut into its quays: their cheeks and the quay's face under them stand as walls, the terrain
   // stepping at them; the steps of those on the water go on down to the harbour's bed (base, js/donostia/shore.js)
   const port = stairWalls({ dtm, stairs, walls, log });
   walls.push(...port.walls);
   for (const s of port.deep) s.base = HARBOUR_BED;
   // and with them every gap between the port's walls closed (walls.mjs's joinPortWalls), the terrain steps at these
-  const grown = joinPortWalls({ dtm, walls, log });
+  const grown = joinPortWalls({ dtm, walls, stairs, log });
   const step = new Set([...port.walls, ...grown]);
   stepAtWalls(walls, grid, classes, new Set(walls.flatMap((w, k) => (step.has(w) ? [k] : []))));
   let lowered = 0;
