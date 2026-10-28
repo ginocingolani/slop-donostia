@@ -6,8 +6,9 @@
 // and the buildings of js/donostia/geodata.js. Run it after tools/donostia/build.mjs.
 //
 // - Trees: the centroid of every tree pit (ZUHAITZ_TXORKOA), OSM natural=tree nodes (merged into the pit they mark, or
-//   added), blue-noise scatter over the woodland masses (ZuhaiztiGuneak) and a sparse one over the gardens
-//   (LORATEGI_EREMUA); nothing inside a building, on a carriageway, rail or water. Each tree gets a species by place
+//   added), blue-noise scatter over the woodland masses (ZuhaiztiGuneak) and Urgull's unmapped slopes over the port
+//   (port.mjs), and a sparse one over the gardens (LORATEGI_EREMUA); nothing inside a building, on a carriageway, rail
+//   or water. Each tree gets a species by place
 //   (tamarisks along La Concha, Ondarreta & Alderdi Eder, London planes in the ensanche, pines & evergreens in the hill
 //   woods...) and a scale that keeps its crown off the nearest wall.
 // - La Concha's railing: the landward edge of the Kontxa & Ondarreta beach polygons where the promenade (sidewalk or
@@ -26,6 +27,7 @@ import { pathToFileURL } from 'node:url';
 import {
   HERE, FRAME, loadLayer, lonLatToLocal, scanRings, ringArea, ringBounds, encodePNG, previewDir, licenceComment, log
 } from './lib.mjs';
+import { urgullWoods } from './port.mjs';
 
 const ROOT = path.resolve(HERE, '../..');
 const OUT = path.join(ROOT, 'js/donostia/data-streetscape.js');
@@ -461,6 +463,10 @@ const woods = new Uint8Array(R.w * R.h);
 for (const f of loadLayer('c500_ZuhaiztiGuneak.json').features) scanRings(f.g, R.x0, R.z0, 1, R.w, R.h, (i, j) => { woods[j * R.w + i] = 1; });
 stats.woodland = scatter((k, x, z) => woods[k] && (surf[k] === G.woodland || surf[k] === G.garden) && wallDist[k] > 2 &&
   slopeAt(x, z) < 1.7, 7.2, 1, 7001, 'wood');
+// 3b. Urgull's slopes over the port, which the municipal woodland stops short of and the orthophoto shows wooded
+//     (urgullWoods, tools/donostia/port.mjs; bake-ground.mjs gives them the woods' ground)
+stats.woodland += scatter((k, x, z) => surf[k] === G.natural && wallDist[k] > 2 && slopeAt(x, z) < 1.7 &&
+  urgullWoods(x, z, terrain.heightAt(x, z), slopeAt(x, z)), 7.2, 1, 7011, 'wood');
 
 // 4. Gardens: a tree here and there, where the lawn has room round it
 const roomy = (x, z, r) => {

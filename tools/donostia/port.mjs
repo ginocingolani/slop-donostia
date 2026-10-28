@@ -1,10 +1,21 @@
 // tools/donostia/port.mjs
-// The port's outlines shared by tools/donostia/bake-marina.mjs (its moorings, the harbour's water) and
-// tools/donostia/bake-shore.mjs (no loose rocks on its quays and slipway, concrete cubes on its moles' armour).
+// The port's outlines shared by tools/donostia/bake-marina.mjs (its moorings, the harbour's water),
+// tools/donostia/bake-shore.mjs (no loose rocks on its quays and slipway, concrete cubes on its moles' armour),
+// tools/donostia/bake-ground.mjs (its quays' ground, the woods over it) and tools/donostia/bake-streetscape.mjs (their
+// trees).
 
 // walls.mjs's PORT box: the quays and moles become walls there
 export const PORT = { minX: -330, maxX: 170, minZ: -270, maxZ: -20 };
 export const inPort = (x, z) => x >= PORT.minX && x <= PORT.maxX && z >= PORT.minZ && z <= PORT.maxZ;
+
+// Urgull's slopes over the port, from behind the Aquarium to the north basin, between the houses of Kaiko pasealekua and
+// the paths above: the municipal map leaves most of them blank (its woodland stops short of them) and the 2 m terrain
+// draws them steep enough for the ground's crag rock, where the 2025 orthophoto shows a closed canopy.
+// tools/donostia/bake-ground.mjs paints the blank ground there as woodland and tools/donostia/bake-streetscape.mjs
+// plants it: (x, z), the terrain's height h and its gradient (rise per metre).
+const URGULL_SLOPES = { minX: -305, maxX: 60, minZ: -270, maxZ: -180 };
+export const urgullWoods = (x, z, h, grad) => x >= URGULL_SLOPES.minX && x <= URGULL_SLOPES.maxX &&
+  z >= URGULL_SLOPES.minZ && z <= URGULL_SLOPES.maxZ && h > 8 && grad > 0.45;
 
 // The two moles round the harbour (OSM man_made=breakwater): the marina's, from the harbour mouth to the Real Club
 // Náutico, and the old port's west mole below the Aquarium. Their seaward flanks are banks of concrete cubes (the 2025

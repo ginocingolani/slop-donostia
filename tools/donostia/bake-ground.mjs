@@ -19,7 +19,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, previewDir, pngText, log } from './lib.mjs';
+import { HERE, FRAME, encodePNG, lonLatToLocal, loadLayer, osmPolygons, pointInRing, previewDir, pngText, log } from './lib.mjs';
+import { inPort, HARBOUR, urgullWoods } from './port.mjs';
 import { decodePNG } from '../../js/donostia/png.js';
 import { BEACH_ACCESS } from '../../js/donostia/data-beach-access.js';
 import { WALL, nearestWall, wallIndex } from '../../js/donostia/shore-walls.js';
@@ -143,13 +144,17 @@ for (const layer of LAYERS) {
 
 // Under every mapped layer, from the 2 m terrain bake (B channel = GEO.terrain.classes, 7 = water): sea & river beds,
 // and the quays: flat unmapped ground a few metres above the water next to it (the port, the river walls, Sagüés),
-// which the municipal map leaves blank and would otherwise come out as meadow
-const PORT = { minX: -330, maxX: 170, minZ: -270, maxZ: -20 }; // as tools/donostia/walls.mjs
+// which the municipal map leaves blank and would otherwise come out as meadow; in the port also the ramp the 2 m grid
+// leaves between a quay and the water (QUAY_RAMP), and the woods on Urgull's slopes over it (urgullWoods)
 const terrainFile = fs.readFileSync(path.join(OUT, 'terrain-core.png'));
 const terrainPNG = await decodePNG(terrainFile.buffer.slice(terrainFile.byteOffset, terrainFile.byteOffset + terrainFile.byteLength));
 const TW = terrainPNG.width, TH = terrainPNG.height, TRES = 2;
 if (TW * TRES !== W || TH * TRES !== H) throw new Error('terrain-core.png does not match the core extent');
-const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
+const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay / S.woodland
+// 2 m cells: where a shore wall stops short (at a flight of steps, a pier's end, a corner the search missed) the grid
+// keeps the quay's edge as a ramp down to the water, which would come out as meadow, scrub and wet weed; any unmapped
+// cell of the port no higher than the flat quay within this reach is the quay's
+const QUAY_RAMP = 3;
 {
   const px = terrainPNG.data;
   const height = new Float32Array(TW * TH);
@@ -171,12 +176,37 @@ const terrainBase = new Uint8Array(TW * TH); // S.natural / S.seabed / S.quay
     // (in the port, all of it however far from the water and down to the foot of the old port's slipway; a cell beside
     // a quay wall counts its slope on its flat side)
     const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
-    const port = x >= PORT.minX && x <= PORT.maxX && z >= PORT.minZ && z <= PORT.maxZ;
+    const port = inPort(x, z);
     if (terrainBase[k] || (toWater[k] > 15 && !port) || h < (port ? 0 : 1.2) || h > 9) continue;
     const across = (a, b) => (port ? Math.min(Math.abs(a - h), Math.abs(h - b)) * 2 : Math.abs(a - b));
     const slope = Math.max(across(height[k + 1], height[k - 1]), across(height[k + TW], height[k - TW])) / (2 * TRES);
     if (slope < 0.12) terrainBase[k] = S.quay;
   }
+  // the quays' ramps (QUAY_RAMP), from the flat quay found above
+  let ramps = 0, woods = 0;
+  const flat = terrainBase.slice();
+  for (let j = QUAY_RAMP; j < TH - QUAY_RAMP; j++) for (let i = QUAY_RAMP; i < TW - QUAY_RAMP; i++) {
+    const k = j * TW + i, h = height[k];
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    // (the harbour's side only: the moles' seaward foot stays the wet rock under their cubes)
+    if (terrainBase[k] || !inPort(x, z) || h < -0.3 || h > 9 || !pointInRing(x, z, HARBOUR)) continue;
+    let deck = -Infinity;
+    for (let b = -QUAY_RAMP; b <= QUAY_RAMP; b++) for (let a = -QUAY_RAMP; a <= QUAY_RAMP; a++) {
+      const n = k + b * TW + a;
+      if (flat[n] === S.quay && height[n] > deck) deck = height[n];
+    }
+    if (h <= deck + 0.3) { terrainBase[k] = S.quay; ramps++; }
+  }
+  // Urgull's wooded slopes over the port (port.mjs)
+  for (let j = 1; j < TH - 1; j++) for (let i = 1; i < TW - 1; i++) {
+    const k = j * TW + i;
+    const x = CORE.minX + (i + 0.5) * TRES, z = CORE.minZ + (j + 0.5) * TRES;
+    if (terrainBase[k]) continue;
+    const grad = Math.hypot(height[k + 1] - height[k - 1], height[k + TW] - height[k - TW]) / (2 * TRES);
+    if (urgullWoods(x, z, height[k], grad)) { terrainBase[k] = S.woodland; woods++; }
+  }
+  log(`port: ${ramps * TRES * TRES} m² of the quays' ramps down to the water paved; ${woods * TRES * TRES} m² of Urgull's ` +
+    `slopes over it wooded`);
 }
 // Under a land bridge's deck (js/donostia/data-bridges.js, so bake-bridges.mjs runs first): the municipal map draws the
 // road on the bridge in plan, so its carriageway and bike lane would be painted down the embankments and across the
@@ -372,7 +402,7 @@ function columnDistances(feature, rows, out) {
 
 {
   const stripRows = STRIP * SS + 2 * MARGIN;
-  const rowSea = new Float32Array(TW), rowQuay = new Float32Array(TW);
+  const rowSea = new Float32Array(TW), rowQuay = new Float32Array(TW), rowWood = new Float32Array(TW);
   const cls = new Uint8Array(FW * stripRows);
   const f1 = new Uint8Array(FW * stripRows), f2 = new Uint8Array(FW * stripRows);
   const g1 = new Uint8Array(FW * stripRows), g2 = new Uint8Array(FW * stripRows);
@@ -383,8 +413,8 @@ function columnDistances(feature, rows, out) {
     const rows = (j1 - j0) * SS + 2 * MARGIN;
     const zTop = CORE.minZ - MARGIN / SS + rowBase / SS, zBottom = zTop + rows / SS;
     cls.fill(S.natural, 0, FW * rows);
-    // sea & river beds and quays from the 2 m terrain, each mask interpolated bilinearly and cut at one half so their
-    // outlines run smooth instead of in 2 m steps
+    // sea & river beds, quays and Urgull's woods from the 2 m terrain, each mask interpolated bilinearly and cut at one
+    // half so their outlines run smooth instead of in 2 m steps
     for (let y = 0; y < rows; y++) {
       const tz = (zTop + (y + 0.5) / SS - CORE.minZ) / TRES - 0.5;
       const tj = Math.floor(tz), fz = tz - tj;
@@ -394,12 +424,13 @@ function columnDistances(feature, rows, out) {
         const a = terrainBase[ja * TW + ti], b = terrainBase[jb * TW + ti];
         rowSea[ti] = (a === S.seabed) * (1 - fz) + (b === S.seabed) * fz;
         rowQuay[ti] = (a === S.quay) * (1 - fz) + (b === S.quay) * fz;
+        rowWood[ti] = (a === S.woodland) * (1 - fz) + (b === S.woodland) * fz;
       }
       const base = y * FW;
       for (let ti = -1; ti < TW; ti++) {
         const i0 = Math.max(0, ti), i1 = Math.min(TW - 1, ti + 1);
-        const s0 = rowSea[i0], s1 = rowSea[i1], q0 = rowQuay[i0], q1 = rowQuay[i1];
-        if (!s0 && !s1 && !q0 && !q1) continue;
+        const s0 = rowSea[i0], s1 = rowSea[i1], q0 = rowQuay[i0], q1 = rowQuay[i1], w0 = rowWood[i0], w1 = rowWood[i1];
+        if (!s0 && !s1 && !q0 && !q1 && !w0 && !w1) continue;
         // raster columns between the centres of 2 m cells ti and ti + 1
         const xa = CORE.minX + (ti + 0.5) * TRES, c0 = Math.max(0, Math.ceil((xa - fx0) * SS - 0.5));
         const c1 = Math.min(FW - 1, Math.floor((xa + TRES - fx0) * SS - 0.5));
@@ -407,6 +438,7 @@ function columnDistances(feature, rows, out) {
           const fxx = (fx0 + (c + 0.5) / SS - xa) / TRES;
           if (s0 + (s1 - s0) * fxx > 0.5) cls[base + c] = S.seabed;
           else if (q0 + (q1 - q0) * fxx > 0.5) cls[base + c] = S.quay;
+          else if (w0 + (w1 - w0) * fxx > 0.5) cls[base + c] = S.woodland;
         }
       }
     }
