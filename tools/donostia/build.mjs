@@ -16,7 +16,7 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
-import { detectWalls, detectStairs, stairWalls, quayEdges, shoreGuides, wallExclusions } from './walls.mjs';
+import { detectWalls, detectStairs, stairWalls, joinPortWalls, quayEdges, buildingFaces, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
@@ -668,7 +668,8 @@ function stepAtWalls(walls, grid, classes, which = null) {
 // The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
 // LiDAR (and along the port's quays, the municipal map's edges); tools/donostia/beach-access.mjs adds the lines
 // behind the stairs & ramps built in front of a wall (which the search leaves out). The terrain steps at them
-// (stepAtWalls). Returns { walls (GEO.terrain.walls), access (the beach accesses, beachAccesses()) }.
+// (stepAtWalls). Returns { walls (GEO.terrain.walls), access (the beach accesses, beachAccesses()), faces (the walls at
+// the port's embedded buildings, among walls) }.
 function shoreWalls(dtm, grid, classes) {
   const t = performance.now();
   // OSM water at sea level, as the water mask has it (ponds sit above POND_LEVEL)
@@ -697,13 +698,15 @@ function shoreWalls(dtm, grid, classes) {
   const buildingRings = ['c500_ERAIKINA.json', 'c500_EraikinArinak.json'].flatMap((f) => loadLayer(f).features.map((b) => b.g[0]));
   const access = beachAccesses({ dtm, walls: found, buildings: buildingRings, loadLayer, log });
   // (the hidden runs, where an access standing on the sand meets higher ground, step the terrain like any wall: the
-  // runtime moves the same samples, js/donostia/terrain.js)
-  const walls = access.walls;
+  // runtime moves the same samples, js/donostia/terrain.js; so do the faces of the buildings the LiDAR keeps as ground in
+  // the port, hidden behind their facades)
+  const faces = buildingFaces({ dtm, loadLayer, log });
+  const walls = [...access.walls, ...faces];
   const { snaps, lowered, raised } = stepAtWalls(walls, grid, classes);
-  log(`shore walls: ${access.walls.length} runs, ${access.walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
+  log(`shore walls: ${walls.length} runs, ${walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
     `samples onto the walls, ${lowered} in front dropped to the foot, ${raised} behind levelled with the promenade ` +
     `(${((performance.now() - t) / 1000).toFixed(1)} s)`);
-  return { walls: access.walls, access };
+  return { walls, access, faces };
 }
 
 // --- 4d. The flights of steps down from the shore walls ------------------------------------------------------------------
@@ -712,19 +715,20 @@ function shoreWalls(dtm, grid, classes) {
 // tools/donostia/beach-access.mjs builds) and fits their slope to the 1 m LiDAR; js/donostia/shore.js builds them as
 // stone steps. The terrain samples inside a flight are kept a little under its slope, so the ramp the grid made of it
 // stays hidden under the steps; under the beaches' stairs & ramps likewise, and the sand round those in front of a wall
-// comes down to the beach. In the port the flights' sides add walls (walls.mjs's stairWalls; `walls` grows). Returns
-// GEO.terrain.stairs.
-function shoreStairs(dtm, walls, grid, classes, access) {
-  const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, skip: access.claimed, log });
+// comes down to the beach. In the port the flights' sides add walls (walls.mjs's stairWalls) and the gaps between its
+// walls close (joinPortWalls; `walls` changes). Returns GEO.terrain.stairs.
+function shoreStairs(dtm, walls, grid, classes, access, faces) {
+  // (not the buildings' faces: the stairs round and inside the Aquarium come down no quay)
+  const stairs = detectStairs({ dtm, walls: walls.filter((w) => !faces.includes(w)), loadLayer, scanRings, skip: access.claimed, log });
   // the port's flights cut into its quays: their cheeks and the quay's face under them stand as walls too, the terrain
   // stepping at them; the steps of those on the water go on down to the harbour's bed (base, js/donostia/shore.js)
-  const port = stairWalls({ dtm, stairs, log });
-  if (port.walls.length) {
-    const first = walls.length;
-    walls.push(...port.walls);
-    stepAtWalls(walls, grid, classes, new Set(port.walls.map((_, k) => first + k)));
-    for (const s of port.deep) s.base = HARBOUR_BED;
-  }
+  const port = stairWalls({ dtm, stairs, walls, log });
+  walls.push(...port.walls);
+  for (const s of port.deep) s.base = HARBOUR_BED;
+  // and with them every gap between the port's walls closed (walls.mjs's joinPortWalls), the terrain steps at these
+  const grown = joinPortWalls({ dtm, walls, log });
+  const step = new Set([...port.walls, ...grown]);
+  stepAtWalls(walls, grid, classes, new Set(walls.flatMap((w, k) => (step.has(w) ? [k] : []))));
   let lowered = 0;
   for (const s of stairs) {
     const [a, b, c, cx, cz] = s.plane;
@@ -1092,8 +1096,8 @@ lap('terrain grids');
 fs.mkdirSync(OUT_DATA, { recursive: true });
 const coreClasses = groundClasses(core.grid, core.wet);
 lap('ground classes');
-const { walls, access } = shoreWalls(dtm, core.grid, coreClasses);
-const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access);
+const { walls, access, faces } = shoreWalls(dtm, core.grid, coreClasses);
+const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access, faces);
 harbourBed(core.grid, core.kind, walls);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));

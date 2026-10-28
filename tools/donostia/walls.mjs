@@ -462,10 +462,10 @@ function alongFace(st, at) {
  * 1.5-3 m out telling what lies beyond: the quay QUAY_MIN or more above the steps and level (a cheek: a quay wall from
  * the quay down to the flight), or the water (the quay's face under the flight: a hidden wall, so the terrain steps down
  * there, the flight's own stone going on down to the harbour's bed); or the next piece, the quay at the head, a
- * pontoon at the foot (nothing). Runs of 1 m or more of one kind become walls (the low side on the left of travel).
- * Returns { walls, deep: Set of the pieces with a face on the water }.
+ * pontoon at the foot, a wall of `walls` already there (nothing). Runs of 1 m or more of one kind become walls (the low
+ * side on the left of travel). Returns { walls, deep: Set of the pieces with a face on the water }.
  */
-export function stairWalls({ dtm, stairs, log = () => {} }) {
+export function stairWalls({ dtm, stairs, walls: shore = [], log = () => {} }) {
   const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
   const port = stairs.filter((st) => inBox(PORT, st.p[0], st.p[1]));
   const walls = [], deep = new Set();
@@ -499,7 +499,8 @@ export function stairWalls({ dtm, stairs, log = () => {} }) {
         const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
         const pt = { x, z, kind: null, ox, oz, edge: i };
         pts.push(pt);
-        if (q === 0 || q === m || inOther(x + ox * 0.75, z + oz * 0.75)) continue;
+        // (not along a wall already there: a sliver of a flight drawn along a quay's face)
+        if (q === 0 || q === m || inOther(x + ox * 0.75, z + oz * 0.75) || nearestWall(shore, x, z, 0.8)) continue;
         const beyond = [1.5, 2, 2.5, 3].map((t) => at(x + ox * t, z + oz * t)).filter(Number.isFinite);
         if (beyond.length < 3) continue;
         const level = median(beyond), spread = Math.max(...beyond) - Math.min(...beyond);
@@ -558,6 +559,25 @@ const QUAY_RUN = 3; // m: shorter runs are left out
 // (within QUAY_FLAT) on the quay behind and, in front, the water (the LiDAR's sea, 0 m) or a level square QUAY_MIN or
 // more below. A flight down the edge, a ramp, a bank or an edge drawn inside the quay is no wall.
 const QUAY_FLAT = 0.5; // m: the spread of the LiDAR over a level side, 1.5-4 m from the edge
+const QUAY_STRIP = 2; // m
+const QUAY_GAP = 3; // m
+
+// Round a closed ring of samples { wall, maybe, s }: the gaps of QUAY_GAP or less between two wall samples with the low
+// side on one side, every sample of which might be a wall on that side, become wall
+function bridge(pts) {
+  const N = pts.length, max = Math.round(QUAY_GAP / 0.5);
+  for (let a = 0; a < N; a++) {
+    const A = pts[a], B = pts[(a + 1) % N];
+    if (!A.wall || B.wall) continue;
+    let k = 1;
+    while (k <= max + 1 && !pts[(a + k) % N].wall) k++;
+    const C = pts[(a + k) % N];
+    if (k > max + 1 || !C.wall || C.s !== A.s) continue;
+    const gap = [];
+    for (let j = 1; j < k; j++) gap.push(pts[(a + j) % N]);
+    if (gap.every((p) => p.maybe && p.s === A.s)) for (const p of gap) p.wall = true;
+  }
+}
 const QUAY_SEA = 0.6; // m
 
 /**
@@ -574,6 +594,14 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
       // samples every half metre round the ring: { x, z, wall, s (+1: the low side on the ring's left (-tz, tx)) }
       const pts = [];
       const n = r.length / 2;
+      // (a hole under QUAY_STRIP thick is a strip on the quay, a crane track or a kerb a metre inside its edge: no wall
+      // outside the boxes)
+      let area = 0, perimeter = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        area += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
+        perimeter += Math.hypot(r[2 * i] - r[2 * j], r[2 * i + 1] - r[2 * j + 1]);
+      }
+      const strip = r !== f.g[0] && Math.abs(area) / Math.max(perimeter, 1e-6) < QUAY_STRIP / 2;
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * j], bz = r[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
@@ -586,7 +614,7 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           pts.push(p);
           // (the boxes with 2 m to spare: their corners; elsewhere in the port, the plain walls only)
           const boxed = inAny(x, z, 2);
-          if (!boxed && !inBox(PORT, x, z)) continue;
+          if (!boxed && (strip || !inBox(PORT, x, z))) continue;
           const side = (sg, ts) => ts.map((t) => at(x + sg * nx * t, z + sg * nz * t)).filter(Number.isFinite);
           const plus = side(1, [1.5, 2, 2.5, 3, 3.5, 4]), minus = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]);
           if (plus.length < 3 || minus.length < 3) continue;
@@ -597,16 +625,22 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           if (!boxed) {
             // (the quay level, and the water from 2.5 m out (the LiDAR smears a plumb face over the first metres) or a
             // level square: an edge drawn a metre or two inside a quay's coping, a flight or a bank fall across the
-            // samples of one side)
+            // samples of one side; one that falls short of this between two that pass, a boat moored alongside or a
+            // jog in the edge, may bridge them)
             const spread = (v) => Math.max(...v) - Math.min(...v);
             const high = s > 0 ? minus : plus, low = s > 0 ? plus : minus;
-            if (high.length < 6 || low.length < 6 || spread(high) > QUAY_FLAT) continue;
             const sea = low.slice(2).every((v) => v <= QUAY_SEA);
-            if (!sea && (spread(low) > QUAY_FLAT || median(low) > deck - QUAY_MIN)) continue;
+            if (high.length < 6 || low.length < 6 || spread(high) > QUAY_FLAT ||
+              (!sea && (spread(low) > QUAY_FLAT || median(low) > deck - QUAY_MIN))) {
+              Object.assign(p, { maybe: true, s, deck, foot });
+              continue;
+            }
           }
           Object.assign(p, { wall: true, s, deck, foot });
         }
       }
+      // the gaps of QUAY_GAP or less between two wall samples on the same side, all of whose samples might be one
+      bridge(pts);
       // runs of wall samples with the low side on one side, round the ring (starting after a gap)
       const N = pts.length, start = pts.findIndex((p) => !p.wall);
       if (start < 0) continue;
@@ -704,6 +738,128 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
   log(`port quays: ${added.length} runs along the quays' edges (${added.reduce((s, w) => s + w.p.length / 4, 0)} vertices), ` +
     `${dropped} vertices of the search's runs along them dropped, ${spliced} joined to what is left of them`);
   return [...out, ...added];
+}
+
+// --- the gaps between the port's walls ----------------------------------------------------------------------------------
+
+// The search's runs, the quays' edges and the flights' cheeks stop a metre or two short of each other at the jogs and
+// corners of the quays, and the 2 m grid leaves a bank, a fin, in every gap. Where one of the port's walls ends within
+// JOIN_GAP of where another starts, going on the same way round the quay (neither turning back) with the water or the
+// lower ground on the same side, they become one wall. Hidden walls stay as they are.
+const JOIN_GAP = 3; // m
+
+/**
+ * dtm: the 1 m Grid; walls: GEO.terrain.walls, joined in place. Returns the Set of the walls that grew.
+ */
+export function joinPortWalls({ dtm, walls, log = () => {} }) {
+  const port = (w) => !w.h && inBox(PORT, w.p[0], w.p[1]);
+  const dir = (p, k0, k1) => { const dx = p[k1] - p[k0], dz = p[k1 + 1] - p[k0 + 1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+  const grown = new Set();
+  let joins = 0;
+  for (let joined = true; joined;) {
+    joined = false;
+    for (const a of walls) {
+      if (!port(a)) continue;
+      const k = a.p.length, tx = a.p[k - 4], tz = a.p[k - 3];
+      let best = null, bestD = JOIN_GAP;
+      for (const b of walls) {
+        if (b === a || !port(b)) continue;
+        const gx = b.p[0] - tx, gz = b.p[1] - tz, gap = Math.hypot(gx, gz);
+        if (gap >= bestD) continue;
+        if (gap > 0.3) {
+          const j = [gx / gap, gz / gap], u = dir(a.p, k - 8, k - 4), v = dir(b.p, 0, 4);
+          if (u[0] * j[0] + u[1] * j[1] < 0.3 || v[0] * j[0] + v[1] * j[1] < 0.3) continue;
+          // the low side of the gap, on its left
+          const mx = (tx + b.p[0]) / 2, mz = (tz + b.p[1]) / 2;
+          const low = dtm.sample(mx - j[1] * 2.5, mz + j[0] * 2.5);
+          if (!(low <= Math.min(a.p[k - 2], b.p[2]) - QUAY_MIN)) continue;
+        }
+        best = b;
+        bestD = gap;
+      }
+      if (!best) continue;
+      a.p = [...a.p, ...best.p];
+      walls.splice(walls.indexOf(best), 1);
+      grown.delete(best);
+      grown.add(a);
+      joins++;
+      joined = true;
+      break;
+    }
+  }
+  log(`port walls: ${joins} gaps of up to ${JOIN_GAP} m between them closed`);
+  return grown;
+}
+
+// --- the port's buildings the LiDAR keeps as ground ---------------------------------------------------------------------
+
+// The bare-earth LiDAR keeps as ground the port's buildings built into a slope under a terrace: the Aquarium, under its
+// terraces at the Paseo Nuevo's level 12 m over the old port's square, and the stores under the west mole's walk. The 2 m
+// grid smears their faces into banks standing 2-3 m in front of the facades. A building (ERAIKINA) in PORT whose edge
+// falls EMBED_DROP or more on at least half its length is one of them: along its edges, wherever the LiDAR 1.5-4 m
+// inside lies QUAY_MIN or more above the ground 2.5-5 m outside, a hidden wall (the terrain steps at the facade, which is
+// the building's own: its extrusion's or its landmark's).
+const EMBED_DROP = 3; // m
+
+/**
+ * dtm: the 1 m Grid. Returns hidden walls (h: every segment) round the port's embedded buildings.
+ */
+export function buildingFaces({ dtm, loadLayer, log = () => {} }) {
+  const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
+  const out = [];
+  let buildings = 0;
+  for (const f of loadLayer('c500_ERAIKINA.json').features) {
+    const r = f.g[0];
+    if (!r || r.length < 8) continue;
+    let all = true;
+    for (let k = 0; k < r.length; k += 2) all &&= inBox(PORT, r[k], r[k + 1]);
+    if (!all) continue;
+    // samples every half metre round the ring: { x, z, wall, deck, foot, ox, oz (outwards) }
+    const pts = [];
+    let embedded = 0;
+    const n = r.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const ax = r[2 * i], az = r[2 * i + 1], bx = r[2 * j], bz = r[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-6) continue;
+      let ox = (bz - az) / len, oz = -(bx - ax) / len;
+      if (pointInRing((ax + bx) / 2 + ox * 0.2, (az + bz) / 2 + oz * 0.2, r)) { ox = -ox; oz = -oz; }
+      const m = Math.max(1, Math.round(len / 0.5));
+      for (let q = 0; q < m; q++) {
+        const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
+        const side = (sg, ts) => ts.map((t) => at(x + sg * ox * t, z + sg * oz * t)).filter(Number.isFinite);
+        const inside = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]), outside = side(1, [2.5, 3, 3.5, 4, 4.5, 5]);
+        const p = { x, z, wall: false, ox, oz };
+        pts.push(p);
+        if (inside.length < 3 || outside.length < 3) continue;
+        const deck = median(inside), foot = Math.min(...outside);
+        if (deck - median(outside) >= EMBED_DROP) embedded++;
+        if (deck - foot >= QUAY_MIN) Object.assign(p, { wall: true, deck, foot });
+      }
+    }
+    if (embedded < pts.length / 2) continue;
+    buildings++;
+    // runs round the ring (starting after a gap), walked with the outside on the left of travel (-dz, dx)
+    const N = pts.length, start = pts.findIndex((p) => !p.wall);
+    const runs = [];
+    let cur = null;
+    for (let q = 1; q <= N; q++) {
+      const p = pts[(start + q) % N];
+      if (cur && !p.wall) { runs.push(cur); cur = null; }
+      if (p.wall) (cur ||= []).push(p);
+    }
+    if (cur) runs.push(cur);
+    for (const run of runs) {
+      if (run.length < 2 * QUAY_RUN) continue;
+      const a = run[0], b = run[run.length - 1];
+      const pts2 = -(b.z - a.z) * a.ox + (b.x - a.x) * a.oz > 0 ? run : [...run].reverse();
+      const deck = smooth(pts2.map((p) => p.deck)), foot = smooth(pts2.map((p) => p.foot));
+      const kept = simplify(pts2.map((p, k) => ({ x: p.x, z: p.z, deck: deck[k], foot: Math.min(foot[k], deck[k] - QUAY_MIN) })), 0.1);
+      out.push({ t: WALL.quay, b: 0, p: kept.flatMap((p) => [p.x, p.z, p.deck, p.foot].map(r2)), h: [0, kept.length - 1] });
+    }
+  }
+  log(`port buildings kept as ground: ${buildings}, ${out.length} hidden walls at their faces`);
+  return out;
 }
 
 // --- the shorelines & the places without a wall ----------------------------------------------------------------------
