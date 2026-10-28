@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, attribute, positionWorld, positionGeometry, positionView, normalView, mix, smoothstep, step, floor,
-  fract, min, max, abs, sin, dot, fwidth, uniform, time, mx_noise_float
+  Fn, float, vec2, vec3, attribute, positionWorld, positionGeometry, positionView, normalView, cameraPosition, mix, smoothstep,
+  step, floor, fract, min, max, abs, sin, dot, normalize, fwidth, uniform, time, mx_noise_float
 } from 'three/tsl';
 import { WALL, COPING, visibleWalls } from './shore-walls.js';
 import { SHORE } from './data-shore.js';
@@ -60,11 +60,56 @@ const STYLE = {
 };
 const PARAPET_MAX_X = 560; // m: the parapet runs round Urgull, not along the river mouth
 
+// La Concha's arcade (recova) under the promenade's edge, from the foot of Alderdi Eder's ramps to the clock rotunda's
+// north-east ramp: a row of round columns carrying segmental arches just under the coping, and the gallery behind them at
+// the level of the walkway the first ramp comes down to (spot height 4.1), above the sand. After photographs (Wikimedia
+// Commons: «Kontxako arkupeak 0001», Ketari, CC BY-SA 3.0; «Kontxako hondartza 20180801 153128», pere prlpz, CC BY-SA
+// 3.0; «Donostia-San Sebastian - Playa de la Concha - 2006 - panoramio», jeffwarder, CC BY-SA 3.0): the municipal map
+// leaves it out, under the promenade's deck. line: the wall's line (local x, z) it runs along; floor (m)
+const ARCADES = [{
+  line: [[287.6, 297.6], [282.1, 304.1], [268.5, 330.6], [262.6, 345.5], [250.9, 367.9], [242.1, 380.8], [222.0, 411.0],
+    [208.6, 430.7], [199.6, 446.8]],
+  floor: 4.1
+}];
+// m: a bay, a column's shaft, an arch's rise, its crown under the promenade, the gallery's depth; the reach of its line
+const ARCADE = { bay: 3.6, column: 0.42, rise: 0.85, crown: 0.4, depth: 4.2, reach: 2.5 };
+
+// The stretch of a wall line (V: its vertices with u, metres along) that runs along an arcade: [floor, u0, u1] or null
+function arcadeAlong(V) {
+  for (const a of ARCADES) {
+    const L = a.line;
+    // (x, z) within reach of the arcade's line, and the wall there going its way
+    const on = (x, z, tx, tz) => {
+      for (let k = 0; k + 1 < L.length; k++) {
+        const [ax, az] = L[k], [bx, bz] = L[k + 1], dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz);
+        const t = ((x - ax) * dx + (z - az) * dz) / (l * l);
+        if (t < 0 || t > 1) continue;
+        if (Math.hypot(x - ax - t * dx, z - az - t * dz) < ARCADE.reach && Math.abs(tx * dx + tz * dz) / l > 0.8) return true;
+      }
+      return false;
+    };
+    let u0 = Infinity, u1 = -Infinity;
+    for (let k = 0; k + 1 < V.length; k++) {
+      const A = V[k], B = V[k + 1], len = B.u - A.u;
+      if (len < 1e-6) continue;
+      const tx = (B.x - A.x) / len, tz = (B.z - A.z) / len;
+      for (let s = 0; s <= len; s += 0.5) {
+        if (!on(A.x + tx * s, A.z + tz * s, tx, tz)) continue;
+        u0 = Math.min(u0, A.u + s);
+        u1 = Math.max(u1, A.u + s);
+      }
+    }
+    if (u1 - u0 >= ARCADE.bay) return [a.floor, u0, u1];
+  }
+  return null;
+}
+
 const lin = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
 
-// Sweeps every wall's cross-section along its line. Plain arrays: { pos, nrm, col, u, mason, mortar, foot, idx }.
+// Sweeps every wall's cross-section along its line. Plain arrays: { pos, nrm, col, u, mason, mortar, foot, arc, idx }
+// (arc: [floor, crown, u0, u1] of an arcade in the face, zeros elsewhere).
 export function wallGeometry(walls, heightAt) {
-  const out = { pos: [], nrm: [], col: [], u: [], mason: [], mortar: [], foot: [], idx: [] };
+  const out = { pos: [], nrm: [], col: [], u: [], mason: [], mortar: [], foot: [], arc: [], idx: [] };
   for (const wall of walls) {
     const style = STYLE[wall.t] || STYLE[WALL.quay];
     const p = wall.p, n = p.length / 4;
@@ -111,11 +156,15 @@ export function wallGeometry(walls, heightAt) {
       if (c.h > 0.03) segs.push([() => -c.w, (v) => v.deck - 0.1, () => -c.w, top, [-1, 0], cap, dressed, 0.8]);
       segs.push([() => c.over, (v) => top(v) - c.d, () => 0, (v) => top(v) - c.d, [0, -1], cap, dressed, 0.8]);
     }
-    // the face, battered below the promenade
+    // the face, battered below the promenade (with the arcade's bays where it runs along one)
     const faceTop = parapet ? (v) => v.deck : (v) => top(v) - c.d;
-    segs.push([() => 0, faceTop, (v) => wall.b * Math.max(0, v.deck - v.bottom), (v) => v.bottom, [1, 0], stone, masonry, style.mortar]);
+    const face = [() => 0, faceTop, (v) => wall.b * Math.max(0, v.deck - v.bottom), (v) => v.bottom, [1, 0], stone, masonry, style.mortar];
+    segs.push(face);
+    const arcade = wall.t === WALL.concha && !parapet ? arcadeAlong(V) : null;
 
-    for (const [o0f, y0f, o1f, y1f, hint, col, mason, mortar] of segs) {
+    for (const seg of segs) {
+      const [o0f, y0f, o1f, y1f, hint, col, mason, mortar] = seg;
+      const arc = seg === face && arcade ? (v) => [arcade[0], v.deck - ARCADE.crown, arcade[1], arcade[2]] : () => [0, 0, 0, 0];
       const base = out.pos.length / 3;
       for (const v of V) {
         const o0 = o0f(v), y0 = y0f(v), o1 = o1f(v), y1 = y1f(v);
@@ -132,6 +181,7 @@ export function wallGeometry(walls, heightAt) {
           out.mason.push(...mason);
           out.mortar.push(mortar);
           out.foot.push(v.foot);
+          out.arc.push(...arc(v));
         }
       }
       for (let k = 0; k < n - 1; k++) {
@@ -160,6 +210,7 @@ export function wallGeometry(walls, heightAt) {
         out.mason.push(...(parapet ? masonry : dressed));
         out.mortar.push(parapet ? style.mortar : 0.8);
         out.foot.push(v.foot);
+        out.arc.push(0, 0, 0, 0);
       }
       // wound to face (tx, tz)
       if (sgn < 0) out.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
@@ -212,6 +263,46 @@ function wallMaterial(seaLevel) {
   const jointY = smoothstep(jw.add(aaY), jw, dY).mul(smoothstep(0.5, 0.15, fwY));
   const joint = max(jointU, jointY).toVar();
   const grain = mx_noise_float(positionWorld.mul(1.7)).mul(0.08).add(mx_noise_float(positionWorld.mul(0.35)).mul(0.1)).toVar();
+
+  // The arcade (ARCADES; aArc: floor, crown, u0, u1): whole bays centred in the stretch, an opening in each between two
+  // columns under a segmental arch ringed by dressed voussoirs; through it the gallery behind (back wall, floor & ceiling
+  // under the deck), traced from the view ray in the face's plane (interior mapping: no geometry behind the face)
+  const arc = attribute('aArc', 'vec4');
+  const { bay, column, rise, crown, depth } = ARCADE;
+  const half = (bay - column) / 2, radius = (half * half + rise * rise) / (2 * rise);
+  const span = arc.w.sub(arc.z), bays = floor(span.div(bay));
+  const ua = u.sub(arc.z).sub(span.sub(bays.mul(bay)).mul(0.5));
+  const inArcade = step(0.5, arc.y.sub(arc.x)).mul(step(0, ua)).mul(step(ua, bays.mul(bay))).mul(step(arc.x, y)).mul(step(y, arc.y.add(0.3))).toVar();
+  const sb = fract(ua.div(bay)).sub(0.5).mul(bay).toVar(); // from the bay's middle (the columns at ±bay / 2)
+  const aa = fwidth(u).add(fwidth(y)).max(0.002);
+  const centre = arc.y.sub(radius), spring = arc.y.sub(rise);
+  const archTop = centre.add(float(radius * radius).sub(sb.mul(sb)).max(0).sqrt());
+  const open = smoothstep(aa.negate(), aa, min(min(float(half).sub(abs(sb)), archTop.sub(y)), y.sub(arc.x))).mul(inArcade).toVar();
+  const ringD = vec2(sb, y.sub(centre)).length().sub(radius);
+  const ring = smoothstep(aa.negate(), aa, ringD).mul(smoothstep(0.24 + 0.002, 0.24, ringD)).mul(step(spring.sub(0.05), y))
+    .mul(step(abs(sb), half + 0.3)).mul(inArcade);
+  // columns: the shaft, a base & a capital wider than it
+  const axis = float(bay / 2).sub(abs(sb));
+  const shaft = smoothstep(column / 2 + 0.002, column / 2, axis);
+  const capital = smoothstep(0.33, 0.32, axis).mul(step(spring.sub(0.24), y));
+  const plinth = smoothstep(0.31, 0.3, axis).mul(step(y, arc.x.add(0.3)));
+  const col = max(shaft, max(capital, plinth)).mul(step(y, spring)).mul(inArcade).toVar();
+  const roundness = float(1).sub(axis.div(column / 2).clamp(0, 1).pow(2)).sqrt();
+  // the gallery: the view ray from this point of the opening to the back wall, the floor or the ceiling
+  const rd = normalize(positionWorld.sub(cameraPosition));
+  const faceXZ = attribute('normal', 'vec3').xz, faceN = faceXZ.div(faceXZ.length().max(0.0001)); // (0 on the coping's top)
+  const into = dot(rd.xz, faceN).negate().max(0.001);
+  const tBack = float(depth).div(into);
+  const tFloor = y.sub(arc.x).div(rd.y.negate().max(0.0001));
+  const tCeil = arc.y.add(0.15).sub(y).div(rd.y.max(0.0001));
+  const tHit = min(tBack, min(tFloor, tCeil));
+  const behind = into.mul(tHit).div(depth).clamp(0, 1);
+  const onFloor = step(tFloor, min(tBack, tCeil)), onCeil = step(tCeil, min(tBack, tFloor));
+  const hitAlong = u.add(dot(rd.xz, vec2(faceN.y, faceN.x.negate())).mul(tHit));
+  const backWall = vec3(0.3, 0.27, 0.23).mul(mx_noise_float(vec3(hitAlong.mul(0.7), y.mul(0.5), 4.4)).mul(0.15).add(1));
+  const gallery = mix(mix(backWall, vec3(0.36, 0.33, 0.28), onFloor), vec3(0.12, 0.11, 0.1), onCeil).mul(float(1).sub(behind.mul(0.5)));
+  const dressedStone = vec3(0.42, 0.41, 0.375).mul(grain.add(1));
+
   mat.colorNode = Fn(() => {
     // stones vary in tone (rubble also in hue: ochre & grey), mortar lighter or darker than the stone
     const ochre = mix(vec3(1), vec3(1.16, 1.0, 0.8), step(0.6, tone).mul(rubble));
@@ -222,24 +313,31 @@ function wallMaterial(seaLevel) {
     // iron & weathering streaks down the quays
     const streak = smoothstep(0.55, 0.85, mx_noise_float(vec3(u.mul(0.6), y.mul(0.04), 1.1))).mul(0.18);
     c.assign(c.mul(float(1).sub(streak)));
+    // the arcade: the gallery through the openings, the columns & the arches' rings in dressed stone
+    c.assign(mix(c, gallery, open.mul(float(1).sub(col))));
+    c.assign(mix(c, dressedStone.mul(mix(float(1), roundness.mul(0.35).add(0.65), shaft)), max(col, ring)));
     return tidal(c, y.sub(seaLevel), grain.mul(4));
   })();
-  mat.normalNode = bumpNormal(joint.mul(-0.012).add(grain.mul(0.004)));
+  mat.normalNode = bumpNormal(joint.mul(-0.012).add(grain.mul(0.004)).mul(float(1).sub(max(open, col))));
+  // (the sky lights the face, not the gallery under the deck)
+  mat.aoNode = float(1).sub(open.mul(float(1).sub(col)).mul(0.55));
   return mat;
 }
 
-// Appends geometry b (the same layout) to a; either may be null
+// Appends geometry b (the same layout, arc optional) to a; either may be null
 function mergeInto(a, b) {
   if (!a || !b) return a || b;
   const base = a.pos.length / 3;
   for (const key of ['pos', 'nrm', 'col', 'u', 'mason', 'mortar', 'foot']) for (const v of b[key]) a[key].push(v);
+  for (let i = 0; i < b.pos.length / 3; i++) for (let k = 0; k < 4; k++) a.arc.push(b.arc ? b.arc[4 * i + k] : 0);
   for (const i of b.idx) a.idx.push(base + i);
   return a;
 }
 
 function wallMesh(GEO, terrain, seaLevel) {
-  const g = mergeInto(wallGeometry(visibleWalls(GEO.terrain.walls || []), (x, z) => terrain.heightAt(x, z)), accessGeometry(BEACH_ACCESS));
-  if (!g) return null;
+  const walls = wallGeometry(visibleWalls(GEO.terrain.walls || []), (x, z) => terrain.heightAt(x, z));
+  const g = mergeInto(walls || { pos: [], nrm: [], col: [], u: [], mason: [], mortar: [], foot: [], arc: [], idx: [] }, accessGeometry(BEACH_ACCESS));
+  if (!g.idx.length) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nrm, 3));
@@ -248,6 +346,7 @@ function wallMesh(GEO, terrain, seaLevel) {
   geo.setAttribute('aMason', new THREE.Float32BufferAttribute(g.mason, 4));
   geo.setAttribute('aMortar', new THREE.Float32BufferAttribute(g.mortar, 1));
   geo.setAttribute('aFoot', new THREE.Float32BufferAttribute(g.foot, 1));
+  geo.setAttribute('aArc', new THREE.Float32BufferAttribute(g.arc, 4));
   geo.setIndex(new THREE.BufferAttribute(new Uint32Array(g.idx), 1));
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
