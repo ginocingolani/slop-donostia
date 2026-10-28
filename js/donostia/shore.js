@@ -361,7 +361,7 @@ function wallMesh(GEO, terrain, seaLevel) {
 // --- stairs --------------------------------------------------------------------------------------------------------------
 
 const RISE = 0.17; // m: a step's rise; the treads' depth follows from each flight's fitted slope
-const STAIR_BASE = 0.6; // m the steps' masonry goes on under the lowest one
+const STAIR_BASE = 0.6; // m the steps' masonry goes on under the lowest one (or down to a flight's base, if it has one)
 
 // The part of a ring (flat [x, z, ...]) where (x, z)·(ux, uz) >= s (keep 1) or <= s (keep -1): a Sutherland-Hodgman pass
 function clipHalf(ring, ux, uz, s, keep) {
@@ -408,7 +408,7 @@ export function stairGeometry(stairs) {
       s1 = Math.max(s1, s);
     }
     const n = top > bot ? Math.max(1, Math.round((top - bot) / RISE)) : 1;
-    const base = bot - STAIR_BASE;
+    const base = Math.min(bot - STAIR_BASE, st.base ?? Infinity);
     // each flight its own shade of the grey stone
     const t = 0.35 + 0.3 * (Math.abs(Math.sin(p[0] * 12.9898 + p[1] * 78.233) * 43758.5453) % 1);
     for (let i = 0; i < n; i++) {

@@ -16,7 +16,7 @@ import {
   HERE, RAW, FRAME, Grid, readAscGrid, encodePNG, HEIGHT_OFFSET, scanRings, ringArea, ringBounds, pointInRing,
   lonLatToLocal, loadLayer, osmPolygons, previewDir, licenceComment, pngText, log
 } from './lib.mjs';
-import { detectWalls, detectStairs, quayEdges, shoreGuides, wallExclusions } from './walls.mjs';
+import { detectWalls, detectStairs, stairWalls, quayEdges, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
@@ -596,13 +596,79 @@ function groundClasses(grid, wet) {
 
 // --- 4c. Shore walls: La Concha's promenade wall, the Paseo Nuevo, the Urumea's & the port's quays ---------------------
 
+// The samples either side of the shore walls' lines that share a triangle across one (wallSnaps, which
+// js/donostia/terrain.js runs again to move them onto the line) lose the grid's smear: those in front drop to the foot
+// of the wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back
+// up to the promenade's level. Nothing further from a wall changes. With `which` (a Set of indices into walls), only at
+// those walls. Returns { snaps, lowered, raised }.
+function stepAtWalls(walls, grid, classes, which = null) {
+  const classAt = (x, z) => {
+    const i = Math.floor((x - grid.x0) / grid.res), j = Math.floor((z - grid.z0) / grid.res);
+    return i < 0 || j < 0 || i >= grid.w || j >= grid.h ? -1 : classes[j * grid.w + i];
+  };
+  const snaps = wallSnaps(walls, grid);
+  const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
+  // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
+  // drops takes the class of the ground beyond (the beach, the rocks, the water)
+  const BAND = 2.9, SMEAR = 4.5, PAD = 9;
+  const index = wallIndex(walls, 16, PAD);
+  const seen = new Uint8Array(grid.w * grid.h);
+  let lowered = 0, raised = 0;
+  for (const [wi, wall] of walls.entries()) {
+    if (which && !which.has(wi)) continue;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let k = 0; k < wall.p.length; k += 4) {
+      minX = Math.min(minX, wall.p[k]); maxX = Math.max(maxX, wall.p[k]);
+      minZ = Math.min(minZ, wall.p[k + 1]); maxZ = Math.max(maxZ, wall.p[k + 1]);
+    }
+    const i0 = Math.max(0, Math.floor((minX - PAD - grid.x0) / grid.res)), i1 = Math.min(grid.w - 1, Math.ceil((maxX + PAD - grid.x0) / grid.res));
+    const j0 = Math.max(0, Math.floor((minZ - PAD - grid.z0) / grid.res)), j1 = Math.min(grid.h - 1, Math.ceil((maxZ + PAD - grid.z0) / grid.res));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * grid.w + i;
+      if (seen[k]) continue;
+      seen[k] = 1;
+      const [x, z] = at(k);
+      const q = nearestWall(walls, x, z, PAD, index);
+      if (!q || q.end || q.d <= 0 || (which && !which.has(q.wall))) continue;
+      const w = walls[q.wall];
+      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little;
+      // in front of the beaches' walls, out to SMEAR the sand or the water still a metre over the foot and below the
+      // promenade: the LiDAR spreads the fall of the Pico del Loro's wall over 3-4 m)
+      const dist = Math.hypot(x - q.x, z - q.z), v = grid.data[k];
+      const smear = (w.t === WALL.concha || w.t === WALL.zurriola) && dist <= SMEAR && v > q.foot + 1 && v < q.deck - 1 &&
+        (classes[k] === GROUND.beach || classes[k] === GROUND.water);
+      if (dist > BAND + w.b * Math.max(0, q.deck - q.foot) && !smear) continue;
+      const snapped = snaps.get(k);
+      const out = BAND + 2 + w.b * Math.max(0, q.deck - q.foot) - q.d, bx = x + q.nx * out, bz = z + q.nz * out;
+      const beyond = classAt(bx, bz);
+      // (where the sea comes up to a beach's wall, down to its floor beyond: the LiDAR has the sea's surface at the foot,
+      // which would stand out of the water as a ledge along the wall)
+      const sea = beyond === GROUND.water && (w.t === WALL.concha || w.t === WALL.zurriola) ? grid.sample(bx, bz) : NaN;
+      const foot = Number.isFinite(sea) ? Math.min(q.foot, sea) : q.foot;
+      if (v > foot + 0.1 || snapped) {
+        if (v > foot + 0.1) { grid.data[k] = foot; lowered++; }
+        if (beyond >= 0 && beyond !== GROUND.building) classes[k] = beyond;
+      }
+    }
+  }
+  // Behind: the smear back up to the promenade's level, and nothing over the coping (the Paseo Nuevo's parapet, which
+  // the LiDAR keeps as a hump, is modelled: level with the walk)
+  for (const [k, s] of snaps) {
+    if (s.side > 0 || (which && !which.has(s.wall))) continue;
+    const v = grid.data[k];
+    const level = walls[s.wall].t === WALL.paseo ? s.deck : Math.min(Math.max(v, s.deck), s.deck + 0.04);
+    if (v < s.deck - 0.15 || v > s.deck + 0.04 || walls[s.wall].t === WALL.paseo) {
+      if (Math.abs(level - v) > 0.005) raised++;
+      grid.data[k] = level;
+    }
+  }
+  return { snaps, lowered, raised };
+}
+
 // The 2 m grid smears every sea wall into a ramp a cell or two wide. tools/donostia/walls.mjs finds the walls in the 1 m
-// LiDAR (and along a few of the port's quays, the municipal map's edges); tools/donostia/beach-access.mjs adds the lines
-// behind the stairs & ramps built in front of a wall (which the search leaves out). The samples on either side of each wall line that share a triangle across it (wallSnaps, which
-// js/donostia/terrain.js runs again to move them onto the line) lose the smear: those in front drop to the foot of the
-// wall (never rising: the river bed stays) and take the ground class of the cell beyond, those behind come back up to
-// the promenade's level. Nothing further from a wall changes. Returns { walls (GEO.terrain.walls), access (the beach
-// accesses, beachAccesses()) }.
+// LiDAR (and along the port's quays, the municipal map's edges); tools/donostia/beach-access.mjs adds the lines
+// behind the stairs & ramps built in front of a wall (which the search leaves out). The terrain steps at them
+// (stepAtWalls). Returns { walls (GEO.terrain.walls), access (the beach accesses, beachAccesses()) }.
 function shoreWalls(dtm, grid, classes) {
   const t = performance.now();
   // OSM water at sea level, as the water mask has it (ponds sit above POND_LEVEL)
@@ -633,61 +699,7 @@ function shoreWalls(dtm, grid, classes) {
   // (the hidden runs, where an access standing on the sand meets higher ground, step the terrain like any wall: the
   // runtime moves the same samples, js/donostia/terrain.js)
   const walls = access.walls;
-  const snaps = wallSnaps(walls, grid);
-  const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
-  // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
-  // drops takes the class of the ground beyond (the beach, the rocks, the water)
-  const BAND = 2.9, SMEAR = 4.5, PAD = 9;
-  const index = wallIndex(walls, 16, PAD);
-  const seen = new Uint8Array(grid.w * grid.h);
-  let lowered = 0, raised = 0;
-  for (const wall of walls) {
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (let k = 0; k < wall.p.length; k += 4) {
-      minX = Math.min(minX, wall.p[k]); maxX = Math.max(maxX, wall.p[k]);
-      minZ = Math.min(minZ, wall.p[k + 1]); maxZ = Math.max(maxZ, wall.p[k + 1]);
-    }
-    const i0 = Math.max(0, Math.floor((minX - PAD - grid.x0) / grid.res)), i1 = Math.min(grid.w - 1, Math.ceil((maxX + PAD - grid.x0) / grid.res));
-    const j0 = Math.max(0, Math.floor((minZ - PAD - grid.z0) / grid.res)), j1 = Math.min(grid.h - 1, Math.ceil((maxZ + PAD - grid.z0) / grid.res));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const k = j * grid.w + i;
-      if (seen[k]) continue;
-      seen[k] = 1;
-      const [x, z] = at(k);
-      const q = nearestWall(walls, x, z, PAD, index);
-      if (!q || q.end || q.d <= 0) continue;
-      const w = walls[q.wall];
-      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little;
-      // in front of the beaches' walls, out to SMEAR the sand or the water still a metre over the foot and below the
-      // promenade: the LiDAR spreads the fall of the Pico del Loro's wall over 3-4 m)
-      const dist = Math.hypot(x - q.x, z - q.z), v = grid.data[k];
-      const smear = (w.t === WALL.concha || w.t === WALL.zurriola) && dist <= SMEAR && v > q.foot + 1 && v < q.deck - 1 &&
-        (classes[k] === GROUND.beach || classes[k] === GROUND.water);
-      if (dist > BAND + w.b * Math.max(0, q.deck - q.foot) && !smear) continue;
-      const snapped = snaps.get(k);
-      const out = BAND + 2 + w.b * Math.max(0, q.deck - q.foot) - q.d, bx = x + q.nx * out, bz = z + q.nz * out;
-      const beyond = classAt(bx, bz);
-      // (where the sea comes up to a beach's wall, down to its floor beyond: the LiDAR has the sea's surface at the foot,
-      // which would stand out of the water as a ledge along the wall)
-      const sea = beyond === GROUND.water && (w.t === WALL.concha || w.t === WALL.zurriola) ? grid.sample(bx, bz) : NaN;
-      const foot = Number.isFinite(sea) ? Math.min(q.foot, sea) : q.foot;
-      if (v > foot + 0.1 || snapped) {
-        if (v > foot + 0.1) { grid.data[k] = foot; lowered++; }
-        if (beyond >= 0 && beyond !== GROUND.building) classes[k] = beyond;
-      }
-    }
-  }
-  // Behind: the smear back up to the promenade's level, and nothing over the coping (the Paseo Nuevo's parapet, which
-  // the LiDAR keeps as a hump, is modelled: level with the walk)
-  for (const [k, s] of snaps) {
-    if (s.side > 0) continue;
-    const v = grid.data[k];
-    const level = walls[s.wall].t === WALL.paseo ? s.deck : Math.min(Math.max(v, s.deck), s.deck + 0.04);
-    if (v < s.deck - 0.15 || v > s.deck + 0.04 || walls[s.wall].t === WALL.paseo) {
-      if (Math.abs(level - v) > 0.005) raised++;
-      grid.data[k] = level;
-    }
-  }
+  const { snaps, lowered, raised } = stepAtWalls(walls, grid, classes);
   log(`shore walls: ${access.walls.length} runs, ${access.walls.reduce((n, w) => n + w.p.length / 4, 0)} vertices; ${snaps.size} terrain ` +
     `samples onto the walls, ${lowered} in front dropped to the foot, ${raised} behind levelled with the promenade ` +
     `(${((performance.now() - t) / 1000).toFixed(1)} s)`);
@@ -700,9 +712,19 @@ function shoreWalls(dtm, grid, classes) {
 // tools/donostia/beach-access.mjs builds) and fits their slope to the 1 m LiDAR; js/donostia/shore.js builds them as
 // stone steps. The terrain samples inside a flight are kept a little under its slope, so the ramp the grid made of it
 // stays hidden under the steps; under the beaches' stairs & ramps likewise, and the sand round those in front of a wall
-// comes down to the beach. Returns GEO.terrain.stairs.
+// comes down to the beach. In the port the flights' sides add walls (walls.mjs's stairWalls; `walls` grows). Returns
+// GEO.terrain.stairs.
 function shoreStairs(dtm, walls, grid, classes, access) {
   const stairs = detectStairs({ dtm, walls, loadLayer, scanRings, skip: access.claimed, log });
+  // the port's flights cut into its quays: their cheeks and the quay's face under them stand as walls too, the terrain
+  // stepping at them; the steps of those on the water go on down to the harbour's bed (base, js/donostia/shore.js)
+  const port = stairWalls({ dtm, stairs, log });
+  if (port.walls.length) {
+    const first = walls.length;
+    walls.push(...port.walls);
+    stepAtWalls(walls, grid, classes, new Set(port.walls.map((_, k) => first + k)));
+    for (const s of port.deep) s.base = HARBOUR_BED;
+  }
   let lowered = 0;
   for (const s of stairs) {
     const [a, b, c, cx, cz] = s.plane;

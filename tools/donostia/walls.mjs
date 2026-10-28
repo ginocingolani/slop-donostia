@@ -9,6 +9,7 @@
 // found again by a later one.
 
 import { WALL, nearestWall } from '../../js/donostia/shore-walls.js';
+import { pointInRing } from './lib.mjs';
 
 const STEP = 0.5; // m between profile samples
 const HALF = 9; // m each side of the shoreline
@@ -396,6 +397,147 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => fa
   return out;
 }
 
+// --- the port's flights cut into its quays ----------------------------------------------------------------------------
+
+// js/donostia/shore.js builds each flight as solid steps of about this rise (its RISE)
+const STEP_RISE = 0.17;
+// A flight this many times longer than wide runs down along a quay's face
+const NARROW = 3;
+
+// The plane detectStairs fits to the LiDAR inside a narrow flight down a quay's face falls across it, to the water (the
+// 1 m LiDAR smears the face over its width): it falls along its length instead, to the lowest LiDAR across it (the
+// municipal outline and the LiDAR can disagree by a metre) from the farther end (no higher than the quay beside it; the
+// quay round its ends bleeds into the samples there, which a straight fit would follow). Changes the piece; true if it
+// did.
+function alongFace(st, at) {
+  const { p } = st;
+  const n = p.length / 2;
+  let cx = 0, cz = 0;
+  for (let k = 0; k < p.length; k += 2) { cx += p[k]; cz += p[k + 1]; }
+  cx /= n; cz /= n;
+  // its length along its longest side
+  let lx = 1, lz = 0, longest = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, dx = p[2 * j] - p[2 * i], dz = p[2 * j + 1] - p[2 * i + 1], l = Math.hypot(dx, dz);
+    if (l > longest) { longest = l; lx = dx / l; lz = dz / l; }
+  }
+  const wx = -lz, wz = lx;
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let k = 0; k < p.length; k += 2) {
+    const a = (p[k] - cx) * lx + (p[k + 1] - cz) * lz, b = (p[k] - cx) * wx + (p[k + 1] - cz) * wz;
+    a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
+  }
+  const len = a1 - a0;
+  if (len < 3 || len < NARROW * (b1 - b0)) return false;
+  // across it every half metre along it: the lowest & the middle LiDAR
+  const S = [];
+  for (let a = a0 + 0.3; a <= a1 - 0.3; a += 0.5) {
+    const v = [0.15, 0.3, 0.5, 0.7, 0.85].map((f) => at(cx + lx * a + wx * (b0 + f * (b1 - b0)), cz + lz * a + wz * (b0 + f * (b1 - b0))))
+      .filter(Number.isFinite);
+    if (v.length >= 3) S.push([a, Math.min(...v), median(v)]);
+  }
+  if (S.length < 4) return false;
+  const low = S.reduce((m, q) => (q[1] < m[1] ? q : m));
+  const aTop = low[0] - a0 < a1 - low[0] ? a1 : a0;
+  // the quay beside it: the higher of its long sides, 2 m out
+  const beside = (b) => median([0.25, 0.5, 0.75].map((f) => at(cx + lx * (a0 + f * len) + wx * b, cz + lz * (a0 + f * len) + wz * b))
+    .filter(Number.isFinite));
+  const quay = Math.max(beside(b1 + 2), beside(b0 - 2));
+  const top = Math.min(quay + 0.02, Math.max(...S.filter((q) => Math.abs(q[0] - aTop) < 1.5).map((q) => q[2])));
+  const bot = Math.max(0.3, low[1]);
+  if (!(top - bot >= 0.6)) return false;
+  // y = top at aTop, bot at the lowest point (shoreStairs and shore.js keep to [bot, top] beyond)
+  const g = (bot - top) / (low[0] - aTop), dir = g < 0 ? 1 : -1;
+  Object.assign(st, {
+    top: r2(top), bot: r2(bot), ux: Math.round(lx * dir * 1000) / 1000, uz: Math.round(lz * dir * 1000) / 1000,
+    plane: [g * lx, g * lz, top - g * aTop, cx, cz]
+  });
+  return true;
+}
+
+/**
+ * The port's quay steps (detectStairs' pieces inside PORT) run down along a quay's face or out of a notch cut into it,
+ * which the 2 m terrain keeps as a bank round them. The narrow flights down a face are turned to fall along it
+ * (alongFace: the pieces change). Every side of a piece is walked every half metre, the 1 m LiDAR
+ * 1.5-3 m out telling what lies beyond: the quay QUAY_MIN or more above the steps and level (a cheek: a quay wall from
+ * the quay down to the flight), or the water (the quay's face under the flight: a hidden wall, so the terrain steps down
+ * there, the flight's own stone going on down to the harbour's bed); or the next piece, the quay at the head, a
+ * pontoon at the foot (nothing). Runs of 1 m or more of one kind become walls (the low side on the left of travel).
+ * Returns { walls, deep: Set of the pieces with a face on the water }.
+ */
+export function stairWalls({ dtm, stairs, log = () => {} }) {
+  const at = (x, z) => { const v = dtm.sample(x, z); return Number.isFinite(v) ? v : NaN; };
+  const port = stairs.filter((st) => inBox(PORT, st.p[0], st.p[1]));
+  const walls = [], deep = new Set();
+  let cheeks = 0, faces = 0, turned = 0;
+  for (const st of port) {
+    if (alongFace(st, at)) turned++;
+    const { p, top, bot, ux, uz } = st;
+    const n = p.length / 2;
+    // the steps' treads, as shore.js cuts them: slices square to the fall from s0 (the head) to s1
+    let s0 = Infinity, s1 = -Infinity;
+    for (let k = 0; k < p.length; k += 2) { const s = p[k] * ux + p[k + 1] * uz; s0 = Math.min(s0, s); s1 = Math.max(s1, s); }
+    const steps = top > bot ? Math.max(1, Math.round((top - bot) / STEP_RISE)) : 1;
+    const tread = (x, z) => {
+      const i = Math.min(steps - 1, Math.max(0, Math.floor((((x * ux + z * uz) - s0) / Math.max(s1 - s0, 1e-6)) * steps)));
+      return top - ((top - bot) * i) / steps;
+    };
+    const inOther = (x, z) => port.some((o) => o !== st && pointInRing(x, z, o.p));
+    // samples round the ring: { x, z, kind ('cheek' | 'face' | null), out (the side away from the piece), level }
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const ax = p[2 * i], az = p[2 * i + 1], bx = p[2 * j], bz = p[2 * j + 1], len = Math.hypot(bx - ax, bz - az);
+      if (len < 0.3) continue;
+      const tx = (bx - ax) / len, tz = (bz - az) / len;
+      // (the side away from the piece: the left normal unless the piece lies there)
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+      const sg = pointInRing(mx - tz * 0.2, mz + tx * 0.2, p) ? -1 : 1;
+      const ox = -tz * sg, oz = tx * sg;
+      const m = Math.max(1, Math.round(len / 0.5));
+      for (let q = 0; q <= m; q++) {
+        const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
+        const pt = { x, z, kind: null, ox, oz, edge: i };
+        pts.push(pt);
+        if (q === 0 || q === m || inOther(x + ox * 0.75, z + oz * 0.75)) continue;
+        const beyond = [1.5, 2, 2.5, 3].map((t) => at(x + ox * t, z + oz * t)).filter(Number.isFinite);
+        if (beyond.length < 3) continue;
+        const level = median(beyond), spread = Math.max(...beyond) - Math.min(...beyond);
+        const h = tread(x, z);
+        if (spread > QUAY_FLAT) continue;
+        if (level <= QUAY_SEA && h > level + 0.3) Object.assign(pt, { kind: 'face', deck: h - STEP_RISE - 0.12, foot: level });
+        else if (level >= h + QUAY_MIN) Object.assign(pt, { kind: 'cheek', deck: level, foot: h - STEP_RISE });
+      }
+    }
+    // runs of one kind along one side (a corner ends a run: a wall turns with the quay, not round a piece's corner)
+    let run = [];
+    const flush = () => {
+      let len = 0;
+      for (let k = 1; k < run.length; k++) len += Math.hypot(run[k].x - run[k - 1].x, run[k].z - run[k - 1].z);
+      if (run.length >= 2 && len >= 1) {
+        const kind = run[0].kind;
+        // low side on the left of travel (-dz, dx): the water beyond a face, the flight inside a cheek
+        const a = run[0], b = run[run.length - 1], dx = b.x - a.x, dz = b.z - a.z;
+        const lowOut = kind === 'face';
+        const leftIsOut = -dz * a.ox + dx * a.oz > 0;
+        const pts2 = leftIsOut === lowOut ? run : [...run].reverse();
+        const wall = { t: WALL.quay, b: 0, p: pts2.flatMap((q) => [q.x, q.z, q.deck, q.foot].map(r2)) };
+        if (kind === 'face') { wall.h = [0, pts2.length - 1]; deep.add(st); faces++; } else cheeks++;
+        walls.push(wall);
+      }
+      run = [];
+    };
+    for (const pt of pts) {
+      if (run.length && (!pt.kind || pt.kind !== run[0].kind || pt.edge !== run[0].edge)) flush();
+      if (pt.kind) run.push(pt);
+    }
+    flush();
+  }
+  log(`port stairs: ${port.length} pieces (${turned} narrow flights turned to fall along a quay's face), ${cheeks} ` +
+    `cheeks and ${faces} faces on the water (hidden) as walls`);
+  return { walls, deep };
+}
+
 // --- the port's quays where the search finds only scraps ----------------------------------------------------------------
 
 // The search above finds the north basin's north quay only in short runs (boats moored along it, the smear of its edge
@@ -410,10 +552,17 @@ const QUAY_BOXES = [
 ];
 const QUAY_MIN = 0.8; // m
 const QUAY_RUN = 3; // m: shorter runs are left out
+// Elsewhere in the port (PORT) the search misses the quays' faces by the flights of steps cut into them, round the
+// piers' rounded ends, where boats moored along a quay lift the LiDAR and along the west mole's raised walk (over the old
+// port's square, by the Aquarium): there a quay's edge stands as a wall only where it plainly is one, the LiDAR level
+// (within QUAY_FLAT) on the quay behind and, in front, the water (the LiDAR's sea, 0 m) or a level square QUAY_MIN or
+// more below. A flight down the edge, a ramp, a bank or an edge drawn inside the quay is no wall.
+const QUAY_FLAT = 0.5; // m: the spread of the LiDAR over a level side, 1.5-4 m from the edge
+const QUAY_SEA = 0.6; // m
 
 /**
- * dtm: the 1 m Grid; walls: detectWalls' runs. Returns the walls with the quays' edges in QUAY_BOXES added (and the runs
- * the search found along them dropped).
+ * dtm: the 1 m Grid; walls: detectWalls' runs. Returns the walls with the quays' edges in QUAY_BOXES and the port's plain
+ * quay walls added (and the runs the search found along them dropped).
  */
 export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
   const inAny = (x, z, pad = 0) => QUAY_BOXES.some((b) => x >= b.minX - pad && x <= b.maxX + pad && z >= b.minZ - pad && z <= b.maxZ + pad);
@@ -435,7 +584,9 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           const x = ax + ((bx - ax) * q) / m, z = az + ((bz - az) * q) / m;
           const p = { x, z, wall: false };
           pts.push(p);
-          if (!inAny(x, z, 2)) continue; // (the boxes with 2 m to spare: their corners)
+          // (the boxes with 2 m to spare: their corners; elsewhere in the port, the plain walls only)
+          const boxed = inAny(x, z, 2);
+          if (!boxed && !inBox(PORT, x, z)) continue;
           const side = (sg, ts) => ts.map((t) => at(x + sg * nx * t, z + sg * nz * t)).filter(Number.isFinite);
           const plus = side(1, [1.5, 2, 2.5, 3, 3.5, 4]), minus = side(-1, [1.5, 2, 2.5, 3, 3.5, 4]);
           if (plus.length < 3 || minus.length < 3) continue;
@@ -443,6 +594,16 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
           const deck = median(s > 0 ? minus : plus);
           const foot = Math.min(...side(s, [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]));
           if (deck - foot < QUAY_MIN) continue;
+          if (!boxed) {
+            // (the quay level, and the water from 2.5 m out (the LiDAR smears a plumb face over the first metres) or a
+            // level square: an edge drawn a metre or two inside a quay's coping, a flight or a bank fall across the
+            // samples of one side)
+            const spread = (v) => Math.max(...v) - Math.min(...v);
+            const high = s > 0 ? minus : plus, low = s > 0 ? plus : minus;
+            if (high.length < 6 || low.length < 6 || spread(high) > QUAY_FLAT) continue;
+            const sea = low.slice(2).every((v) => v <= QUAY_SEA);
+            if (!sea && (spread(low) > QUAY_FLAT || median(low) > deck - QUAY_MIN)) continue;
+          }
           Object.assign(p, { wall: true, s, deck, foot });
         }
       }
@@ -484,7 +645,7 @@ export function quayEdges({ dtm, walls, loadLayer, log = () => {} }) {
     }
   }
   // the runs the search found along these edges give way (split where they come within 2.5 m of one)
-  const near = (x, z) => inAny(x, z, 3) && added.some((w) => {
+  const near = (x, z) => (inAny(x, z, 3) || inBox(PORT, x, z)) && added.some((w) => {
     for (let k = 0; k + 4 < w.p.length; k += 4) {
       const ax = w.p[k], az = w.p[k + 1], dx = w.p[k + 4] - ax, dz = w.p[k + 5] - az, l2 = dx * dx + dz * dz || 1e-12;
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
