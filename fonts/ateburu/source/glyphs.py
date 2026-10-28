@@ -50,8 +50,10 @@ class G:
     its anchors: top (accents), bottom (cedilla, comma below), ogonek (the hook at the lower right), caron (Ľ's
     apostrophe caron beside the stem)"""
 
-    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None, ogonek=None, caron=None):
+    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None, ogonek=None, caron=None,
+                 top_y=None):
         self.path, self.w, self.lsb, self.rsb = path, w, lsb, rsb
+        self.top_y = top_y   # the top anchor's height, if not the cap line (the short dotted i)
         self.top = w / 2 if top is None else top
         self.bottom = w / 2 if bottom is None else bottom
         self.ogonek = w * 0.78 if ogonek is None else ogonek
@@ -396,18 +398,32 @@ def arc_to(p, tp, q, tq, R):
     return (p, add(p, mul(unit(tp), h)), sub(q, mul(unit(tq), h)), q)
 
 
-@glyph('R', 0x52, 0x72)
-def R(m):
+def r_glyph(m, leg='kick'):
+    """R. leg: 'kick' (the long leg flicking out past the bowl), 'short' (the same leg with a short flick, for calt
+    before A T V W Y J) or 'roman' (a straight leg on a flared foot, for ss04)"""
     s, C, h = m.stem, m.C, m.hair
     Wb = m.v(530, 590)                 # the bowl
     yb = m.v(334, 330)
     o1, c1 = bowl(m, s, yb, C, Wb, k=0.60, kin=0.58)
-    xe = Wb + m.v(98, 104)
-    leg = r_leg(m, s + (Wb - s) * 0.30, yb + h * 0.5, xe, 'R')
-    shape = union([stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare), o1, leg])
+    if leg == 'roman':
+        th = m.thick * 0.96
+        top = (s + (Wb - s) * 0.40, yb + h * 0.5)
+        foot = (Wb - m.v(4, 0), 0)
+        legp = diag(*diag_through((foot[0] - th * 0.4, 0), top, th, 0, yb + h * 0.5),
+                    {'br': m.serif.scaled(1.0), 'bl': m.serif.scaled(0.5, 0.7)}, bend=bow(m, -6))
+        rsb = None
+    else:
+        xe = Wb + (m.v(98, 104) if leg == 'kick' else m.v(26, 30))
+        legp = r_leg(m, s + (Wb - s) * 0.30, yb + h * 0.5, xe, 'R')
+        rsb = m.v(30, 22)
+    shape = union([stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare), o1, legp])
     shape = diff(shape, c1)
-    # the leg's end: cut square to the stroke, then trimmed level at the top so it reads as carved
-    return G(shape, Wb, m.sp, m.v(30, 22), top=Wb * 0.42)
+    return G(shape, Wb, m.sp, rsb, top=Wb * 0.42)
+
+
+@glyph('R', 0x52, 0x72)
+def R(m):
+    return r_glyph(m)
 
 
 def k_frame(m):
@@ -435,13 +451,20 @@ def crotch_trap(m, shape, X):
     return trap_at(shape, X, m.trap)
 
 
+def k_short_end(m, W):
+    """Where a short K leg's flick ends (calt, before A T V W Y J)"""
+    return W - m.v(56, 62)
+
+
 @glyph('K', 0x4B, 0x6B)
-def K(m):
+def K(m, short=False):
     """The curved Basque K, a 20th-century convention owned as such: arm and leg part from one open crotch on the
     stem; the arm, as heavy as the thick diagonals, leaves low and sweeps up to the cap line; the leg is R's leg,
     with R's flick"""
     s, C = m.stem, m.C
     s_, W, X, xe = k_frame(m)
+    if short:
+        xe = k_short_end(m, W)
     k = m.c
     a, b = m.v(64, 96), m.v(52, 76)          # as heavy as the thick diagonals at 45 degrees
     top = (W - a * 0.95, C + 60)
@@ -474,10 +497,12 @@ def through_edge(X, d, thick, side):
 
 
 @glyph('K.straight')
-def K_straight(m):
+def K_straight(m, short=False):
     """K with a straight arm, its end flared level on the cap line, and R's kicked leg"""
     s, C = m.stem, m.C
     s_, W, X, xe = k_frame(m)
+    if short:
+        xe = k_short_end(m, W)
     th = m.thick * 0.96
     d = (W - X[0] - m.v(40, 46), C - X[1])
     c0 = through_edge(X, d, th, 1)
@@ -518,9 +543,11 @@ def K_roman(m):
 
 
 @glyph('A', 0x41, 0x61)
-def A(m):
+def A(m, flag='l'):
     """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
-    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V"""
+    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V.
+    flag='r' turns the crown's long end to the right (calt uses it after T, V, W and Y, whose arms overhang the A's
+    left)"""
     C, h = m.C, m.hair
     W = m.v(660, 800)               # 0.200: the Black wider than before, so its kite counter opens
     hc = h * 0.98
@@ -540,11 +567,18 @@ def A(m):
                 {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)}, bend=bow(m, 9))
     right = diag((W - r_hw, 0), (W, 0), (ax0 + apex_w - r_hw, C), (ax0 + apex_w, C),
                  {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)}, bend=bow(m, -9))
-    # the crown: a bar on the cap line, longer to the left, its ends cut as wedges
-    cl = ax0 - m.v(132, 140)
-    cr = ax0 + apex_w + m.v(20, 22)
-    wl = min(m.wlen * 0.85, ax0 * (C - hc) / C - cl - 24)
-    crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
+    # the crown: a bar on the cap line, longer to the left (or right), its ends cut as wedges
+    if flag == 'l':
+        cl = ax0 - m.v(132, 140)
+        cr = ax0 + apex_w + m.v(20, 22)
+        wl = min(m.wlen * 0.85, ax0 * (C - hc) / C - cl - 24)
+        crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
+    else:
+        cl = ax0 - m.v(20, 22)
+        cr = ax0 + apex_w + m.v(132, 140)
+        x_r = W + ((ax0 + apex_w) - W) * (C - hc) / C
+        wr = min(m.wlen * 0.85, cr - x_r - 24)
+        crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.4, m.wlen * 0.4), right=(0, m.wdrop * 0.95, wr))
     # the V crossbar: its upper edge leaves the legs at y_side and dips to y_mid in the middle
     hb = h * 0.88
     y_side = m.v(364, 358)
@@ -1249,7 +1283,8 @@ def make_i(stem_kind, dot_kind):
 
 def make_dotless(stem_kind):
     def fn(m):
-        return G(i_stem(m, stem_kind), m.stem, m.sp, m.sp)
+        top_y = m.C + short_i_accent_shift(m) if stem_kind.startswith('short') else None
+        return G(i_stem(m, stem_kind), m.stem, m.sp, m.sp, top_y=top_y)
     return fn
 
 

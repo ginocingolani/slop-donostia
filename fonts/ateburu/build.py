@@ -49,6 +49,7 @@ import glyphs as G  # noqa: E402
 import marks as MK  # noqa: E402  (registers the marks and spacing accents)
 import latin  # noqa: E402,F401  (registers the extended Latin letters and the accented composites)
 import symbols  # noqa: E402,F401  (registers the symbols and the rest of the punctuation)
+import alternates as ALT  # noqa: E402  (registers the alternates the features reach)
 import qa  # noqa: E402
 
 FAMILY = 'Ateburu'  # the working name: rename here (and in the file names below) if the family is renamed
@@ -255,8 +256,9 @@ def pair_white(left_prof, right_prof, depth2):
 
 
 KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one', 'K.straight', 'K.roman',
-                                        'Lslash', 'Ldot', 'Thorn'}
-KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
+                                        'Lslash', 'Ldot', 'Thorn', 'A.r', 'A.roman', 'R.short', 'R.roman', 'K.short',
+                                        'K.straight.short', 'four.ss05', 'seven.ss05'}
+KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'A.r', 'A.roman', 'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
                                      'quotedblright', 'quoteleft', 'quotedblleft', 'hyphen', 'exclam', 'question',
                                      'parenright', 'four', 'seven'}
 REQUIRED_PAIRS = [('A', 'T'), ('T', 'A'), ('L', 'T'), ('R', 'A'), ('R', 'T'), ('Y', 'A'), ('A', 'V'), ('K', 'O'),
@@ -266,7 +268,7 @@ def kern_classes():
     accented short i as the dotted one; Đ as Ð)"""
     classes = {}
     for name, unis, base, mark, place in G.COMPOSITES:
-        if base is None:
+        if base is None or place == 'tab':
             continue
         key = base
         for stem_ in ('short', 'shortplain', 'tallplain'):
@@ -280,7 +282,9 @@ def kern_classes():
 CLASSES = kern_classes()
 LATIN_EXTRA = ['AE', 'OE', 'Oslash', 'Thorn', 'Eth', 'Hbar', 'Lslash', 'Ldot', 'Germandbls']
 # alternates kerned like the rest (the dotted i's, the Ks)
-KERN_ALTERNATES = ['K.straight', 'K.roman'] + [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS]
+KERN_ALTERNATES = (['K.straight', 'K.roman', 'A.r', 'A.roman', 'R.short', 'R.roman', 'K.short', 'K.straight.short',
+                    'o.small', 'four.ss05', 'seven.ss05', 'five.ss05'] +
+                   [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS])
 
 
 def kerning(drawn, tt, sb):
@@ -392,12 +396,22 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
             glyf[name] = tt_glyph(outl[name].at(sc), lsb_i)
             hmtx[name] = int(round(lsb_i + w + rsb))
         anchors[name] = {k: lsb_i + mix([getattr(g, k) for g in gs], sc) for k in ('top', 'bottom', 'ogonek', 'caron')}
+        if gs[0].top_y is not None:
+            anchors[name]['top_y'] = mix([g.top_y for g in gs], sc)
         for u in G.GLYPHS[name][0]:
             cmap[u] = name
     short_dy = int(round(mix([G.short_i_accent_shift(m) for m in MASTERS], sc)))
+    # tabular figures: the widest figure's advance, per master, interpolated like every other advance
+    tf_adv = int(round(mix([max(sb[f][i][0] + drawn[f][i].w + sb[f][i][1] for f in ALT.FIGURES)
+                            for i in range(len(MASTERS))], sc)))
     for name, unis, base, mark, place in G.COMPOSITES:
         pen = TTGlyphPen(glyf)
-        if place == 'spacing':
+        if place == 'tab':
+            pen.addComponent(base, (1, 0, 0, 1, int(round((tf_adv - hmtx[base]) / 2)), 0))
+            glyf[name] = pen.glyph()
+            hmtx[name] = tf_adv
+            anchors[name] = anchors[base]
+        elif place == 'spacing':
             xs = [p[0] for p in glyf[mark].coordinates]
             side = 50
             pen.addComponent(mark, (1, 0, 0, 1, side - min(xs), 0))
@@ -450,7 +464,8 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
 
 
 def kern_fea(kern, mi, anchors, mark_tops):
-    lines = ['languagesystem DFLT dflt;', 'languagesystem latn dflt;', '', F.gsub(), F.gdef(),
+    lines = ['languagesystem DFLT dflt;', 'languagesystem latn dflt;', 'languagesystem latn CAT;', '', F.locl(),
+             F.gsub(), F.gsub2(), F.gdef(),
              F.marks(anchors, mark_tops, G.CAP, MK.MARK_CLASS, MK.MKMK_GAP, G.ACCENT_GAP)]
     cname = {k: k.replace('.', '_') for k in CLASSES}
     for k, members in CLASSES.items():

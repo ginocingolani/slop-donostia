@@ -76,11 +76,6 @@ def gsub():
     L.append('  sub K from [K.straight K.roman];')
     L.append('} cv03;')
     L.append('')
-    L.append('feature ss04 {')
-    L.append('  featureNames { name "Roman forms"; };')
-    L.append('  sub K by K.roman;')
-    L.append('} ss04;')
-    L.append('')
     L.append('feature ss08 {')
     L.append('  featureNames { name "Straight-armed K"; };')
     L.append('  sub K by K.straight;')
@@ -110,15 +105,27 @@ def marks(anchors, mark_tops, cap, mark_class, mkmk_gap, accent_gap):
     """mark: every combining mark onto every letter, by anchor class; mkmk: top marks stack, bottom marks too"""
     L = []
     attach = {'top': cap, 'bottom': 0, 'ogonek': 0, 'caron': cap}
+    base_y = lambda b, cls: int(round(anchors[b].get('top_y', cap))) if cls == 'top' else attach[cls]  # noqa
     for cls in ('top', 'bottom', 'ogonek', 'caron'):
         members = [n for n, c in mark_class.items() if c == cls]
         L.append(f'markClass [{" ".join(members)}] <anchor 0 {attach[cls]}> @MC_{cls};')
     L.append('feature mark {')
     for b in mark_bases():
         a = anchors[b]
-        parts = ' '.join(f'<anchor {int(round(a[cls]))} {attach[cls]}> mark @MC_{cls}'
+        parts = ' '.join(f'<anchor {int(round(a[cls]))} {base_y(b, cls)}> mark @MC_{cls}'
                          for cls in ('top', 'bottom', 'ogonek', 'caron'))
         L.append(f'  pos base {b} {parts};')
+    # precomposed letters take a further accent above their own (a top mark) or at their base's anchors
+    for name, unis, b, mk, place in G.COMPOSITES:
+        if b is None or not mk or place in ('spacing', 'tab', 'short') or name not in anchors:
+            continue
+        a = anchors[name]
+        ys = {cls: base_y(name, cls) for cls in ('top', 'bottom', 'ogonek', 'caron')}
+        if mark_class.get(mk) == 'top' and mk in mark_tops:
+            ys['top'] = int(round(mark_tops[mk] + mkmk_gap - accent_gap))
+        parts = ' '.join(f'<anchor {int(round(a[cls]))} {ys[cls]}> mark @MC_{cls}'
+                         for cls in ('top', 'bottom', 'ogonek', 'caron'))
+        L.append(f'  pos base {name} {parts};')
     L.append('} mark;')
     L.append('feature mkmk {')
     for n, top in mark_tops.items():
@@ -128,3 +135,95 @@ def marks(anchors, mark_tops, cap, mark_class, mkmk_gap, accent_gap):
             L.append(f'  pos mark {n} <anchor 0 -150> mark @MC_bottom;')
     L.append('} mkmk;')
     return '\n'.join(L) + '\n'
+
+
+def family(base):
+    """A base glyph and every composite built on it (accented forms), in a stable order"""
+    return [base] + [c[0] for c in G.COMPOSITES if c[2] == base and c[3] and c[4] != 'tab']
+
+
+def locl():
+    """Catalan: L·L (ela geminada) sets the first L as Ŀ, the dot in its angle"""
+    return '\n'.join([
+        'lookup LDOT {', '  sub L periodcentered by Ldot;', '} LDOT;',
+        'feature locl {', '  script latn;', '  language CAT exclude_dflt;',
+        "  sub L' lookup LDOT periodcentered' L;", '} locl;', ''])
+
+
+def gsub2():
+    import alternates as ALT
+    names = glyph_names()
+    L = []
+    a_fam = family('A')
+    tvwy = [n for b in 'TVWY' for n in family(b)]
+    r_fam = family('R')
+    k_fam = ['K', 'K.straight'] + [n for n in family('K') if n != 'K']
+    # ss04 first, so that calt finds the Roman forms already in place
+    L.append('feature ss04 {')
+    L.append('  featureNames { name "Roman forms: A without the crown, straight-legged R, plain K"; };')
+    L.append(f'  sub [{" ".join(a_fam)}] by [{" ".join(n + ".roman" if n != "A" else "A.roman" for n in a_fam)}];')
+    L.append(f'  sub [{" ".join(r_fam)}] by [{" ".join(n + ".roman" if n != "R" else "R.roman" for n in r_fam)}];')
+    kk = family('K')
+    L.append(f'  sub [{" ".join(kk)}] by [{" ".join(n + ".roman" if n != "K" else "K.roman" for n in kk)}];')
+    L.append('} ss04;')
+    L.append('')
+    # calt
+    nxt = a_fam + [n + '.r' if n != 'A' else 'A.r' for n in a_fam] + tvwy + ['J']
+    L.append(f'@CALT_A = [{" ".join(a_fam)}];')
+    L.append(f'@CALT_A_R = [{" ".join(n + ".r" if n != "A" else "A.r" for n in a_fam)}];')
+    L.append(f'@CALT_TVWY = [{" ".join(tvwy)}];')
+    L.append(f'@CALT_NEXT = [{" ".join(nxt)}];')
+    r_short = [n + '.short' if n != 'R' else 'R.short' for n in r_fam]
+    k_src = ['K', 'K.straight'] + [n for n in family('K') if n != 'K']
+    k_short = ['K.short', 'K.straight.short'] + [n + '.short' for n in family('K') if n != 'K']
+    L.append('feature calt {')
+    L.append('  # the crowned A turns its long end to the right after a letter whose arm overhangs it')
+    L.append("  sub @CALT_TVWY @CALT_A' by @CALT_A_R;")
+    L.append('  # R and K take a short leg before a letter that opens at the foot')
+    L.append(f"  sub [{' '.join(r_fam)}]' @CALT_NEXT by [{' '.join(r_short)}];")
+    L.append(f"  sub [{' '.join(k_src)}]' @CALT_NEXT by [{' '.join(k_short)}];")
+    L.append('} calt;')
+    L.append('')
+    # ss02: the small o after the open letters
+    left = (family('L') + ['Lslash', 'Ldot'] + family('T') + family('K') + ['K.straight', 'K.roman', 'K.short',
+            'K.straight.short'] + family('R') + ['R.short', 'R.roman'])
+    left = [n for n in dict.fromkeys(left) if n in names]
+    L.append('feature ss02 {')
+    L.append('  featureNames { name "Small o tucked after L, T, K, R"; };')
+    L.append(f"  sub [{' '.join(left)}] O' by o.small;")
+    L.append('} ss02;')
+    L.append('')
+    # ss05: plain figures
+    L.append('feature ss05 {')
+    L.append('  featureNames { name "Plain figures: closed 4, straight 7, plain 5"; };')
+    L.append('  sub four by four.ss05;')
+    L.append('  sub seven by seven.ss05;')
+    L.append('  sub five by five.ss05;')
+    L.append('} ss05;')
+    L.append('')
+    # ss06: curiosities
+    L.append('feature ss06 {')
+    L.append('  featureNames { name "Curiosities of the stones: 8 for G, reversed N S D E, barred I, V for U"; };')
+    for g in ('G', 'N', 'S', 'D', 'E', 'I', 'U'):
+        L.append(f'  sub {g} by {g}.ss06;')
+    L.append('} ss06;')
+    L.append('')
+    # figures
+    figs = ALT.FIGURES
+    L.append('feature tnum {')
+    L.append(f'  sub [{" ".join(figs)}] by [{" ".join(f + ".tf" for f in figs)}];')
+    L.append('} tnum;')
+    L.append('feature pnum {')
+    L.append(f'  sub [{" ".join(f + ".tf" for f in figs)}] by [{" ".join(figs)}];')
+    L.append('} pnum;')
+    L.append('')
+    # ccmp: a dotted i followed by a top mark loses its dot
+    tops = ' '.join(n for n, c in __import__('marks').MARK_CLASS.items() if c == 'top')
+    L.append(f'@CCMP_TOP = [{tops}];')
+    L.append('feature ccmp {')
+    for st in G.I_STEMS:
+        dotless = 'I' if st == 'tall' else f'dotlessi.{st}'
+        L.append(f"  sub [{' '.join(f'i.{st}.{dt}' for dt in G.I_DOTS)}]' @CCMP_TOP by {dotless};")
+    L.append('} ccmp;')
+    L.append('')
+    return '\n'.join(L)
