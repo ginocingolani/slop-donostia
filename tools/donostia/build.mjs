@@ -816,8 +816,24 @@ function tunnelWalls(dtm, walls, stairs, grid, classes, access) {
   // (the ground keeps its classes: in front of these walls lies the road, a walk, a courtyard, which stepAtWalls would
   // take from the ground beyond, past the walk's sea wall)
   const kept = classes.slice();
-  const { lowered, raised } = stepAtWalls(walls, grid, classes, new Set(added.map((_, k) => first + k)));
+  const { snaps, lowered, raised } = stepAtWalls(walls, grid, classes, new Set(added.map((_, k) => first + k)));
   classes.set(kept);
+  // a retaining wall's sample behind it that shares a triangle with a shore wall's comes down to its foot (the terrain
+  // goes up to the ground behind out of sight, behind the masonry): the walk round the Pico del Loro is a sample wide in
+  // places between Miramar's garden wall and the sea wall, its samples go onto the sea wall's crest, and the terrain
+  // ramped from them up over the garden wall's face to its coping
+  const nb = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
+  let walk = 0;
+  for (const [k, sn] of snaps) {
+    if (sn.side > 0 || sn.wall < first || walls[sn.wall].h) continue;
+    const i = k % grid.w, j = (k - i) / grid.w;
+    let shore = false;
+    for (const [a, b] of nb) {
+      const o = snaps.get((j + b) * grid.w + i + a);
+      if (o && o.wall < first) shore = true;
+    }
+    if (shore && grid.data[k] > sn.foot + 0.1) { grid.data[k] = sn.foot; walk++; }
+  }
   // the bank before a retaining wall levelled with its foot
   const index = wallIndex(added, 16, BANK_REACH + 1);
   let banked = 0;
@@ -848,7 +864,8 @@ function tunnelWalls(dtm, walls, stairs, grid, classes, access) {
     stairs.push(rest);
   }
   log(`tunnels: ${added.length} walls (${portals.length} portals' faces); ${lowered} terrain samples in front dropped to ` +
-    `the road, ${raised} behind levelled with the ground over the bore, ${banked} of the banks before them; ` +
+    `the road, ${raised} behind levelled with the ground over the bore (${walk} down to a walk a sample wide), ` +
+    `${banked} of the banks before them; ` +
     `${flights.length} flights by them (${under} samples kept under the steps)`);
   return portals;
 }
