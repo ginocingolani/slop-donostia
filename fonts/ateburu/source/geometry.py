@@ -293,11 +293,31 @@ def _bracket(tip, edge_pt, edge_dir_away, toward, s):
     return (tip, c1, c2, edge_pt)
 
 
+def curved_serif(s, room, c=None):
+    """The serif s at curvature c (default: CURV): its bracket climbs further up the stroke (up to 2.6 times, never
+    more than a third of the stroke's length `room`), leaves the tip more steeply and runs into the stroke more
+    gently, so the stroke flares over its last third instead of standing on a bracketed foot; the reach grows a little
+    and the tip's end face shrinks. At c = 0, s itself."""
+    c = CURV if c is None else c
+    if not c:
+        return s
+    h = s.h + (min(s.h * 2.6, max(s.h, room * 0.33)) - s.h) * c
+    return Serif(s.e * (1 + 0.15 * c), s.t * (1 - 0.45 * c), h,
+                 s.a1 + (0.28 - s.a1) * c, s.a2 + (0.32 - s.a2) * c, s.a3 + (0.58 - s.a3) * c)
+
+
 def stem(x0, x1, y0, y1, serif=None, bl=True, br=True, tl=True, tr=True, flare_l=0.0, flare_r=0.0, sb=None, st=None):
     """A vertical stem from x0 to x1 and y0 to y1 with bracketed flared serifs at the chosen corners and an optional
-    waist (flare) on either side. sb/st override the serif at the bottom/top."""
+    waist (flare) on either side. sb/st override the serif at the bottom/top. With curvature (CURV > 0) the brackets
+    lengthen into flared ends and the waist straightens out: the stem flares towards both ends, never pinches."""
     sb = sb or serif
     st = st or serif
+    if CURV:
+        room = y1 - y0
+        sb = curved_serif(sb, room) if sb else sb
+        st = curved_serif(st, room) if st else st
+        flare_l *= 1 - CURV
+        flare_r *= 1 - CURV
     ym = (y0 + y1) / 2
     c = Contour((x0 - (sb.e if bl else 0), y0))
     c.L((x1 + (sb.e if br else 0), y0))
@@ -342,11 +362,30 @@ def stem(x0, x1, y0, y1, serif=None, bl=True, br=True, tl=True, tr=True, flare_l
     return c.path()
 
 
-def diag(b0, b1, t0, t1, serifs=None):
+def _sub_cubic(cub, s0, s1):
+    """The piece of a cubic between parameters s0 and s1 (s1 < s0 gives it reversed)"""
+    if s1 < s0:
+        q = _sub_cubic(cub, s1, s0)
+        return (q[3], q[2], q[1], q[0])
+    if s1 < 1:
+        cub = split(cub, s1)[0]
+    if s0 > 0:
+        cub = split(cub, s0 / s1)[1]
+    return cub
+
+
+def diag(b0, b1, t0, t1, serifs=None, bend=None):
     """A diagonal stroke between a bottom edge (x b0..b1 at y = b0[1]) and a top edge (t0..t1 at y = t0[1]).
-    serifs: dict with any of 'bl', 'br', 'tl', 'tr' -> Serif (bracketed into the left/right edge at that end)"""
+    serifs: dict with any of 'bl', 'br', 'tl', 'tr' -> Serif (bracketed into the left/right edge at that end).
+    bend = (d1, d2): both edges become cubics whose control points at a third and two thirds of the height move
+    sideways by d1 and d2 (d1 = d2 bows the stroke, d1 = -d2 bends it into a gentle S); the stroke keeps its width.
+    With curvature the serifs' brackets lengthen as in stem()."""
     serifs = serifs or {}
     y0, y1 = b0[1], t0[1]
+    if CURV:
+        serifs = {k: curved_serif(v, y1 - y0) for k, v in serifs.items()}
+    if bend and (bend[0] or bend[1]):
+        return _bent_diag(b0, b1, t0, t1, serifs, bend)
     left_dir = unit(sub(t0, b0))   # up the left edge
     right_dir = unit(sub(t1, b1))  # up the right edge
 
@@ -390,6 +429,60 @@ def diag(b0, b1, t0, t1, serifs=None):
     return c.path()
 
 
+def _bent_diag(b0, b1, t0, t1, serifs, bend):
+    """diag() with cubic edges (see there)"""
+    y0, y1 = b0[1], t0[1]
+    H = y1 - y0
+    d1, d2 = bend
+
+    def edge(p, q):
+        dx = q[0] - p[0]
+        return (p, (p[0] + dx / 3 + d1, p[1] + H / 3), (p[0] + 2 * dx / 3 + d2, p[1] + 2 * H / 3), q)
+
+    le, re = edge(b0, t0), edge(b1, t1)
+
+    def at(e, h):
+        return bez(e, h / H)
+
+    def up(e, h):
+        return unit(bez_d(e, h / H))
+
+    def run(c, e, h0, h1):
+        """follow edge e from height h0 to h1 (the contour is at e(h0))"""
+        c.cubic(_sub_cubic(e, h0 / H, h1 / H))
+
+    sbl, sbr, stl, s_tr = (serifs.get(k) for k in ('bl', 'br', 'tl', 'tr'))
+    c = Contour((b0[0] - sbl.e, y0) if sbl else b0)
+    c.L((b1[0] + sbr.e, y0) if sbr else b1)
+    h = 0.0
+    if sbr:
+        tip = (b1[0] + sbr.e, y0 + sbr.t)
+        c.L(tip)
+        c.cubic(_bracket(tip, at(re, sbr.h), up(re, sbr.h), (-1, 0), sbr))
+        h = sbr.h
+    h_top = H - s_tr.h if s_tr else H
+    run(c, re, h, h_top)
+    if s_tr:
+        tip = (t1[0] + s_tr.e, y1 - s_tr.t)
+        b = _bracket(tip, at(re, h_top), mul(up(re, h_top), -1), (-1, 0), s_tr)
+        c.cubic((b[3], b[2], b[1], b[0]))
+        c.L((t1[0] + s_tr.e, y1))
+    c.L((t0[0] - stl.e, y1) if stl else t0)
+    h = H
+    if stl:
+        tip = (t0[0] - stl.e, y1 - stl.t)
+        c.L(tip)
+        h = H - stl.h
+        c.cubic(_bracket(tip, at(le, h), mul(up(le, h), -1), (1, 0), stl))
+    h_bot = sbl.h if sbl else 0.0
+    run(c, le, h, h_bot)
+    if sbl:
+        tip = (b0[0] - sbl.e, y0 + sbl.t)
+        b = _bracket(tip, at(le, h_bot), up(le, h_bot), (1, 0), sbl)
+        c.cubic((b[3], b[2], b[1], b[0]))
+    return c.path()
+
+
 def diag_through(pb, pt, thick, y0, y1):
     """Edges of a diagonal whose centreline runs from pb (bottom) to pt (top), with the given perpendicular thickness,
     cut by the horizontals y0 and y1. Returns (b0, b1, t0, t1) for diag()"""
@@ -401,29 +494,123 @@ def diag_through(pb, pt, thick, y0, y1):
     return (xb - hw, y0), (xb + hw, y0), (xt - hw, y1), (xt + hw, y1)
 
 
-def bar(x0, x1, y0, y1, left=None, right=None):
+def bar(x0, x1, y0, y1, left=None, right=None, bend=None):
     """A horizontal bar with optional wedge ends: left/right = (up, down, length): at that end the bar's top edge rises
-    by `up` and its bottom edge drops by `down` over the last `length` units, cut square"""
-    c = Contour((x0, y0))
+    by `up` and its bottom edge drops by `down` over the last `length` units, cut square.
+    With curvature (CURV > 0) each wedge's slanted edge curves into the bar like a bracket (it leaves the bar's edge
+    tangentially and reaches the end steeply), over a slightly longer run. bend = (xr, dl, dr): the bar bends as a
+    parabola from x = xr, its left end moving up by dl and its right end by dr (negative: down)."""
+    if not CURV and not bend:
+        c = Contour((x0, y0))
+        if left:
+            up, down, ln = left
+            c = Contour((x0, y0 - down))
+            c.L((x0 + ln, y0))
+        if right:
+            up, down, ln = right
+            c.L((x1 - ln, y0))
+            c.L((x1, y0 - down))
+            c.L((x1, y1 + up))
+            c.L((x1 - ln, y1))
+        else:
+            c.L((x1, y0))
+            c.L((x1, y1))
+        if left:
+            up, down, ln = left
+            c.L((x0 + ln, y1))
+            c.L((x0, y1 + up))
+        else:
+            c.L((x0, y1))
+        return c.path()
+    return _curved_bar(x0, x1, y0, y1, left, right, bend)
+
+
+def _wedge_edge(p, q, along, k):
+    """The slanted edge of a wedge from p (on the bar's edge) to q (the end), as a cubic: straight at k = 0, at k = 1 a
+    bracket that leaves p along the bar (direction `along`) and arrives at q vertically"""
+    t1, t2 = lerp(p, q, 1 / 3), lerp(p, q, 2 / 3)
+    run = abs(q[0] - p[0])
+    f1 = add(p, mul(along, run * 0.62))
+    f2 = (q[0], q[1] + (p[1] - q[1]) * 0.50)
+    return (p, lerp(t1, f1, k), lerp(t2, f2, k), q)
+
+
+def _curved_bar(x0, x1, y0, y1, left, right, bend):
+    k = CURV
+    grow = 1 + 0.20 * k
+
+    def wedge(p, q, along, rev):
+        """the wedge edge from p (on the bar's edge) to q (at the end), or from q to p if rev"""
+        if k and abs(p[1] - q[1]) > 1e-6:
+            cub = _wedge_edge(p, q, along, k)
+            return ('C',) + (cub[::-1] if rev else cub)
+        return ('L', q, p) if rev else ('L', p, q)
+
+    # the outline as pieces in the bar's flat frame, ('L', p, q) or ('C', p, c1, c2, q), from the bottom left corner
+    pieces = []
     if left:
-        up, down, ln = left
-        c = Contour((x0, y0 - down))
-        c.L((x0 + ln, y0))
+        upl, downl, lnl = left
+        lnl *= grow
+        start = (x0, y0 - downl)
+        pieces.append(wedge((x0 + lnl, y0), start, (-1, 0), True))
+        a = (x0 + lnl, y0)
+    else:
+        start = a = (x0, y0)
     if right:
-        up, down, ln = right
-        c.L((x1 - ln, y0))
-        c.L((x1, y0 - down))
-        c.L((x1, y1 + up))
-        c.L((x1 - ln, y1))
+        upr, downr, lnr = right
+        lnr *= grow
+        pieces.append(('L', a, (x1 - lnr, y0)))
+        pieces.append(wedge((x1 - lnr, y0), (x1, y0 - downr), (1, 0), False))
+        pieces.append(('L', (x1, y0 - downr), (x1, y1 + upr)))
+        pieces.append(wedge((x1 - lnr, y1), (x1, y1 + upr), (1, 0), True))
+        b = (x1 - lnr, y1)
     else:
-        c.L((x1, y0))
-        c.L((x1, y1))
+        pieces += [('L', a, (x1, y0)), ('L', (x1, y0), (x1, y1))]
+        b = (x1, y1)
     if left:
-        up, down, ln = left
-        c.L((x0 + ln, y1))
-        c.L((x0, y1 + up))
+        pieces.append(('L', b, (x0 + lnl, y1)))
+        pieces.append(wedge((x0 + lnl, y1), (x0, y1 + upl), (-1, 0), False))
+        pieces.append(('L', (x0, y1 + upl), start))
     else:
-        c.L((x0, y1))
+        pieces.append(('L', b, (x0, y1)))
+        pieces.append(('L', (x0, y1), start))
+
+    def disp(x):
+        if not bend:
+            return 0.0
+        xr, dl, dr = bend
+        if x >= xr:
+            return dr * ((x - xr) / max(x1 - xr, 1e-6)) ** 2
+        return dl * ((xr - x) / max(xr - x0, 1e-6)) ** 2
+
+    def slope(x, toward):
+        """the displacement's derivative at x, on the side of x where `toward` lies"""
+        xr, dl, dr = bend
+        if x > xr or (x == xr and toward > x):
+            return 2 * dr * (x - xr) / max(x1 - xr, 1e-6) ** 2
+        return -2 * dl * (xr - x) / max(xr - x0, 1e-6) ** 2
+
+    def mv(p):
+        return (p[0], p[1] + disp(p[0]))
+
+    c = Contour(mv(start))
+    for pc in pieces:
+        if pc[0] == 'C':
+            c.C(mv(pc[2]), mv(pc[3]), mv(pc[4]))
+            continue
+        p, q = pc[1], pc[2]
+        if not bend or abs(q[0] - p[0]) < 1e-6:
+            c.L(mv(q))
+            continue
+        xr = bend[0]
+        cuts = [p, q]
+        if (p[0] - xr) * (q[0] - xr) < 0:     # the parabola is in two pieces: split the edge at xr
+            cuts = [p, lerp(p, q, (xr - p[0]) / (q[0] - p[0])), q]
+        for a_, b_ in zip(cuts, cuts[1:]):
+            # a straight edge under a parabolic displacement is exactly a quadratic Bezier
+            pa, pb = mv(a_), mv(b_)
+            ctrl = ((a_[0] + b_[0]) / 2, pa[1] + ((b_[1] - a_[1]) + slope(a_[0], b_[0]) * (b_[0] - a_[0])) / 2)
+            c.C(lerp(pa, ctrl, 2 / 3), lerp(pb, ctrl, 2 / 3), pb)
     return c.path()
 
 

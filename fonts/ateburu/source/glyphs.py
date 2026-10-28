@@ -101,6 +101,23 @@ def dot_size(m):
     return m.v(66, 84), m.v(76, 96)
 
 
+def bow(m, mid):
+    """diag() bend for a stroke whose middle moves sideways by `mid` units at CURV 100 (nothing at CURV 0)"""
+    d = mid / 0.75 * m.c
+    return (d, d)
+
+
+def s_bend(m, amp):
+    """diag() bend for a gentle S: the stroke's thirds move by -/+ about amp units at CURV 100"""
+    d = amp / 0.288 * m.c
+    return (-d, d)
+
+
+def arm(m, root, amount):
+    """bar() bend: the arm's free end moves by `amount` units at CURV 100 (positive up), growing from x = root"""
+    return (root, 0.0, amount * m.c) if m.c else None
+
+
 def bowl(m, x0, y0, y1, xr, side=None, top=None, k=0.60, kin=0.58):
     """A D-shaped bowl attached to a stem whose right edge is x0: outer from y0 to y1 reaching xr, minus its counter.
     Returns (outer, counter)."""
@@ -160,9 +177,10 @@ def E(m):
     hm = h * 0.94
     return G(union([
         stem(0, s, 0, C, m.serif, br=False, tr=False, flare_l=m.flare),
-        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen)),
-        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8)),
-        bar(s / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen)),
+        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen), bend=arm(m, s / 2, -m.v(10, 12))),
+        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8),
+            bend=arm(m, s / 2, m.v(4, 5))),
+        bar(s / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
     ]), W, m.sp, None, top=W * 0.48)
 
 
@@ -174,8 +192,9 @@ def F(m):
     hm = h * 0.94
     return G(union([
         stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare, flare_r=m.flare),
-        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen)),
-        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8)),
+        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen), bend=arm(m, s / 2, -m.v(10, 12))),
+        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8),
+            bend=arm(m, s / 2, m.v(4, 5))),
     ]), W, m.sp, None)
 
 
@@ -185,7 +204,7 @@ def L(m):
     W = m.v(446, 506)
     return G(union([
         stem(0, s, 0, C, m.serif, br=False, flare_l=m.flare, flare_r=m.flare),
-        bar(s / 2, W, 0, h, right=(m.wdrop, 0, m.wlen)),
+        bar(s / 2, W, 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
     ]), W, m.sp, None, top=s / 2)
 
 
@@ -196,7 +215,8 @@ def T(m):
     x0 = W / 2 - s / 2
     return G(union([
         stem(x0, x0 + s, 0, C, m.serif, tl=False, tr=False, flare_l=m.flare, flare_r=m.flare),
-        bar(0, W, C - h, C, left=(0, m.wdrop, m.wlen), right=(0, m.wdrop, m.wlen)),
+        bar(0, W, C - h, C, left=(0, m.wdrop, m.wlen), right=(0, m.wdrop, m.wlen),
+            bend=(W / 2, -m.v(12, 14) * m.c, -m.v(12, 14) * m.c) if m.c else None),
     ]), W, None, None)
 
 
@@ -206,8 +226,9 @@ def Z(m):
     W = m.v(548, 608)
     hw = m.thick / math.sin(math.atan2(C - 2 * h, W - m.v(150, 200)))
     return G(union([
-        bar(m.v(14, 16), W - m.v(10, 12), C - h, C, left=(0, m.wdrop, m.wlen)),
-        bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen)),
+        bar(m.v(14, 16), W - m.v(10, 12), C - h, C, left=(0, m.wdrop, m.wlen),
+            bend=(W - m.v(10, 12), -m.v(8, 10) * m.c, 0.0) if m.c else None),
+        bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, 0, m.v(8, 10))),
         polygon([(0, 0), (hw, 0), (W - m.v(10, 12), C), (W - m.v(10, 12) - hw, C)]),
     ]), W, None, None)
 
@@ -328,10 +349,12 @@ def r_leg(m, xj, yj, xe, name):
     """The long leg of R (and the leg of K): leaves the junction heading down and right, bottoms out on the baseline,
     then flicks up beyond the bowl. xj, yj: start; xe: x of the flick's end"""
     a, b = m.v(60, 92), m.v(48, 70)
+    k = m.c                          # curvature: a rounder leg, a longer and higher flick
     yb = b - m.o * 0.6               # spine low point: the stroke's underside just under the baseline
-    xb = xe - m.v(118, 132)
-    seg1 = hobby((xj, yj), (0.52, -1), (xb, yb), (1, 0), tension=1.05)
-    seg2 = hobby((xb, yb), (1, 0), (xe, yb + m.v(40, 46)), (0.82, 0.58), tension=1.0)
+    xb = xe - m.v(118, 132) - 26 * k
+    seg1 = hobby((xj, yj), (0.52 - 0.14 * k, -1), (xb, yb), (1, 0), tension=1.05 - 0.17 * k)
+    seg2 = hobby((xb, yb), (1, 0), (xe + 6 * k, yb + m.v(40, 46) + 30 * k), (0.82 - 0.22 * k, 0.58 + 0.22 * k),
+                 tension=1.0 - 0.1 * k)
     return stroke([seg1, seg2], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name)
 
 
@@ -398,9 +421,9 @@ def A(m):
     l_hw = thin / math.sin(math.atan2(C, ax0))
     r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
     left = diag((0, 0), (l_hw, 0), (ax0, C), (ax0 + l_hw, C),
-                {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)})
+                {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)}, bend=bow(m, 9))
     right = diag((W - r_hw, 0), (W, 0), (ax0 + apex_w - r_hw, C), (ax0 + apex_w, C),
-                 {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)})
+                 {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)}, bend=bow(m, -9))
     # the crown: a bar on the cap line, longer to the left, its ends cut as wedges
     cl = ax0 - m.v(132, 140)
     cr = ax0 + apex_w + m.v(20, 22)
@@ -437,8 +460,10 @@ def V(m):
     lw = m.thick / math.sin(math.atan2(C, W / 2))
     rw = m.thin / math.sin(math.atan2(C, W / 2))
     y0 = -m.op
-    left = diag((W / 2 - lw + vt, y0), (W / 2 + vt, y0), (0, C), (lw, C), {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
-    right = diag((W / 2 - vt, y0), (W / 2 - vt + rw, y0), (W - rw, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.7)})
+    left = diag((W / 2 - lw + vt, y0), (W / 2 + vt, y0), (0, C), (lw, C), {'tl': m.serif, 'tr': m.serif.scaled(0.7)},
+                bend=bow(m, 10))
+    right = diag((W / 2 - vt, y0), (W / 2 - vt + rw, y0), (W - rw, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.7)},
+                 bend=bow(m, -10))
     return G(union([left, right]), W, None, None)
 
 
@@ -454,10 +479,14 @@ def W_(m):
     def hw(t, dx):
         return t / math.sin(math.atan2(C, abs(dx)))
     s1w, s2w, s3w, s4w = hw(thick, v1), hw(thin, t2 - v1), hw(thick, v2 - t3), hw(thin, W - v2)
-    s1 = diag((v1 - s1w + vt, y0), (v1 + vt, y0), (0, C), (s1w, C), {'tl': m.serif, 'tr': m.serif.scaled(0.6)})
-    s2 = diag((v1 - vt, y0), (v1 - vt + s2w, y0), (t2 - s2w / 2, C), (t2 + s2w / 2, C), {'tr': m.serif.scaled(0.6)})
-    s3 = diag((v2 - s3w + vt, y0), (v2 + vt, y0), (t3 - s3w / 2, C), (t3 + s3w / 2, C), {'tl': m.serif.scaled(0.6)})
-    s4 = diag((v2 - vt, y0), (v2 - vt + s4w, y0), (W - s4w, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.6)})
+    s1 = diag((v1 - s1w + vt, y0), (v1 + vt, y0), (0, C), (s1w, C), {'tl': m.serif, 'tr': m.serif.scaled(0.6)},
+              bend=bow(m, 9))
+    s2 = diag((v1 - vt, y0), (v1 - vt + s2w, y0), (t2 - s2w / 2, C), (t2 + s2w / 2, C), {'tr': m.serif.scaled(0.6)},
+              bend=bow(m, -5))
+    s3 = diag((v2 - s3w + vt, y0), (v2 + vt, y0), (t3 - s3w / 2, C), (t3 + s3w / 2, C), {'tl': m.serif.scaled(0.6)},
+              bend=bow(m, 5))
+    s4 = diag((v2 - vt, y0), (v2 - vt + s4w, y0), (W - s4w, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.6)},
+              bend=bow(m, -9))
     return G(union([s1, s2, s3, s4]), W, None, None)
 
 
@@ -469,9 +498,10 @@ def X(m):
     thick_w = m.thick / math.sin(math.atan2(C, W - inset))
     thin_w = m.thin * 0.92 / math.sin(math.atan2(C, W - inset))
     down = diag((W - thick_w, 0), (W, 0), (inset / 2, C), (inset / 2 + thick_w, C),
-                {'bl': m.serif.scaled(0.8), 'br': m.serif, 'tl': m.serif, 'tr': m.serif.scaled(0.8)})
+                {'bl': m.serif.scaled(0.8), 'br': m.serif, 'tl': m.serif, 'tr': m.serif.scaled(0.8)},
+                bend=tuple(-d for d in s_bend(m, 8)))
     up = diag((0, 0), (thin_w, 0), (W - inset / 2 - thin_w, C), (W - inset / 2, C),
-              {'bl': m.serif, 'br': m.serif.scaled(0.8), 'tl': m.serif.scaled(0.8), 'tr': m.serif})
+              {'bl': m.serif, 'br': m.serif.scaled(0.8), 'tl': m.serif.scaled(0.8), 'tr': m.serif}, bend=s_bend(m, 8))
     return G(union([down, up]), W, None, None)
 
 
@@ -484,12 +514,15 @@ def Y(m):
     lw = m.thick / math.sin(math.atan2(C - yj, cx))
     rw = m.thin / math.sin(math.atan2(C - yj, cx))
     lb = diag_through((cx - s * 0.1, yj - 10), (lw / 2, C), m.thick, yj - 120, C)
-    left = diag(*lb, {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
+    left = diag(*lb, {'tl': m.serif, 'tr': m.serif.scaled(0.7)}, bend=bow(m, 7))
     rb = diag_through((cx + s * 0.1, yj - 10), (W - rw / 2, C), m.thin, yj - 120, C)
-    right = diag(*rb, {'tr': m.serif, 'tl': m.serif.scaled(0.7)})
+    right = diag(*rb, {'tr': m.serif, 'tl': m.serif.scaled(0.7)}, bend=bow(m, -7))
     # the arms' outer edges run into the stem's sides: clip what would stick out below
     y_l = lb[0][1] + (lb[2][1] - lb[0][1]) * ((cx - s / 2) - lb[0][0]) / (lb[2][0] - lb[0][0])
     y_r = rb[1][1] + (rb[3][1] - rb[1][1]) * ((cx + s / 2) - rb[1][0]) / (rb[3][0] - rb[1][0])
+    if m.c:   # bowed arms: where their outer edges really cross the stem's sides
+        y_l = edge_y(left, cx - s / 2 + 0.5, 'min')
+        y_r = edge_y(right, cx + s / 2 - 0.5, 'min')
     keep = polygon([(-100, C + 100), (-100, y_l), (cx - s / 2, y_l), (cx - s / 2, -100), (cx + s / 2, -100),
                     (cx + s / 2, y_r), (W + 100, y_r), (W + 100, C + 100)])
     arms = inter(union([left, right]), keep)
