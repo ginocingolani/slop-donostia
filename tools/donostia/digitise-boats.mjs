@@ -15,8 +15,8 @@
 // 4. Each piece: its tightest box (centre, length, beam, heading), the bow at its narrower end (the row's majority where a
 //    hull's ends barely differ), how far aft it reaches its full beam (a sailboat is a long teardrop) and its colours;
 //    from those a family. Slivers & scraps are dropped.
-// 5. Hand corrections (DROP, FIX, ADD below) where the automatic pass goes wrong: the passenger boats & the catamaran,
-//    the old port's few boats, and a handful of others; checked tile by tile against the orthophoto.
+// 5. Hand corrections (DROP, FIX, ADD below) where the automatic pass goes wrong: the passenger boats, the catamaran & the
+//    fishing boat, the old port's few boats, and a handful of others; checked tile by tile against the orthophoto.
 // --preview <dir> writes the masks, the pieces and the raw boats (boats-*.png, boats-raw.json). BOATS_DEBUG=x,z logs how
 // the blob at (x, z) was read and cut. Deterministic: no randomness, a fixed visiting order.
 
@@ -726,7 +726,10 @@ const DROP = [
   ['light blue', [75.2, -88.2, 80.8, -88.2, 80.8, -85.9, 75.2, -85.9]],
   // a pink boat at the end of a pontoon and an orange RIB at the T pontoon's foot, each cut in two
   ['pink boat', [28.6, -163.4, 31.6, -163.4, 31.6, -160.2, 28.6, -160.2]],
-  ['RIB', [-3, -162.6, 0.5, -162.6, 0.5, -159.4, -3, -159.4]]
+  ['RIB', [-3, -162.6, 0.5, -162.6, 0.5, -159.4, -3, -159.4]],
+  // the inshore fishing boat moored along the fish market's quay in the north basin (its wheelhouse, deck gear & dark
+  // hull read as five small boats)
+  ['fishing boat', [43.8, -208, 51.8, -208, 51.8, -195.8, 43.8, -195.8]]
 ];
 const FIX = [
   [5.21, -174.12, { family: 'sail' }], // a sailboat on the north basin's T pontoon (its stern is cut square)
@@ -746,6 +749,8 @@ const ADD = [
   { x: -66.74, z: -182.37, heading: 102, length: 18.4, beam: 5.9, family: 'passenger', colour: '#e8e8e6', accent: '#5a7fa8', zone: 'north' },
   // between the north basin's pontoons
   { x: 37.1, z: -196.0, heading: 200, length: 11.5, beam: 5.2, family: 'passenger', colour: '#e2e3e1', zone: 'north' },
+  // ... the fishing boat at the fish market's quay: a dark hull, the white wheelhouse forward, nets aft
+  { x: 47.5, z: -201.8, heading: 211, length: 11.7, beam: 3.8, family: 'fishing', colour: '#d6d7d3', tone: '#5d6460', accent: '#262c30', zone: 'north' },
   // ... and at the T pontoon's foot
   { x: -0.9, z: -160.75, heading: 90, length: 5.2, beam: 2.2, family: 'rib', colour: '#e2c4bb', tone: '#d2a691', accent: '#d1a38e', zone: 'north' },
   // the inner basin
