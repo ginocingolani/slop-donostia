@@ -13,6 +13,7 @@ import { buildVegetation, SHADOW_ONLY_LAYER } from './vegetation.js';
 import { buildStreetscape } from './streetscape.js';
 import { buildBridges } from './bridges.js';
 import { buildShore } from './shore.js';
+import { buildTunnels } from './tunnels.js';
 import { buildMarina } from './marina.js';
 import { buildBoats } from './boats.js';
 import { buildSeamarks } from './seamarks.js';
@@ -38,7 +39,8 @@ const STORAGE_KEY = 'donostia-god-camera';
 
 /**
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
- * the shore's walls & rocks, the port's moorings, its boats, the island ferries and the aids to navigation.
+ * the shore's walls & rocks, the tunnels' portals, the port's moorings, its boats, the island ferries and the aids to
+ * navigation.
  * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
@@ -86,6 +88,8 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('streetscape', streetscape);
   add('bridges', bridges);
   add('shore', shore);
+  // the tunnels' portals, at the faces where the terrain steps (GEO.terrain.walls)
+  add('tunnels', buildTunnels());
   add('marina', marina);
   // the boats in the port ride the sea's level (the tide)
   add('boats', buildBoats(water.userData.seaLevel));
