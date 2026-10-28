@@ -955,89 +955,134 @@ def _norm_point(t, npts, f):
     return bez(npts, f)
 
 
-def _align_pair(a, b, na, nb, maxrun=4):
+def _run_cuts(fa, fb, tol=0.03):
+    """Where to cut two runs that match as a whole, given the arc-length fractions of their inner vertices: a vertex
+    of one run within `tol` of a vertex of the other is cut against it; any other vertex is cut against the point at
+    its fraction of the other run. Returns the cuts as (fraction in a, fraction in b) pairs, ascending."""
+    ev = sorted([(f, 0) for f in fa] + [(f, 1) for f in fb])
+    cuts = []
+    i = 0
+    while i < len(ev):
+        f, side = ev[i]
+        if i + 1 < len(ev) and ev[i + 1][1] != side and ev[i + 1][0] - f < tol:
+            g = ev[i + 1][0]
+            cuts.append((f, g) if side == 0 else (g, f))
+            i += 2
+        else:
+            cuts.append((f, f))
+            i += 1
+    return cuts
+
+
+def _cut_tol(ta, tb):
+    """How close (as a share of the runs' lengths) two vertices of matched runs must be to be cut against each other:
+    about 25 units, within 3-20 %"""
+    return max(0.03, min(0.2, 25.0 / max(1.0, min(ta, tb))))
+
+
+def _split_run(run, lens, cuts):
+    """Split a run of segments at arc-length fractions `cuts` of the whole run; a cut on one of the run's own vertices
+    leaves it as it is. Returns the pieces and, per segment, the parameter fractions it was split at."""
+    tot = sum(lens) or 1.0
+    pieces, per_seg = [], []
+    acc = 0.0
+    for sg, l_ in zip(run, lens):
+        lo, hi = acc / tot, (acc + l_) / tot
+        fr = [(c - lo) / (hi - lo) for c in cuts if lo + 1e-6 < c < hi - 1e-6] if hi > lo else []
+        fr = [f for f in fr if 1e-4 < f < 1 - 1e-4]
+        per_seg.append(fr)
+        pieces += _seg_split(sg[0], sg[1], fr) if fr else [sg]
+        acc += l_
+    return pieces, per_seg
+
+
+def _align_pair(a, b, na, nb, maxrun=3):
     """Align two cyclic segment lists from two masters (a stays as it is, b is rotated): dynamic programming over a
-    few start rotations of b, where a segment of either list may match a run of up to `maxrun` consecutive segments of
-    the other. A match costs the (normalised) distances between the run's vertices and the points where the single
-    segment would be split to match it (interior ones count twice, as they would if matched one by one), plus a
-    little per extra segment and per type change. The single segment facing a run is split to match it, and where
-    the two masters disagree on a segment's type the straight one becomes a (straight) cubic. Returns the two lists,
-    now structurally identical, and the operations done to `a` (see _apply_ops), so that lists already aligned with
-    `a` can follow it."""
+    few start rotations of b, where a run of one to `maxrun` consecutive segments of a matches a run of one to
+    `maxrun` of b. Both runs are laid on a common arc length: a match costs the (normalised) distances between the
+    runs' ends, plus, for every inner vertex of either run, twice its distance to the point at the same share of the
+    other run's length, plus a little per extra segment and per type change. Matched runs are then cut at the union
+    of their vertices (a vertex close to one of the other run's is cut against it), and where the two masters
+    disagree on a piece's type the straight one becomes a (straight) cubic. Returns the two lists, now structurally
+    identical, and the operations done to `a` (see _apply_ops), so that lists already aligned with `a` can follow
+    it."""
     n, m = len(a), len(b)
     NA = [(t, [na(q) for q in pts]) for t, pts in a]
     NB = [(t, [nb(q) for q in pts]) for t, pts in b]
     LA = [_seg_length(*sg) for sg in a]
     LB = [_seg_length(*sg) for sg in b]
-    A0 = [pts[0] for _, pts in NA]
-    A1 = [pts[-1] for _, pts in NA]
     INF = float('inf')
 
     def dist(p_, q_):
         return math.hypot(p_[0] - q_[0], p_[1] - q_[1])
 
-    order = sorted(range(m), key=lambda r: (dist(NB[r][1][0], A0[0]), r))
+    def at(run, lens, f):
+        """point at arc-length fraction f of a run of normalised segments"""
+        tot = sum(lens) or 1.0
+        acc = 0.0
+        for (t, pts), l_ in zip(run, lens):
+            if (acc + l_) / tot >= f or (t, pts) == run[-1]:
+                u = 0.0 if l_ == 0 else min(max((f * tot - acc) / l_, 0.0), 1.0)
+                return _norm_point(t, pts, u)
+            acc += l_
+        return run[-1][1][-1]
+
+    def run_cost(ra, la, rb, lb):
+        cost = dist(ra[0][1][0], rb[0][1][0]) + dist(ra[-1][1][-1], rb[-1][1][-1])
+        for run, lens, other, olens in ((ra, la, rb, lb), (rb, lb, ra, la)):
+            if len(run) > 1:
+                tot = sum(lens) or 1.0
+                acc = 0.0
+                for (_, pts), l_ in zip(run[:-1], lens[:-1]):
+                    acc += l_
+                    cost += 2 * dist(pts[-1], at(other, olens, acc / tot))
+        # cutting a long segment a few units from one of its ends makes a sliver that turns into a kink once rounded
+        ta, tb = sum(la) or 1.0, sum(lb) or 1.0
+        cuts = _run_cuts(_fractions(la) if len(la) > 1 else [], _fractions(lb) if len(lb) > 1 else [], _cut_tol(ta, tb))
+        for tot, side in ((ta, 0), (tb, 1)):
+            pos = [0.0] + [c[side] for c in cuts] + [1.0]
+            cost += 0.01 * sum(1 for u, v in zip(pos, pos[1:]) if (v - u) * tot < 12)
+        return cost + 0.002 * (len(ra) + len(rb) - 2)
+
+    order = sorted(range(m), key=lambda r: (dist(NB[r][1][0], NA[0][1][0]), r))
     cands = order[:max(6, m // 4)]
     best = (INF, None, None)
     for r in cands:
         idx = [(r + j) % m for j in range(m)]
-        B0 = [NB[q][1][0] for q in idx]
-        B1 = [NB[q][1][-1] for q in idx]
-        BL = [LB[q] for q in idx]
-        BT = [b[q][0] for q in idx]
+        RB = [NB[q] for q in idx]
+        RL = [LB[q] for q in idx]
         dp = [[INF] * (m + 1) for _ in range(n + 1)]
         back = [[None] * (m + 1) for _ in range(n + 1)]
         dp[0][0] = 0.0
         for i in range(n):
-            ti, npa = NA[i]
-            dpi = dp[i]
             for j in range(m):
-                base = dpi[j]
+                base = dp[i][j]
                 if base == INF:
                     continue
-                # one segment of a against a run of b
-                c0 = base + dist(A0[i], B0[j])
-                inner, acc, tot = 0.0, 0.0, 0.0
-                for k in range(1, maxrun + 1):
-                    jj = j + k
-                    if jj > m:
+                for ka in range(1, maxrun + 1):
+                    if i + ka > n:
                         break
-                    tot += BL[jj - 1]
-                    if k == 1:
-                        cost = c0 + dist(A1[i], B1[j]) + (0.002 if ti != BT[j] else 0.0)
-                    else:
-                        # interior vertices of the run against points along a[i] at their share of its length
-                        inner = 0.0
-                        acc = 0.0
-                        for t in range(k - 1):
-                            acc += BL[j + t]
-                            inner += 2 * dist(_norm_point(ti, npa, acc / (tot or 1.0)), B1[j + t])
-                        cost = c0 + dist(A1[i], B1[jj - 1]) + inner + 0.002 * (k - 1)
-                    if cost < dp[i + 1][jj]:
-                        dp[i + 1][jj] = cost
-                        back[i + 1][jj] = (i, j)
-                # a run of a against one segment of b
-                tb, npb = BT[j], NB[idx[j]][1]
-                tot = LA[i]
-                for k in range(2, maxrun + 1):
-                    ii = i + k
-                    if ii > n:
-                        break
-                    tot += LA[ii - 1]
-                    inner, acc = 0.0, 0.0
-                    for t in range(k - 1):
-                        acc += LA[i + t]
-                        inner += 2 * dist(_norm_point(tb, npb, acc / (tot or 1.0)), A1[i + t])
-                    cost = c0 + dist(A1[ii - 1], B1[j]) + inner + 0.002 * (k - 1)
-                    if cost < dp[ii][j + 1]:
-                        dp[ii][j + 1] = cost
-                        back[ii][j + 1] = (i, j)
+                    ra, la = NA[i:i + ka], LA[i:i + ka]
+                    for kb in range(1, maxrun + 1):
+                        if j + kb > m:
+                            break
+                        if ka == 1 and kb == 1:
+                            cost = dist(ra[0][1][0], RB[j][1][0]) + dist(ra[0][1][-1], RB[j][1][-1])
+                            if ra[0][0] != RB[j][0]:
+                                cost += 0.002
+                        else:
+                            cost = run_cost(ra, la, RB[j:j + kb], RL[j:j + kb])
+                        cost += base
+                        if cost < dp[i + ka][j + kb]:
+                            dp[i + ka][j + kb] = cost
+                            back[i + ka][j + kb] = (i, j)
         if dp[n][m] < best[0]:
             best = (dp[n][m], r, back)
     _, r, back = best
     if r is None:
         raise CompatError('alignment failed')
     bb = b[r:] + b[:r]
+    LBB = LB[r:] + LB[:r]
     pairs = []
     i, j = n, m
     while (i, j) != (0, 0):
@@ -1049,14 +1094,20 @@ def _align_pair(a, b, na, nb, maxrun=4):
     splits = [[] for _ in a]
     for i0, i1, j0, j1 in pairs:
         ra, rb = a[i0:i1], bb[j0:j1]
-        if len(ra) == 1 and len(rb) > 1:
-            fr = _fractions([_seg_length(*sg) for sg in rb])
-            splits[i0] = fr
-            ra = _seg_split(ra[0][0], ra[0][1], fr)
-        elif len(rb) == 1 and len(ra) > 1:
-            fr = _fractions([_seg_length(*sg) for sg in ra])
-            rb = _seg_split(rb[0][0], rb[0][1], fr)
-        for p_, q_ in zip(ra, rb):
+        if len(ra) == 1 and len(rb) == 1:
+            pa, pb = ra, rb
+        else:
+            la, lb = LA[i0:i1], LBB[j0:j1]
+            fa = _fractions(la) if len(ra) > 1 else []
+            fb = _fractions(lb) if len(rb) > 1 else []
+            cuts = _run_cuts(fa, fb, _cut_tol(sum(la), sum(lb)))
+            pa, per_a = _split_run(ra, la, [c for c, _ in cuts])
+            pb, _ = _split_run(rb, lb, [c for _, c in cuts])
+            for k, fr in enumerate(per_a):
+                splits[i0 + k] = fr
+            if len(pa) != len(pb):
+                raise CompatError('alignment produced runs of different lengths')
+        for p_, q_ in zip(pa, pb):
             differ = p_[0] != q_[0]
             if differ:
                 p_, q_ = _as_cubic(p_), _as_cubic(q_)

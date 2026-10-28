@@ -72,8 +72,9 @@ def T_X(m):
     st, WT = t_stem(m)
     X = Gl.X(m)
     xX = WT * 0.80
-    return G(union([st, shift(X.path, xX, 0), t_bar(m, xX + X.w * 0.97, right=(0, m.wdrop, m.wlen))]), xX + X.w,
-             None, None)
+    # the bar stays level over the X (a drooping bar would let the X's top serifs show above it)
+    bar_ = t_bar(m, xX + X.w * 0.97, right=(0, m.wdrop, m.wlen), droop_right=False)
+    return G(union([st, shift(X.path, xX, 0), bar_]), xX + X.w, None, None)
 
 
 @nexus('T_Z', 'TZ')
@@ -94,8 +95,8 @@ def T_S(m):
     st, WT = t_stem(m)
     S = Gl.S(m)
     xS = WT * 0.74
-    return G(union([st, shift(S.path, xS, 0), t_bar(m, xS + S.w * 0.90, right=(0, m.wdrop * 0.8, m.wlen * 0.8))]),
-             xS + S.w, None, None)
+    bar_ = t_bar(m, xS + S.w * 0.90, right=(0, m.wdrop * 0.8, m.wlen * 0.8), droop_right=False)
+    return G(union([st, shift(S.path, xS, 0), bar_]), xS + S.w, None, None)
 
 
 @nexus('T_A', 'TA')
