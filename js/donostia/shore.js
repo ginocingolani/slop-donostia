@@ -56,6 +56,13 @@ const STYLE = {
   [WALL.zurriola]: {
     colour: 0xa29d91, course: 3, block: 3, joint: 0.01, rubble: 0, mortar: 0.85,
     coping: { w: 0.5, h: COPING[WALL.zurriola], d: 0.3, over: 0.03, colour: 0xb5b1a6, block: 3 }
+  },
+  // the gardens' retaining walls round the tunnels' portals (tools/donostia/tunnels.mjs): the grey limestone rubble of
+  // Miramar's garden walls under a dressed coping a little over the garden (Commons photographs of the Pico del Loro's
+  // tunnel and the Miramar tunnel, looked at only)
+  [WALL.garden]: {
+    colour: 0x6e6a63, course: 0.34, block: 0.62, joint: 0.02, rubble: 0.85, mortar: 0.74,
+    coping: { w: 0.5, h: COPING[WALL.garden], d: 0.32, over: 0.04, colour: 0xaaa69c, block: 1.1 }
   }
 };
 const PARAPET_MAX_X = 560; // m: the parapet runs round Urgull, not along the river mouth
