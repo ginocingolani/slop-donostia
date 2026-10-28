@@ -11,6 +11,10 @@
 //   - NGA Pub. 113, List of Lights, Radio Aids and Fog Signals (2019 edition, corrected to Notice to Mariners 26/2019;
 //     U.S. Government work, no copyright claimed): nos. 1788-1800, San Sebastián. Its figures win where the two
 //     disagree (OFFICIAL below); it lists neither the port's two lights nor the buoys, which OSM alone gives.
+//   - "Costa Cantábrica", RCC Pilotage Foundation (John Lawson; the Spanish edition, coast surveyed in 2004, preface of
+//     November 2005): its list of lights (p. 201, San Sebastián nos. 1482-1486) and its plan of San Sebastián (p. 70).
+//     Older than Pub. 113, so its figures are followed only where Pub. 113 and OSM give none (DERROTERO below): the
+//     leading lights' arcs of visibility and the red pierhead's elevation. Facts only; nothing of the book is copied.
 // Not consulted, out of reach when this was written (October 2026): the Instituto Hidrográfico de la Marina's "Faros y
 // señales de niebla, Parte I" (publicaciones.defensa.gob.es refused the connection), the Autoridad Portuaria de
 // Pasaia's own list (its site did not resolve) and the Admiralty List of Lights (not openly published). The INE's
@@ -19,16 +23,20 @@
 //
 // Disagreements, and what is followed:
 //   - Santa Klara: js/donostia/landmarks/santa-klara.js flashed for 0.7 s; Pub. 113 and OSM give 1 s (followed).
-//   - Igeldo's elevation: 134 m in Pub. 113, OSM and the INE; es.wikipedia gives 130 m, and the LiDAR ground under the
+//   - Igeldo's elevation: 134 m in Pub. 113, OSM and the INE (132 m in the derrotero); es.wikipedia gives 130 m, and the LiDAR ground under the
 //     lighthouse (116.7 m) plus its 13 m tower (Pub. 113: 42 ft) puts the lantern at about 130 m. The light stands at
-//     the lantern of igeldo.js's model (129.6 m), as it does at Santa Klara's (53.7 m, the lists' 53 m).
+//     the lantern of igeldo.js's model (129.6 m), as it does at Santa Klara's (53.7 m, Pub. 113's 53 m; the derrotero's 51 m).
 //   - La Concha's leading lights: OSM's sectors (158°-158° and 158°-158.5°) are the leading line's bearing, not
-//     visibility sectors, and Pub. 113 gives none: both show all round. Their elevations (12 m and 18 m) sit 2.4 and
+//     visibility sectors, and Pub. 113 gives none; the derrotero's list gives their arcs: the front light visible from
+//     143° to 173°, the rear one only from 154° to 162°, 4° either side of the line (followed). Its plan charts the rear
+//     light "Iso.R.4s" where its own list, Pub. 113 and OSM say Oc R 4s (Oc followed). Their elevations (12 m and 18 m
+//     in Pub. 113; 10 m and 16 m in the derrotero, Pub. 113's followed) sit 2.4 and
 //     1.4 m under the tops of the posts Pub. 113 describes (16 ft and 30 ft) set on the LiDAR's promenade (9.5 m) and
 //     pavement (10.3 m) across the road, about the height of high water above mean sea level: elevations above high
 //     water, the Admiralty's datum. The lanterns go on top of the posts.
 //   - The port's lights (D 1485, D 1486): OSM gives Fl(2) 8 s without the flashes' lengths, and no elevation for the
-//     red one. Assumed: 0.5 s flashes 1.5 s apart, as Pasaia's Fl(2) lights in Pub. 113, and the green one's 9 m.
+//     red one; the derrotero gives it 8 m (the green one 9 m, as OSM; followed). Assumed: 0.5 s flashes 1.5 s apart, as
+//     Pasaia's Fl(2) lights in Pub. 113.
 //   - La Concha's front light: Q (quick, 60 a minute) with no flash length in either source; 0.3 s assumed.
 //   - Pasaia's fairway buoy: Mo(A) W 7 s with no elevation in OSM; 4 m assumed (the Mompás buoy's 5 m less its
 //     radar reflector's frame). It lies 69 m north of the context grid, on the open sea that the water plane covers.
@@ -63,11 +71,19 @@ const OFFICIAL = {
   'D 1484.1': { no: 1800, name: 'La Concha range, rear', char: 'Oc R 4s', sequence: '3+(1)', height: 18, range: 7, structure: 'Gray post; 30 ft' }
 };
 
-// What OSM and Pub. 113 leave out (see the header): rhythms, elevations, a name
+// "Costa Cantábrica" (RCC Pilotage Foundation, 2005), p. 201: what Pub. 113 and OSM leave out. Sectors are arcs of
+// visibility, true bearings from seaward, clockwise
+const DERROTERO = {
+  'D 1484': { sector: [143, 173] },
+  'D 1484.1': { sector: [154, 162] },
+  'D 1486': { height: 8 }
+};
+
+// What none of the sources give (see the header): rhythms, an elevation, a name
 const ASSUMED = {
   'D 1484': { sequence: '0.3+(0.7)' },
   'D 1485': { sequence: '0.5+(1.5)+0.5+(5.5)' },
-  'D 1486': { name: 'Port entrance, west pierhead', sequence: '0.5+(1.5)+0.5+(5.5)', height: 9 },
+  'D 1486': { name: 'Port entrance, west pierhead', sequence: '0.5+(1.5)+0.5+(5.5)' },
   '00125': { height: 4 }
 };
 
@@ -152,7 +168,7 @@ for (const e of osm.elements) {
   if (!ref) throw new Error(`OSM ${e.type} ${e.id}: a light with no reference`);
   if (found.length > 1) throw new Error(`${ref}: sectored lights of several characters are not handled`);
   const l = found[0];
-  const off = OFFICIAL[ref] || {}, guess = ASSUMED[ref] || {};
+  const off = OFFICIAL[ref] || {}, book = DERROTERO[ref] || {}, guess = ASSUMED[ref] || {};
   const colour = l.colour;
   if (!COLOURS.has(colour)) throw new Error(`${ref}: colour ${colour}`);
   const period = Number(l.period) || (l.character === 'Q' ? 1 : NaN);
@@ -162,15 +178,15 @@ for (const e of osm.elements) {
   if (off.sequence && osmSteps && JSON.stringify(osmSteps) !== JSON.stringify(parseSequence(off.sequence))) {
     log(`${ref}: OSM's rhythm ${l.sequence} differs from Pub. 113's ${off.sequence} (followed)`);
   }
-  const height = off.height ?? (l.height ? Number(l.height) : guess.height);
+  const height = off.height ?? (l.height ? Number(l.height) : book.height ?? guess.height);
   if (!(height > 0)) throw new Error(`${ref}: no elevation`);
   if (off.height && l.height && Number(l.height) !== off.height) log(`${ref}: OSM's elevation ${l.height} m, Pub. 113's ${off.height} m (followed)`);
   const range = off.range ?? Number(l.range);
   if (off.range && l.range && Number(l.range) !== off.range) log(`${ref}: OSM's range ${l.range} nm, Pub. 113's ${off.range} nm (followed)`);
-  // a leading light's sector tags give the leading line, not where it shows
+  // a leading light's sector tags give the leading line, not where it shows (its arc of visibility is the derrotero's)
   const leading = /^(upper|lower|leading|front|rear)$/.test(l.category || '');
-  const sector = !leading && l.sector_start != null && l.sector_end != null && Number(l.sector_start) !== Number(l.sector_end)
-    ? [Number(l.sector_start), Number(l.sector_end)] : null;
+  const sector = book.sector || (!leading && l.sector_start != null && l.sector_end != null &&
+    Number(l.sector_start) !== Number(l.sector_end) ? [Number(l.sector_start), Number(l.sector_end)] : null);
   // the carrier: a lighthouse or post as above, a lateral beacon's column, a buoy's pillar
   const type = tags['seamark:type'];
   let mount = MOUNTS[ref];
@@ -198,7 +214,8 @@ for (const ref of Object.keys(OFFICIAL)) if (!lights.some((l) => l.ref === ref))
 
 const js = `// js/donostia/data-seamarks.js — generated by tools/donostia/bake-seamarks.mjs, do not edit.
 // The aids to navigation over the terrain's context grid: lights, their characters and carriers (local frame, m; s).
-// © OpenStreetMap contributors (ODbL), checked against NGA Pub. 113, List of Lights (2019; U.S. Government work).
+// © OpenStreetMap contributors (ODbL), checked against NGA Pub. 113, List of Lights (2019; U.S. Government work) and
+// the list of lights of "Costa Cantábrica" (RCC Pilotage Foundation, 2005).
 ${licenceComment('osm')}export const SEAMARKS = ${JSON.stringify(lights)};
 `;
 fs.writeFileSync(OUT, js);

@@ -62,6 +62,7 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | Municipal 1:500 map: buildings, roads, sidewalks, pedestrian zones, stairs, ramps, gardens, woodland, beaches, tree pits, bike lanes, railway, the port's quays, docks, pontoons and moles, the coast, slopes, kerbs, tunnels; walls and spot heights along the shore; neighbourhoods | Donostiako Udala / Ayuntamiento de San Sebastián | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags), the island ferry's route | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | The lights' characters, elevations, ranges and structures, San Sebastián (nos. 1788-1800): [NGA Pub. 113, List of Lights, Radio Aids and Fog Signals](https://msi.nga.mil/Publications/NGALOL) (2019 edition, corrected to Notice to Mariners 26/2019), the check on OSM's seamarks (`bake-seamarks.mjs`) | U.S. National Geospatial-Intelligence Agency | U.S. Government work, no copyright claimed (public domain) |
+| La Concha's leading lights' arcs of visibility and the red pierhead's elevation (`bake-seamarks.mjs`): the list of lights of "Costa Cantábrica" (Spanish edition, 2005), p. 201 | RCC Pilotage Foundation (John Lawson) | facts only: no text, plan or photograph of the book is reproduced |
 | Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Licences
@@ -87,7 +88,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
 | `js/donostia/data-beach-access.js` | municipal map (stairs, ramps, spot heights, beaches, buildings), the LiDAR, read against the 2025 orthophoto and OSM | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
-| `js/donostia/data-seamarks.js` | OSM, checked against NGA Pub. 113 | ODbL 1.0 |
+| `js/donostia/data-seamarks.js` | OSM, checked against NGA Pub. 113 and "Costa Cantábrica"'s list of lights | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
 | `tools/donostia/data/port_boats.json`, `js/donostia/data-boats.js` | the 2025 orthophoto (the boats), municipal map & OSM (the basins, quays & pontoons that bound them; the ferry's route & pier), the terrain | CC BY-SA 3.0 + ODbL 1.0, with the credit «Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi» |
 | `js/donostia/landmarks/aiete-parkea.js` (the pond's outline; the lamps' and the statue's places, read off the orthophoto) | OSM, orthophoto 2025 | ODbL 1.0, geoEuskadi credit |
@@ -305,7 +306,9 @@ map.
   Cartuja tifo the design follows is used.
 - The aids to navigation (`bake-seamarks.mjs` → `js/donostia/data-seamarks.js`, drawn by `js/donostia/seamarks.js`):
   every lit seamark OSM has over the context grid, its figures checked against NGA Pub. 113, which wins where they
-  differ; the script's header lists the disagreements and what was assumed where both are silent. The Instituto
+  differ. The list of lights of the derrotero "Costa Cantábrica" (RCC Pilotage Foundation, 2005) adds what both leave
+  out: the leading lights' arcs of visibility (the front light from 143° to 173°, the rear one only from 154° to 162°)
+  and the red pierhead's 8 m. The script's header lists the disagreements and what was assumed where all are silent. The Instituto
   Hidrográfico's "Faros y señales de niebla", the Autoridad Portuaria de Pasaia's list and the Admiralty's could not be
   consulted (October 2026). No light stands on the Zurriola dike, at the Urumea's mouth or on Urgull in either source.
 
@@ -313,8 +316,8 @@ map.
   |---|---|---|---|
   | Igeldo (D 1483) | Fl(2+1) W 15 s: 0.4 s flashes, eclipses 1.8, 6, 6 s; a revolving optic | 134 m (the model's lantern: 129.6 m), 26 nm | the lighthouse (`landmarks/igeldo.js`) |
   | Isla de Santa Clara (D 1482) | Fl W 5 s: 1 s flashes | 53 m, 9 nm | the lighthouse (`landmarks/santa-klara.js`) |
-  | La Concha's leading lights, 158° (D 1484, D 1484.1) | front Q R (0.3 s flashes assumed); rear Oc R 4 s, 3 s light | 12 m & 18 m, 7 nm | grey posts of 16 ft & 30 ft, 25 m apart across Kontxa pasealekua |
-  | The port's pierheads (D 1486, D 1485) | west mole Fl(2) R 8 s, marina mole Fl(2) G 8 s (0.5 s flashes 1.5 s apart, assumed) | 9 m, 5 & 3 nm | red & green columns |
+  | La Concha's leading lights, 158° (D 1484, D 1484.1) | front Q R (0.3 s flashes assumed), visible 143°-173°; rear Oc R 4 s, 3 s light, visible 154°-162° | 12 m & 18 m, 7 nm | grey posts of 16 ft & 30 ft, 25 m apart across Kontxa pasealekua |
+  | The port's pierheads (D 1486, D 1485) | west mole Fl(2) R 8 s, marina mole Fl(2) G 8 s (0.5 s flashes 1.5 s apart, assumed) | 8 m & 9 m, 5 & 3 nm | red & green columns |
   | Mompás outfall (00220) | Fl Y 5 s: 0.5 s | 5 m, 3 nm | a yellow pillar buoy, X topmark |
   | Pasaia fairway (00125) | Mo(A) W 7 s | 4 m (assumed), 7 nm | a red & white pillar buoy, red ball (69 m north of the grid, on the open sea) |
 

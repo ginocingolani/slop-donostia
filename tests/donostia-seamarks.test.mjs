@@ -41,7 +41,8 @@ test("La Concha's leading lights line up at 158°, the rear one higher", () => {
   assert.ok(Math.abs(bearing - 158) < 1, `the leading line runs ${bearing.toFixed(1)}°`);
   assert.ok(Math.abs(Math.hypot(rear.x - front.x, rear.z - front.z) - 25) < 2, 'about 25 m apart');
   assert.ok(rear.height > front.height && rear.mount.height > front.mount.height);
-  assert.equal(front.sector, null, 'shown all round: OSM sector tags of a leading light are its line');
+  // OSM's sector tags of a leading light are its line; the arcs of visibility are the derrotero's, the rear one narrow
+  assert.deepEqual([front.sector, rear.sector], [[143, 173], [154, 162]]);
 });
 
 test('a fixed lantern flashes on its published spans, the same for every viewer', () => {

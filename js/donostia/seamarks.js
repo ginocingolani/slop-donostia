@@ -26,7 +26,8 @@ import { seamarkClock, freezeSeamarkClock, RISE, FALL } from './seamark-timing.j
 // not by day; none of these lights is lit by day. Seen from afar it keeps a few pixels' core and a halo that grows
 // with the light's range, dimming towards the edge of that range; close up it is the lantern's size. A lantern seen
 // from well above its horizontal is dimmer, a revolving optic's flashes much more so (its beams are flat). A light
-// with a sector shows only within it (none here: see the bake). The posts, columns and buoys are a second draw.
+// with a sector shows only within it (La Concha's leading lights: see the bake). The posts, columns and buoys are a
+// second draw.
 // buildSeamarks(terrain, { seaLevel, landmarks }) -> Object3D; userData.update(dt, elapsed, camera) runs every frame,
 // userData.freeze(t) stops the lights' clock at t s (null runs it again), for renders of a flash.
 
