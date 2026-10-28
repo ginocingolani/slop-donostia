@@ -122,7 +122,8 @@ def asciitilde(m):
         hobby((W * 0.32, AXIS + amp * 0.5), (1, 0), (W * 0.68, AXIS - amp * 0.5), (1, 0)),
         hobby((W * 0.68, AXIS - amp * 0.5), (1, 0), (W - x0, AXIS + amp * 0.5), (0.5, 1)),
     ]
-    return G(stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 0.92)], name='~'), W, m.v(50, 42), m.v(50, 42))
+    return G(stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 0.92)], name='~', fine=3), W, m.v(50, 42),
+             m.v(50, 42))
 
 
 @glyph('underscore', 0x5F)
@@ -272,7 +273,7 @@ def at(m):
         hobby((cx - R + a, cy), (0, -1), (cx, cy - R + b), (1, 0)),
         hobby((cx, cy - R + b), (1, 0), (cx + R * 0.44, cy - R * 0.93), (1, 0.22)),
     ]
-    outer = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (2, 0.92), (4, 1.0), (6, 1.0), (7, 0.86)], name='@')
+    outer = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (2, 0.92), (4, 1.0), (6, 1.0), (7, 0.86)], name='@', fine=3)
     inner = ring(xi, cy, ri_x, ri_y, m.v(50, 74), m.v(44, 62))
     return G(union([outer, inner]), 2 * R, None, None)
 
@@ -304,7 +305,7 @@ def sterling(m):
         hobby((W * 0.26, CAP * 0.70), (0, -1), (W * 0.24, CAP * 0.30), (-0.05, -1)),
         hobby((W * 0.24, CAP * 0.30), (-0.05, -1), (a * 0.6, h * 0.6), (-0.7, -1)),
     ]
-    neck = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.04), (3, 1.0), (4, 1.0)], name='£')
+    neck = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.04), (3, 1.0), (4, 1.0)], name='£', fine=2)
     neck = diff(neck, rect(W - a * 0.4, CAP * 0.55, W + 200, CAP + 200))
     base = bar(0, W, 0, h, right=(m.wdrop, 0, m.wlen), bend=Gl.arm(m, 0, m.v(8, 10)))
     cross = bar(W * 0.02, W * 0.62, CAP * 0.42 - h * 0.45, CAP * 0.42 + h * 0.45,
@@ -356,7 +357,7 @@ def section(m):
         hobby((W * 0.50, yt - b), (-1, 0), (a, yb + 0.78 * H), (0, -1)),
         hobby((a, yb + 0.78 * H), (0, -1), (a * 1.1, cy + ry * 0.15), (0, -1)),
     ]
-    h1 = stroke(hook, a, b, knots=[(0, 0.84), (1, 1.0), (2, 1.0), (3, 1.0)], name='§ hook')
+    h1 = stroke(hook, a, b, knots=[(0, 0.84), (1, 1.0), (2, 1.0), (3, 1.0)], name='§ hook', fine=2)
     h1 = diff(h1, rect(W - a * 0.45, yb + 0.66 * H, W + 200, yt + 200))
     h2 = transform(h1, lambda p: (W - p[0], 2 * cy - p[1]))
     return G(union([ring_, h1, h2]), W, None, None)

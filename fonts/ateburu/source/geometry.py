@@ -697,10 +697,22 @@ def _scale_at(knots, u):
 STROKE_ERRORS = []
 
 
-def stroke(spine, a, b, knots=None, n=32, name=''):
+def _subdivide(seg, k):
+    out, rest = [], seg
+    for j in range(k - 1):
+        a, rest = split(rest, 1 / (k - j))
+        out.append(a)
+    return out + [rest]
+
+
+def stroke(spine, a, b, knots=None, n=32, name='', fine=1):
     """Expand a spine (contiguous cubics) with an elliptical nib of semi-axes a (horizontal) and b (vertical): the
     stroke is a = half the width of a vertical stroke, b = half the thickness of a horizontal one. knots: optional
-    [(u, scale)] over u in [0, len(spine)] to swell or taper the nib along the stroke. Flat ends."""
+    [(u, scale)] over u in [0, len(spine)] to swell or taper the nib along the stroke. Flat ends. fine: fit each spine
+    segment's offsets in that many pieces (for long, strongly curved strokes whose single-cubic fit drifts)."""
+    if fine > 1:
+        spine = [piece for seg in spine for piece in _subdivide(seg, fine)]
+        knots = [(u * fine, sc) for u, sc in knots] if knots else knots
     left, right = [], []
     worst = 0.0
     for i, seg in enumerate(spine):

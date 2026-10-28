@@ -81,8 +81,8 @@ def Germandbls(m):
         hobby((W - a, C * 0.23), (0, -1), (W * 0.52, -o + b), (-1, 0)),
         hobby((W * 0.52, -o + b), (-1, 0), (s + m.v(66, 70) + a * 0.3, C * 0.17), (-0.6, 1)),
     ]
-    body = union([stroke(top, a, b, knots=[(0, 1.0), (1, 0.98), (2, 0.92), (3, 0.9)], name='Germandbls a'),
-                  stroke(low, a, b, knots=[(0, 0.92), (1, 1.04), (2, 1.0), (3, 0.88)], name='Germandbls b')])
+    body = union([stroke(top, a, b, knots=[(0, 1.0), (1, 0.98), (2, 0.92), (3, 0.9)], name='Germandbls a', fine=5),
+                  stroke(low, a, b, knots=[(0, 0.92), (1, 1.04), (2, 1.0), (3, 0.88)], name='Germandbls b', fine=3)])
     # the bowl's tail ends free, cut plumb, clear of the stem's foot
     body = diff(body, rect(-100, -100, s + m.v(66, 70), C * 0.36))
     return G(union([st, body]), W, m.sp, None, top=W * 0.5)

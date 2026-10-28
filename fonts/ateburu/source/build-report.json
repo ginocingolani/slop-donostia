@@ -3,9 +3,9 @@
  "kerning": {
   "A C": [
    -112,
-   -128,
+   -136,
    -116,
-   -138
+   -140
   ],
   "A Eth": [
    -64,
@@ -15,9 +15,9 @@
   ],
   "A G": [
    -112,
-   -130,
+   -136,
    -120,
-   -142
+   -146
   ],
   "A Hbar": [
    -58,
@@ -27,27 +27,27 @@
   ],
   "A J": [
    -76,
-   -86,
+   -88,
    -56,
-   -58
+   -60
   ],
   "A Lslash": [
    0,
-   66,
+   60,
    -22,
-   54
+   48
   ],
   "A O": [
    -114,
-   -130,
+   -136,
    -120,
-   -142
+   -144
   ],
   "A OE": [
    -114,
-   -132,
+   -138,
    -122,
-   -150
+   -152
   ],
   "A Oslash": [
    -66,
@@ -57,13 +57,13 @@
   ],
   "A Q": [
    -114,
-   -130,
+   -136,
    -120,
-   -142
+   -144
   ],
   "A S": [
    -90,
-   -102,
+   -104,
    -64,
    -64
   ],
@@ -75,9 +75,9 @@
   ],
   "A U": [
    -124,
-   -146,
+   -152,
    -136,
-   -154
+   -156
   ],
   "A V": [
    -228,
@@ -101,31 +101,31 @@
    -68,
    -92,
    -50,
-   -66
+   -68
   ],
   "A comma": [
    -52,
    -76,
    -44,
-   -62
+   -64
   ],
   "A exclam": [
    -76,
    -98,
    -58,
-   -72
+   -74
   ],
   "A four": [
    -90,
-   -98,
+   -104,
    -100,
-   -100
+   -104
   ],
   "A hyphen": [
    -138,
-   -156,
    -164,
-   -170
+   -164,
+   -178
   ],
   "A i.shortplain.lozenge": [
    -34,
@@ -179,43 +179,43 @@
    -62,
    -88,
    -44,
-   -62
+   -64
   ],
   "A question": [
    -202,
    -242,
    -188,
-   -216
+   -218
   ],
   "A quotedblleft": [
    -204,
-   -222,
+   -238,
    -228,
-   -236
+   -250
   ],
   "A quotedblright": [
    -194,
-   -208,
+   -220,
    -218,
-   -222
+   -234
   ],
   "A quoteleft": [
    -204,
-   -222,
+   -238,
    -228,
-   -236
+   -250
   ],
   "A quoteright": [
    -194,
-   -208,
+   -220,
    -218,
-   -222
+   -234
   ],
   "A semicolon": [
    -58,
    -80,
    -50,
-   -66
+   -68
   ],
   "A seven": [
    -132,
@@ -225,9 +225,9 @@
   ],
   "A zero": [
    -106,
-   -122,
+   -128,
    -104,
-   -116
+   -118
   ],
   "AE J": [
    -18,
@@ -345,9 +345,9 @@
   ],
   "B A": [
    -88,
-   -102,
+   -106,
    -72,
-   -78
+   -80
   ],
   "B T": [
    -68,
@@ -579,9 +579,9 @@
   ],
   "D A": [
    -122,
-   -138,
+   -144,
    -128,
-   -140
+   -142
   ],
   "D J": [
    -50,
@@ -825,9 +825,9 @@
   ],
   "Eth A": [
    -122,
-   -138,
+   -144,
    -128,
-   -140
+   -142
   ],
   "Eth J": [
    -50,
@@ -957,9 +957,9 @@
   ],
   "F A": [
    -160,
-   -176,
+   -196,
    -170,
-   -186
+   -208
   ],
   "F AE": [
    -214,
@@ -987,9 +987,9 @@
   ],
   "F Germandbls": [
    -40,
-   -40,
+   -38,
    -46,
-   -36
+   -34
   ],
   "F Hbar": [
    -38,
@@ -1203,9 +1203,9 @@
   ],
   "G A": [
    -98,
-   -110,
+   -116,
    -102,
-   -102
+   -108
   ],
   "G J": [
    -16,
@@ -1322,16 +1322,16 @@
    -70
   ],
   "G seven": [
-   -162,
-   -162,
-   -162,
+   -164,
+   -164,
+   -164,
    -152
   ],
   "Germandbls A": [
    -86,
-   -90,
+   -96,
    -66,
-   -54
+   -58
   ],
   "Germandbls J": [
    -14,
@@ -1340,7 +1340,7 @@
    2
   ],
   "Germandbls V": [
-   -26,
+   -24,
    -28,
    -18,
    -16
@@ -1371,15 +1371,15 @@
   ],
   "Germandbls colon": [
    -66,
-   -56,
+   -58,
    -76,
-   -48
+   -50
   ],
   "Germandbls comma": [
    -60,
-   -52,
+   -54,
    -70,
-   -44
+   -46
   ],
   "Germandbls exclam": [
    -26,
@@ -1394,10 +1394,10 @@
    2
   ],
   "Germandbls hyphen": [
-   -88,
+   -90,
    -64,
-   -98,
-   -56
+   -100,
+   -58
   ],
   "Germandbls parenright": [
    -28,
@@ -1407,9 +1407,9 @@
   ],
   "Germandbls period": [
    -60,
-   -52,
+   -54,
    -70,
-   -44
+   -46
   ],
   "Germandbls question": [
    -42,
@@ -1443,9 +1443,9 @@
   ],
   "Germandbls semicolon": [
    -66,
-   -56,
+   -58,
    -76,
-   -48
+   -50
   ],
   "H J": [
    -34,
@@ -1749,9 +1749,9 @@
   ],
   "J A": [
    -116,
-   -138,
+   -144,
    -116,
-   -124
+   -126
   ],
   "J J": [
    -46,
@@ -1851,14 +1851,14 @@
   ],
   "K A": [
    6,
-   -4,
+   -6,
    18,
-   20
+   18
   ],
   "K AE": [
-   0,
+   2,
    -12,
-   16,
+   18,
    16
   ],
   "K B": [
@@ -1947,7 +1947,7 @@
   ],
   "K K.straight": [
    24,
-   24,
+   22,
    34,
    56
   ],
@@ -2013,7 +2013,7 @@
   ],
   "K R": [
    24,
-   24,
+   22,
    34,
    56
   ],
@@ -2024,10 +2024,10 @@
    24
   ],
   "K T": [
-   14,
+   12,
    8,
-   0,
-   16
+   -8,
+   4
   ],
   "K Thorn": [
    24,
@@ -2038,32 +2038,32 @@
   "K U": [
    14,
    14,
-   0,
-   28
+   -8,
+   16
   ],
   "K V": [
-   18,
+   16,
    14,
-   6,
-   22
+   0,
+   12
   ],
   "K W": [
-   18,
+   16,
    14,
-   6,
-   22
+   0,
+   12
   ],
   "K X": [
-   6,
+   4,
    -6,
    14,
    16
   ],
   "K Y": [
-   18,
+   16,
    14,
-   6,
-   22
+   0,
+   12
   ],
   "K Z": [
    44,
@@ -2090,16 +2090,16 @@
    24
   ],
   "K four": [
-   -198,
-   -186,
-   -210,
-   -188
+   -200,
+   -188,
+   -216,
+   -198
   ],
   "K hyphen": [
    -422,
    -398,
-   -446,
-   -410
+   -448,
+   -408
   ],
   "K i.short.lozenge": [
    22,
@@ -2193,33 +2193,33 @@
   ],
   "K question": [
    -100,
-   -126,
-   -102,
-   -106
+   -128,
+   -108,
+   -116
   ],
   "K quotedblleft": [
-   -88,
+   -90,
    -130,
-   -108,
-   -128
+   -114,
+   -138
   ],
   "K quotedblright": [
    -38,
    -68,
-   -50,
-   -60
+   -58,
+   -70
   ],
   "K quoteleft": [
-   -88,
+   -90,
    -130,
-   -108,
-   -128
+   -114,
+   -138
   ],
   "K quoteright": [
    -38,
    -68,
-   -50,
-   -60
+   -58,
+   -70
   ],
   "K semicolon": [
    14,
@@ -2228,10 +2228,10 @@
    30
   ],
   "K seven": [
-   14,
+   12,
    8,
-   4,
-   22
+   -4,
+   12
   ],
   "K zero": [
    -66,
@@ -2433,14 +2433,14 @@
   ],
   "K.straight A": [
    6,
-   -4,
+   -6,
    18,
-   20
+   18
   ],
   "K.straight AE": [
-   0,
+   2,
    -12,
-   16,
+   18,
    16
   ],
   "K.straight B": [
@@ -2529,7 +2529,7 @@
   ],
   "K.straight K.straight": [
    22,
-   24,
+   22,
    34,
    56
   ],
@@ -2595,7 +2595,7 @@
   ],
   "K.straight R": [
    22,
-   24,
+   22,
    34,
    56
   ],
@@ -2649,12 +2649,12 @@
   ],
   "K.straight four": [
    -216,
-   -186,
-   -214,
+   -188,
+   -212,
    -206
   ],
   "K.straight hyphen": [
-   -420,
+   -422,
    -398,
    -450,
    -426
@@ -3699,9 +3699,9 @@
   ],
   "O A": [
    -122,
-   -140,
+   -146,
    -126,
-   -146
+   -148
   ],
   "O J": [
    -52,
@@ -3945,9 +3945,9 @@
   ],
   "Oslash A": [
    -122,
-   -140,
+   -146,
    -126,
-   -146
+   -148
   ],
   "Oslash J": [
    -52,
@@ -4077,9 +4077,9 @@
   ],
   "P A": [
    -174,
+   -202,
    -182,
-   -182,
-   -186
+   -210
   ],
   "P AE": [
    -204,
@@ -4130,7 +4130,7 @@
    -14
   ],
   "P Germandbls": [
-   -26,
+   -24,
    -30,
    -34,
    -34
@@ -4163,7 +4163,7 @@
    -24,
    -30,
    -28,
-   -32
+   -34
   ],
   "P K.roman": [
    -24,
@@ -4175,7 +4175,7 @@
    -24,
    -30,
    -28,
-   -32
+   -34
   ],
   "P L": [
    -24,
@@ -4241,7 +4241,7 @@
    -24,
    -30,
    -28,
-   -32
+   -34
   ],
   "P T": [
    -18,
@@ -4437,9 +4437,9 @@
   ],
   "Q A": [
    -122,
-   -140,
+   -146,
    -126,
-   -146
+   -148
   ],
   "Q J": [
    -50,
@@ -4569,14 +4569,14 @@
   ],
   "R A": [
    84,
-   80,
+   78,
    96,
-   104
+   102
   ],
   "R AE": [
-   78,
+   80,
    72,
-   94,
+   96,
    100
   ],
   "R B": [
@@ -4665,7 +4665,7 @@
   ],
   "R K.straight": [
    100,
-   108,
+   106,
    110,
    140
   ],
@@ -4702,7 +4702,7 @@
   "R O": [
    -4,
    8,
-   24,
+   26,
    74
   ],
   "R OE": [
@@ -4731,7 +4731,7 @@
   ],
   "R R": [
    100,
-   108,
+   106,
    110,
    140
   ],
@@ -4774,7 +4774,7 @@
   "R X": [
    68,
    62,
-   88,
+   90,
    100
   ],
   "R Y": [
@@ -4811,7 +4811,7 @@
    -108,
    -88,
    -120,
-   -118
+   -122
   ],
   "R hyphen": [
    -52,
@@ -4912,7 +4912,7 @@
   "R question": [
    -26,
    -56,
-   -40,
+   -38,
    -36
   ],
   "R quotedblleft": [
@@ -4953,9 +4953,9 @@
   ],
   "S A": [
    -82,
-   -94,
+   -98,
    -66,
-   -70
+   -72
   ],
   "S T": [
    -38,
@@ -5073,9 +5073,9 @@
   ],
   "T A": [
    -162,
-   -176,
+   -192,
    -168,
-   -186
+   -188
   ],
   "T AE": [
    -204,
@@ -5103,9 +5103,9 @@
   ],
   "T Germandbls": [
    -42,
-   -40,
-   -50,
-   -36
+   -38,
+   -48,
+   -34
   ],
   "T Hbar": [
    -38,
@@ -5319,9 +5319,9 @@
   ],
   "Thorn A": [
    -144,
+   -168,
    -160,
-   -160,
-   -176
+   -186
   ],
   "Thorn AE": [
    -158,
@@ -5360,7 +5360,7 @@
    -34
   ],
   "Thorn Germandbls": [
-   -26,
+   -24,
    -30,
    -32,
    -34
@@ -5667,9 +5667,9 @@
   ],
   "U A": [
    -128,
-   -150,
+   -160,
    -136,
-   -156
+   -158
   ],
   "U J": [
    -58,
@@ -5769,9 +5769,9 @@
   ],
   "V A": [
    -168,
-   -180,
+   -204,
    -172,
-   -186
+   -208
   ],
   "V AE": [
    -252,
@@ -6015,9 +6015,9 @@
   ],
   "W A": [
    -166,
-   -180,
+   -204,
    -170,
-   -186
+   -208
   ],
   "W AE": [
    -224,
@@ -6047,7 +6047,7 @@
    -88,
    -104,
    -84,
-   -92
+   -90
   ],
   "W Hbar": [
    -56,
@@ -6489,9 +6489,9 @@
   ],
   "Y A": [
    -168,
-   -180,
+   -204,
    -174,
-   -186
+   -208
   ],
   "Y AE": [
    -252,
@@ -6519,7 +6519,7 @@
   ],
   "Y Germandbls": [
    -108,
-   -124,
+   -126,
    -100,
    -108
   ],
@@ -6965,7 +6965,7 @@
    -68,
    -92,
    -52,
-   -68
+   -70
   ],
   "colon J": [
    -58,
@@ -7013,7 +7013,7 @@
    -50,
    -74,
    -44,
-   -64
+   -66
   ],
   "comma J": [
    -52,
@@ -7061,7 +7061,7 @@
    -76,
    -98,
    -60,
-   -74
+   -76
   ],
   "exclam J": [
    -66,
@@ -7395,9 +7395,9 @@
   ],
   "hyphen A": [
    -150,
-   -168,
    -176,
-   -182
+   -176,
+   -190
   ],
   "hyphen J": [
    -348,
@@ -8961,7 +8961,7 @@
   ],
   "parenright A": [
    -118,
-   -136,
+   -138,
    -122,
    -130
   ],
@@ -9011,7 +9011,7 @@
    -62,
    -88,
    -46,
-   -64
+   -66
   ],
   "period J": [
    -52,
@@ -9057,9 +9057,9 @@
   ],
   "question A": [
    -182,
-   -202,
+   -222,
    -196,
-   -208
+   -230
   ],
   "question J": [
    -234,
@@ -9105,9 +9105,9 @@
   ],
   "quotedblleft A": [
    -178,
-   -210,
+   -232,
    -194,
-   -220
+   -242
   ],
   "quotedblleft J": [
    -328,
@@ -9153,9 +9153,9 @@
   ],
   "quotedblright A": [
    -174,
-   -200,
+   -224,
    -190,
-   -206
+   -228
   ],
   "quotedblright AE": [
    -262,
@@ -9206,10 +9206,10 @@
    -118
   ],
   "quotedblright Germandbls": [
-   -66,
+   -64,
    -82,
    -84,
-   -84
+   -82
   ],
   "quotedblright H": [
    -38,
@@ -9447,9 +9447,9 @@
   ],
   "quoteleft A": [
    -178,
-   -210,
+   -232,
    -194,
-   -220
+   -242
   ],
   "quoteleft J": [
    -328,
@@ -9495,9 +9495,9 @@
   ],
   "quoteright A": [
    -174,
-   -200,
+   -224,
    -190,
-   -206
+   -228
   ],
   "quoteright AE": [
    -262,
@@ -9548,10 +9548,10 @@
    -118
   ],
   "quoteright Germandbls": [
-   -66,
+   -64,
    -82,
    -84,
-   -84
+   -82
   ],
   "quoteright H": [
    -38,
@@ -9791,7 +9791,7 @@
    -56,
    -78,
    -50,
-   -68
+   -70
   ],
   "semicolon J": [
    -58,
@@ -9837,21 +9837,21 @@
   ],
   "seven A": [
    -164,
-   -178,
+   -200,
    -170,
-   -186
+   -208
   ],
   "seven AE": [
    -226,
    -234,
-   -224,
+   -226,
    -226
   ],
   "seven C": [
    -58,
-   -52,
-   -58,
-   -54
+   -54,
+   -56,
+   -56
   ],
   "seven Eth": [
    -60,
@@ -9869,7 +9869,7 @@
    -48,
    -52,
    -56,
-   -62
+   -60
   ],
   "seven Hbar": [
    -46,
@@ -9878,16 +9878,16 @@
    -44
   ],
   "seven J": [
+   -264,
+   -264,
    -262,
-   -260,
-   -262,
-   -258
+   -262
   ],
   "seven Lslash": [
    -58,
-   -50,
+   -48,
    -60,
-   -50
+   -48
   ],
   "seven M": [
    -36,
@@ -9903,9 +9903,9 @@
   ],
   "seven OE": [
    -60,
-   -54,
+   -56,
    -60,
-   -56
+   -58
   ],
   "seven Oslash": [
    -58,
@@ -9959,7 +9959,7 @@
    -42,
    -60,
    -50,
-   -62
+   -60
   ],
   "seven i.shortplain.round": [
    -22,
@@ -9993,7 +9993,7 @@
   ],
   "zero A": [
    -114,
-   -130,
+   -136,
    -110,
    -120
   ],
@@ -10043,27 +10043,40 @@
  "kerning_pairs": 1673,
  "outline_notes": {
   "Black": [
-   "K: kink of 3.6\u00b0 at (599, 134)",
+   "K: kink of 7.6\u00b0 at (437, 661)",
+   "K: kink of 3.2\u00b0 at (599, 134)",
    "K.straight: extreme without a point near (375.5, 690.5)",
+   "K.straight: kink of 2.5\u00b0 at (325, 651)",
    "K.straight: kink of 2.6\u00b0 at (351, 671)",
+   "K.straight: kink of 1.9\u00b0 at (543, 607)",
    "K.straight: kink of 3.5\u00b0 at (599, 134)",
    "K.roman: extreme without a point near (417.0, 690.5)",
    "K.roman: kink of 4.3\u00b0 at (368, 651)",
    "K.roman: kink of 2.6\u00b0 at (392, 671)",
+   "A: kink of 3.0\u00b0 at (443, 572)",
    "M: kink of 1.5\u00b0 at (54, 98)",
    "M: kink of 1.5\u00b0 at (872, 98)",
-   "ampersand: extreme without a point near (662, 114)",
-   "ampersand: kink of 5.2\u00b0 at (672, 131)",
-   "cedillacomb: 2.2-unit stub at (2, -116)",
-   "cedillacomb: 2.2-unit stub at (4, -115)",
-   "cedillacomb: kink of 6.5\u00b0 at (2, -111)",
-   "Germandbls: extreme without a point near (492.5, 601.0)",
-   "Germandbls: kink of 2.4\u00b0 at (487, 658)",
-   "Germandbls: kink of 7.8\u00b0 at (246, 544)",
+   "five: kink of 2.1\u00b0 at (277, 121)",
+   "ampersand: kink of 2.9\u00b0 at (668, 126)",
+   "ampersand: kink of 2.3\u00b0 at (690, 114)",
+   "ampersand: kink of 3.4\u00b0 at (549, 205)",
+   "cedillacomb: kink of 2.3\u00b0 at (-37, -120)",
+   "cedillacomb: kink of 1.9\u00b0 at (51, -29)",
+   "cedillacomb: kink of 1.5\u00b0 at (102, -122)",
+   "cedillacomb: kink of 2.0\u00b0 at (81, -155)",
+   "Germandbls: kink of 1.9\u00b0 at (440, 134)",
+   "Germandbls: kink of 1.9\u00b0 at (493, 641)",
+   "Germandbls: kink of 7.1\u00b0 at (257, 592)",
+   "Germandbls: kink of 1.7\u00b0 at (245, 565)",
+   "Germandbls: kink of 5.2\u00b0 at (48, 475)",
+   "Germandbls: kink of 4.0\u00b0 at (500, 383)",
    "dollar: kink of 4.0\u00b0 at (357, 428)",
-   "at: kink of 3.0\u00b0 at (689, 352)",
-   "ordfeminine: kink of 3.9\u00b0 at (265, 545)",
-   "ordfeminine: kink of 5.9\u00b0 at (190, 545)",
+   "at: kink of 4.8\u00b0 at (628, 231)",
+   "at: kink of 2.1\u00b0 at (683, 326)",
+   "sterling: kink of 6.0\u00b0 at (93, 373)",
+   "ordfeminine: kink of 1.5\u00b0 at (127, 381)",
+   "ordfeminine: kink of 6.2\u00b0 at (280, 539)",
+   "ordfeminine: kink of 4.4\u00b0 at (195, 539)",
    "trademark: kink of 3.3\u00b0 at (356, 446)",
    "trademark: kink of 3.3\u00b0 at (716, 446)"
   ],
@@ -10073,33 +10086,50 @@
    "T: kink of 4.5\u00b0 at (428, 720)",
    "T: kink of 1.6\u00b0 at (535, 715)",
    "T: kink of 2.9\u00b0 at (535, 567)",
-   "K: kink of 2.2\u00b0 at (265, 652)",
+   "K: kink of 1.7\u00b0 at (343, 86)",
+   "K: kink of 5.3\u00b0 at (265, 653)",
+   "K: kink of 3.4\u00b0 at (565, 132)",
+   "K: kink of 4.3\u00b0 at (631, 130)",
+   "K.straight: kink of 1.7\u00b0 at (343, 86)",
+   "K.straight: kink of 5.4\u00b0 at (244, 143)",
    "K.roman: kink of 2.4\u00b0 at (266, 654)",
    "K.roman: kink of 2.7\u00b0 at (289, 85)",
-   "A: kink of 5.7\u00b0 at (606, 38)",
    "W: kink of 3.8\u00b0 at (269, 677)",
    "X: kink of 2.3\u00b0 at (357, 671)",
-   "ampersand: extreme without a point near (660, 114)",
-   "ampersand: kink of 5.2\u00b0 at (670, 131)",
-   "cedillacomb: 2.8-unit stub at (8, -119)",
-   "cedillacomb: kink of 8.1\u00b0 at (5, -120)",
-   "cedillacomb: kink of 3.4\u00b0 at (7, -114)",
-   "Germandbls: extreme without a point near (492.5, 601.0)",
-   "Germandbls: kink of 2.4\u00b0 at (487, 658)",
-   "Germandbls: kink of 2.4\u00b0 at (405, 638)",
+   "five: kink of 2.1\u00b0 at (267, 121)",
+   "ampersand: kink of 2.9\u00b0 at (666, 126)",
+   "ampersand: kink of 2.3\u00b0 at (688, 114)",
+   "ampersand: kink of 3.4\u00b0 at (547, 205)",
+   "cedillacomb: kink of 3.4\u00b0 at (-58, -180)",
+   "cedillacomb: kink of 2.8\u00b0 at (7, -113)",
+   "cedillacomb: kink of 1.9\u00b0 at (51, -29)",
+   "cedillacomb: kink of 3.5\u00b0 at (0, -198)",
+   "ogonekcomb: kink of 1.9\u00b0 at (6, -129)",
+   "Germandbls: kink of 1.9\u00b0 at (440, 134)",
+   "Germandbls: kink of 1.9\u00b0 at (493, 641)",
+   "Germandbls: kink of 7.1\u00b0 at (257, 592)",
+   "Germandbls: kink of 1.7\u00b0 at (245, 565)",
+   "Germandbls: kink of 5.7\u00b0 at (48, 475)",
+   "Germandbls: kink of 4.0\u00b0 at (500, 383)",
    "dollar: kink of 4.0\u00b0 at (355, 428)",
-   "at: kink of 3.0\u00b0 at (683, 352)",
-   "registered: kink of 4.4\u00b0 at (250, 220)",
-   "ordfeminine: kink of 5.2\u00b0 at (323, 365)",
-   "ordfeminine: kink of 4.2\u00b0 at (193, 541)",
+   "at: kink of 4.8\u00b0 at (622, 231)",
+   "at: kink of 2.1\u00b0 at (677, 326)",
+   "registered: kink of 4.8\u00b0 at (401, 263)",
+   "registered: kink of 3.2\u00b0 at (538, 254)",
+   "ordfeminine: kink of 5.9\u00b0 at (277, 537)",
+   "ordfeminine: kink of 5.3\u00b0 at (198, 536)",
    "trademark: kink of 4.4\u00b0 at (89, 653)",
    "trademark: kink of 4.4\u00b0 at (264, 653)"
   ],
   "Bold": [
-   "K: kink of 7.0\u00b0 at (560, 110)",
+   "R: kink of 1.7\u00b0 at (567, 107)",
+   "K: kink of 8.5\u00b0 at (461, 667)",
+   "K: kink of 7.1\u00b0 at (560, 110)",
+   "K: kink of 2.3\u00b0 at (665, 15)",
    "K.straight: extreme without a point near (408.0, 693.5)",
+   "K.straight: kink of 1.7\u00b0 at (362, 658)",
    "K.straight: kink of 3.1\u00b0 at (384, 675)",
-   "K.straight: kink of 7.0\u00b0 at (560, 110)",
+   "K.straight: kink of 7.1\u00b0 at (560, 110)",
    "K.roman: extreme without a point near (435.0, 693.5)",
    "K.roman: kink of 5.0\u00b0 at (391, 658)",
    "K.roman: kink of 3.9\u00b0 at (412, 675)",
@@ -10107,13 +10137,29 @@
    "W: kink of 1.7\u00b0 at (216, 667)",
    "M: kink of 1.6\u00b0 at (63, 89)",
    "M: kink of 1.6\u00b0 at (827, 89)",
-   "five: kink of 3.8\u00b0 at (290, 365)",
-   "cedillacomb: kink of 4.4\u00b0 at (0, -122)",
-   "cedillacomb: kink of 1.9\u00b0 at (53, -50)",
-   "Germandbls: kink of 2.9\u00b0 at (284, 354)",
+   "five: kink of 1.8\u00b0 at (277, 92)",
+   "five: kink of 2.7\u00b0 at (282, 365)",
+   "nine: kink of 1.7\u00b0 at (331, 136)",
+   "tildecomb: kink of 2.1\u00b0 at (-70, 818)",
+   "tildecomb: kink of 2.1\u00b0 at (70, 867)",
+   "cedillacomb: kink of 1.9\u00b0 at (-50, -179)",
+   "cedillacomb: kink of 8.1\u00b0 at (-38, -127)",
+   "cedillacomb: kink of 8.1\u00b0 at (-5, -125)",
+   "cedillacomb: kink of 1.5\u00b0 at (42, -31)",
+   "cedillacomb: kink of 1.7\u00b0 at (92, -120)",
+   "cedillacomb: kink of 3.3\u00b0 at (5, -188)",
+   "Germandbls: kink of 1.5\u00b0 at (468, 232)",
+   "Germandbls: kink of 4.4\u00b0 at (488, 686)",
+   "Germandbls: kink of 3.2\u00b0 at (236, 622)",
+   "Germandbls: kink of 4.8\u00b0 at (60, 475)",
+   "asciitilde: kink of 1.7\u00b0 at (181, 326)",
+   "asciitilde: kink of 2.3\u00b0 at (414, 384)",
    "dollar: kink of 4.3\u00b0 at (337, 415)",
-   "section: kink of 2.4\u00b0 at (240, -18)",
-   "section: kink of 2.9\u00b0 at (281, 654)",
+   "at: kink of 7.7\u00b0 at (614, 208)",
+   "at: kink of 2.5\u00b0 at (626, 207)",
+   "at: kink of 1.7\u00b0 at (554, -25)",
+   "section: kink of 3.4\u00b0 at (228, -18)",
+   "section: kink of 3.4\u00b0 at (294, 654)",
    "section: 2.2-unit stub at (377, 296)",
    "section: 2.2-unit stub at (144, 340)",
    "trademark: kink of 2.8\u00b0 at (346, 442)",
@@ -10122,48 +10168,74 @@
    "trademark: kink of 3.2\u00b0 at (682, 442)"
   ],
   "ExtraBold": [
-   "K: kink of 8.4\u00b0 at (632, 631)",
-   "K: kink of 5.3\u00b0 at (579, 122)",
+   "K: kink of 4.4\u00b0 at (579, 122)",
    "K.straight: extreme without a point near (392.0, 692.5)",
+   "K.straight: kink of 2.5\u00b0 at (344, 655)",
    "K.straight: kink of 2.6\u00b0 at (368, 673)",
-   "K.straight: kink of 5.3\u00b0 at (579, 122)",
+   "K.straight: kink of 5.7\u00b0 at (579, 122)",
    "K.roman: extreme without a point near (426.0, 692.0)",
    "K.roman: kink of 4.4\u00b0 at (379, 655)",
    "K.roman: kink of 1.8\u00b0 at (402, 673)",
-   "A: 2.8-unit stub at (415, 589)",
    "W: extreme without a point near (234.0, 689.0)",
    "three: kink of 1.7\u00b0 at (192, 333)",
-   "cedillacomb: extreme without a point near (-41.5, -24.0)",
-   "cedillacomb: kink of 2.5\u00b0 at (-1, -120)",
-   "Germandbls: extreme without a point near (439, 651)",
-   "Germandbls: kink of 3.3\u00b0 at (426, 571)",
-   "at: kink of 3.8\u00b0 at (702, 351)",
+   "five: kink of 2.0\u00b0 at (276, 107)",
+   "five: kink of 3.2\u00b0 at (271, 353)",
+   "tildecomb: kink of 3.4\u00b0 at (-70, 819)",
+   "tildecomb: kink of 8.1\u00b0 at (60, 871)",
+   "tildecomb: kink of 3.4\u00b0 at (70, 873)",
+   "cedillacomb: kink of 1.9\u00b0 at (-28, -186)",
+   "cedillacomb: kink of 2.5\u00b0 at (-52, -179)",
+   "cedillacomb: kink of 5.7\u00b0 at (42, 1)",
+   "cedillacomb: kink of 2.5\u00b0 at (4, -190)",
+   "Germandbls: kink of 2.1\u00b0 at (498, 653)",
+   "Germandbls: kink of 5.2\u00b0 at (54, 475)",
+   "asciitilde: kink of 2.3\u00b0 at (169, 317)",
+   "asciitilde: kink of 1.7\u00b0 at (417, 387)",
+   "at: kink of 3.4\u00b0 at (634, 228)",
+   "at: kink of 7.1\u00b0 at (702, 351)",
    "sterling: kink of 1.5\u00b0 at (105, 218)",
    "yen: 2.8-unit stub at (468, 297)",
-   "section: kink of 1.9\u00b0 at (237, -12)",
-   "section: kink of 1.9\u00b0 at (281, 647)",
+   "section: kink of 1.8\u00b0 at (220, -12)",
+   "section: kink of 1.6\u00b0 at (299, 647)",
+   "ordfeminine: kink of 1.7\u00b0 at (332, 380)",
    "trademark: kink of 3.3\u00b0 at (351, 444)",
    "trademark: kink of 1.6\u00b0 at (364, 679)",
    "trademark: kink of 1.6\u00b0 at (686, 679)",
    "trademark: kink of 3.3\u00b0 at (699, 444)"
   ],
   "HUD": [
+   "K: kink of 1.6\u00b0 at (518, 114)",
    "K: kink of 7.1\u00b0 at (545, 95)",
    "K.straight: extreme without a point near (424.0, 695.5)",
-   "K.straight: kink of 8.6\u00b0 at (540, 99)",
+   "K.straight: kink of 5.2\u00b0 at (381, 661)",
+   "K.straight: kink of 1.8\u00b0 at (502, 126)",
+   "K.straight: kink of 8.7\u00b0 at (540, 99)",
    "K.straight: kink of 7.1\u00b0 at (545, 95)",
    "K.roman: extreme without a point near (444.5, 695.5)",
    "K.roman: kink of 4.6\u00b0 at (402, 661)",
    "K.roman: kink of 3.9\u00b0 at (422, 677)",
    "M: kink of 2.1\u00b0 at (67, 84)",
    "M: kink of 2.1\u00b0 at (805, 84)",
-   "cedillacomb: extreme without a point near (12, -107)",
-   "cedillacomb: kink of 5.4\u00b0 at (1, -125)",
+   "nine: kink of 2.2\u00b0 at (258, 77)",
+   "nine: kink of 4.6\u00b0 at (299, 89)",
+   "nine: kink of 3.5\u00b0 at (328, 119)",
+   "ampersand: kink of 1.8\u00b0 at (207, 343)",
+   "ampersand: kink of 2.4\u00b0 at (439, 279)",
+   "cedillacomb: kink of 2.7\u00b0 at (-47, -179)",
+   "cedillacomb: kink of 8.1\u00b0 at (-6, -128)",
    "AE: kink of 1.6\u00b0 at (192, 59)",
-   "Germandbls: extreme without a point near (515.0, 611.0)",
-   "Germandbls: extreme without a point near (484.5, 694.0)",
-   "Germandbls: kink of 5.1\u00b0 at (342, 110)",
-   "Germandbls: kink of 3.8\u00b0 at (500, 166)",
+   "Germandbls: kink of 2.7\u00b0 at (276, 18)",
+   "Germandbls: kink of 1.9\u00b0 at (345, 101)",
+   "Germandbls: kink of 2.5\u00b0 at (483, 122)",
+   "Germandbls: kink of 2.1\u00b0 at (507, 677)",
+   "Germandbls: kink of 4.4\u00b0 at (66, 475)",
+   "Germandbls: kink of 3.4\u00b0 at (451, 365)",
+   "asciitilde: kink of 2.2\u00b0 at (177, 330)",
+   "asciitilde: kink of 2.2\u00b0 at (393, 374)",
+   "at: kink of 4.3\u00b0 at (542, -104)",
+   "sterling: kink of 2.2\u00b0 at (131, 362)",
+   "sterling: kink of 2.1\u00b0 at (253, 358)",
+   "sterling: kink of 3.6\u00b0 at (199, 109)",
    "section: 2.0-unit stub at (385, 296)",
    "section: 2.0-unit stub at (139, 341)",
    "trademark: kink of 2.8\u00b0 at (341, 440)",
@@ -10177,46 +10249,72 @@
    "E: kink of 1.6\u00b0 at (415, 615)",
    "L: kink of 1.5\u00b0 at (409, 105)",
    "T: kink of 1.7\u00b0 at (381, 720)",
-   "K: kink of 2.6\u00b0 at (466, 667)",
-   "K: kink of 2.1\u00b0 at (489, 706)",
-   "K: kink of 7.1\u00b0 at (676, 708)",
-   "K: kink of 3.8\u00b0 at (619, 631)",
-   "K.straight: kink of 8.7\u00b0 at (186, 349)",
+   "K: kink of 5.6\u00b0 at (198, 500)",
+   "K: kink of 2.3\u00b0 at (494, 691)",
+   "K: kink of 1.9\u00b0 at (650, 20)",
    "K.roman: kink of 3.4\u00b0 at (211, 75)",
-   "A: kink of 5.7\u00b0 at (506, 262)",
    "A: kink of 3.3\u00b0 at (393, 611)",
    "one: kink of 1.5\u00b0 at (133, 68)",
    "one: kink of 1.5\u00b0 at (329, 68)",
-   "cedillacomb: kink of 1.6\u00b0 at (-46, -131)",
-   "cedillacomb: kink of 1.7\u00b0 at (1, -131)",
-   "Germandbls: extreme without a point near (515.0, 611.0)",
-   "Germandbls: extreme without a point near (484.5, 694.0)",
-   "Germandbls: kink of 5.1\u00b0 at (342, 110)",
-   "Germandbls: kink of 3.8\u00b0 at (500, 166)",
+   "nine: kink of 2.2\u00b0 at (249, 77)",
+   "nine: kink of 4.6\u00b0 at (290, 89)",
+   "nine: kink of 3.5\u00b0 at (319, 119)",
+   "ampersand: kink of 1.8\u00b0 at (198, 343)",
+   "ampersand: kink of 2.4\u00b0 at (430, 279)",
+   "cedillacomb: kink of 8.1\u00b0 at (15, -119)",
+   "Germandbls: kink of 2.7\u00b0 at (276, 18)",
+   "Germandbls: kink of 1.9\u00b0 at (345, 101)",
+   "Germandbls: kink of 2.5\u00b0 at (483, 122)",
+   "Germandbls: kink of 2.1\u00b0 at (507, 677)",
+   "Germandbls: kink of 4.8\u00b0 at (66, 475)",
+   "Germandbls: kink of 3.4\u00b0 at (451, 365)",
    "Lslash: kink of 1.5\u00b0 at (465, 105)",
    "Ldot: kink of 1.5\u00b0 at (409, 105)",
+   "asciitilde: kink of 2.2\u00b0 at (177, 330)",
+   "asciitilde: kink of 2.2\u00b0 at (393, 374)",
+   "at: kink of 4.3\u00b0 at (533, -104)",
+   "sterling: kink of 2.2\u00b0 at (122, 362)",
+   "sterling: kink of 2.1\u00b0 at (244, 358)",
+   "sterling: kink of 7.0\u00b0 at (190, 109)",
    "section: 2.0-unit stub at (375, 296)",
    "section: 2.0-unit stub at (129, 341)",
+   "registered: kink of 2.1\u00b0 at (411, 255)",
    "trademark: kink of 2.7\u00b0 at (85, 674)",
    "trademark: kink of 2.7\u00b0 at (253, 674)"
   ],
   "SemiBold": [
+   "K: kink of 1.6\u00b0 at (518, 114)",
    "K: kink of 7.1\u00b0 at (545, 95)",
    "K.straight: extreme without a point near (424.0, 695.5)",
-   "K.straight: kink of 8.6\u00b0 at (540, 99)",
+   "K.straight: kink of 5.2\u00b0 at (381, 661)",
+   "K.straight: kink of 1.8\u00b0 at (502, 126)",
+   "K.straight: kink of 8.7\u00b0 at (540, 99)",
    "K.straight: kink of 7.1\u00b0 at (545, 95)",
    "K.roman: extreme without a point near (444.5, 695.5)",
    "K.roman: kink of 4.6\u00b0 at (402, 661)",
    "K.roman: kink of 3.9\u00b0 at (422, 677)",
    "M: kink of 2.1\u00b0 at (67, 84)",
    "M: kink of 2.1\u00b0 at (805, 84)",
-   "cedillacomb: extreme without a point near (12, -107)",
-   "cedillacomb: kink of 5.4\u00b0 at (1, -125)",
+   "nine: kink of 2.2\u00b0 at (258, 77)",
+   "nine: kink of 4.6\u00b0 at (299, 89)",
+   "nine: kink of 3.5\u00b0 at (328, 119)",
+   "ampersand: kink of 1.8\u00b0 at (207, 343)",
+   "ampersand: kink of 2.4\u00b0 at (439, 279)",
+   "cedillacomb: kink of 2.7\u00b0 at (-47, -179)",
+   "cedillacomb: kink of 8.1\u00b0 at (-6, -128)",
    "AE: kink of 1.6\u00b0 at (192, 59)",
-   "Germandbls: extreme without a point near (515.0, 611.0)",
-   "Germandbls: extreme without a point near (484.5, 694.0)",
-   "Germandbls: kink of 5.1\u00b0 at (342, 110)",
-   "Germandbls: kink of 3.8\u00b0 at (500, 166)",
+   "Germandbls: kink of 2.7\u00b0 at (276, 18)",
+   "Germandbls: kink of 1.9\u00b0 at (345, 101)",
+   "Germandbls: kink of 2.5\u00b0 at (483, 122)",
+   "Germandbls: kink of 2.1\u00b0 at (507, 677)",
+   "Germandbls: kink of 4.4\u00b0 at (66, 475)",
+   "Germandbls: kink of 3.4\u00b0 at (451, 365)",
+   "asciitilde: kink of 2.2\u00b0 at (177, 330)",
+   "asciitilde: kink of 2.2\u00b0 at (393, 374)",
+   "at: kink of 4.3\u00b0 at (542, -104)",
+   "sterling: kink of 2.2\u00b0 at (131, 362)",
+   "sterling: kink of 2.1\u00b0 at (253, 358)",
+   "sterling: kink of 3.6\u00b0 at (199, 109)",
    "section: 2.0-unit stub at (385, 296)",
    "section: 2.0-unit stub at (139, 341)",
    "trademark: kink of 2.8\u00b0 at (341, 440)",
@@ -10950,7 +11048,7 @@
   ],
   "ampersand": [
    [
-    37,
+    36,
     24
    ],
    [
@@ -11031,7 +11129,7 @@
    ],
    [
     31,
-    26
+    25
    ],
    [
     12,
@@ -12084,16 +12182,16 @@
   ],
   "nine": [
    [
-    38,
-    42
+    39,
+    39
    ],
    [
     16,
-    19
+    17
    ],
    [
-    29,
-    33
+    30,
+    30
    ],
    [
     12,
@@ -12632,7 +12730,7 @@
     18
    ],
    [
-    40,
+    41,
     28
    ],
    [

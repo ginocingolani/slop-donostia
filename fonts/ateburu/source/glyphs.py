@@ -379,9 +379,10 @@ def r_leg(m, xj, yj, xe, name, turn=None):
             spine = [line_cubic((xj, yj), T)]
         spine += [arc_to(T, d, (xb, yb), (1, 0), R), flick]
         n = len(spine)
-        return stroke(spine, a, b, knots=[(0, 1.02), (n - 2, 0.99), (n - 1, 0.96), (n, 0.74)], name=name)
+        return stroke(spine, a, b, knots=[(0, 1.02), (n - 2, 0.99), (n - 1, 0.96), (n, 0.74)], name=name,
+                      fine=2 if k else 1)
     seg1 = hobby((xj, yj), (0.52 - 0.14 * k, -1), (xb, yb), (1, 0), tension=1.05 - 0.17 * k)
-    return stroke([seg1, flick], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name)
+    return stroke([seg1, flick], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name, fine=2 if k else 1)
 
 
 def lerp2(p, q, t):
@@ -450,7 +451,7 @@ def K(m):
     else:
         knots = [(0, 1.02), (1, 0.97)]
     arm = stroke([hobby(start, (0.80, 0.60 + 0.04 * k), top, (0.30 - 0.06 * k, 1), tension=1.0 - 0.08 * k)],
-                 a, b, knots=knots, name='K arm')
+                 a, b, knots=knots, name='K arm', fine=5 if k else 2)
     arm = diff(arm, rect(-100, C, W + 300, C + 300))
     leg = r_leg(m, s * 0.42, X[1] - b * 0.35, xe, 'K', turn=m.v(104, 120))
     parts = [stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg] + ([] if k else arm_top_serifs(m, arm, W))
@@ -521,7 +522,7 @@ def A(m):
     """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
     legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V"""
     C, h = m.C, m.hair
-    W = m.v(660, 760)
+    W = m.v(660, 800)               # 0.200: the Black wider than before, so its kite counter opens
     hc = h * 0.98
     thin, thick = m.thin * 0.92, m.thick * 0.96
     # solve the apex width so that the legs' inner edges meet just under the crown
@@ -546,8 +547,8 @@ def A(m):
     crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
     # the V crossbar: its upper edge leaves the legs at y_side and dips to y_mid in the middle
     hb = h * 0.88
-    y_side = m.v(364, 372)
-    y_mid = m.v(298, 304)                      # >= 0.40 cap: the counter stays open
+    y_side = m.v(364, 358)
+    y_mid = m.v(298, 292)                      # >= 0.40 cap: the counter stays open
     def lx(y):
         return l_hw + ax0 * y / C
     def rx(y):
@@ -802,7 +803,7 @@ def two(m):
         hobby((W * 0.49, C + o - b), (1, 0), (W - a, C * 0.69), (0, -1)),
         hobby((W - a, C * 0.69), (0, -1), (a * 0.9, h * 0.6), (-0.82, -1), tension=1.05),
     ]
-    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 1.04)], name='2')
+    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 1.04)], name='2', fine=2)
     body = diff(body, rect(-200, C * 0.55, a * 0.5, C + 200))
     base = bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen))
     return G(union([body, base]), W, None, None)
@@ -867,7 +868,7 @@ def five(m):
         hobby((W - a, ytop * 0.50), (0, -1), (W * 0.46, -o + b), (-1, 0)),
         hobby((W * 0.46, -o + b), (-1, 0), (a * 0.9, C * 0.21), (-0.2, 1)),
     ]
-    bowl_ = stroke(sp, a, b, knots=[(0, 0.84), (0.6, 0.96), (1, 1.0), (2, 1.02), (4, 0.92)], name='5')
+    bowl_ = stroke(sp, a, b, knots=[(0, 0.84), (0.6, 0.96), (1, 1.0), (2, 1.02), (4, 0.92)], name='5', fine=2)
     bowl_ = diff(bowl_, rect(-200, -200, a * 0.5, C * 0.45))
     shape = union([top, st, bowl_])
     shape = diff(shape, rect(-200, C * 0.45, xs, C + 200))
@@ -897,8 +898,22 @@ def six(m):
 
 @glyph('nine', 0x39)
 def nine(m):
+    """The 9 drawn as itself (0.100 turned the 6 round): a bowl a touch larger than the 6's, under the cap line, and
+    a tail that runs down its right side and turns into the same plumb-cut terminal as the 3 and the 5"""
+    C, o = m.C, m.o
     W = m.v(556, 616)
-    return G(rotate180(six_path(m, W), W / 2, m.C / 2), W, None, None)
+    a, b = m.v(60, 92), m.v(46, 68)
+    yr = m.v(258, 268)
+    cy = C - yr
+    bowl_ = ring(W / 2, cy, W / 2, yr + o, m.rside * 0.94, m.rtop * 0.98, k_out=0.58, k_in=0.56)
+    sp = [
+        hobby((W - a, cy), (0, -1), (W * 0.62, C * 0.14), (-0.55, -1), tension=1.0),
+        hobby((W * 0.62, C * 0.14), (-0.55, -1), (W * 0.40, -o + b), (-1, -0.05)),
+        hobby((W * 0.40, -o + b), (-1, -0.05), (a * 0.9, C * 0.20), (-0.25, 1)),
+    ]
+    tail = stroke(sp, a, b, knots=[(0, 1.02), (1, 1.0), (2, 0.96), (3, 0.9)], name='9', fine=2)
+    tail = diff(tail, rect(-200, -200, a * 0.5, C * 0.45))
+    return G(union([bowl_, tail]), W, None, None)
 
 
 @glyph('seven', 0x37)
@@ -917,7 +932,7 @@ def seven(m):
         hobby(p1, (-0.62, -1), p2, (0, -1), tension=1.0),
         line_cubic(p2, (xf, -40)),
     ]
-    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 1.0)], name='7')
+    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 1.0)], name='7', fine=2)
     neck = diff(neck, rect(-200, -300, W + 200, 0))
     neck = diff(neck, rect(-200, C, W + 200, C + 300))
     foot = stem(xf - a, xf + a, 0, m.v(130, 140), m.serif, tl=False, tr=False)
@@ -1155,8 +1170,16 @@ def ampersand(m):
     ]
     sp = [hobby(p, tp, q, tq) for (p, tp), (q, tq) in zip(pts, pts[1:])]
     body = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.02), (3, 0.98), (4, 0.84), (5, 0.80), (6, 0.84),
-                                   (7, 1.0), (8, 0.98), (9, 0.80)], name='&')
+                                   (7, 1.0), (8, 0.98), (9, 0.80)], name='&', fine=3)
+    # the arm's end: cut level at its top, with a short spur to the right like the serifs' tips
     body = diff(body, rect(W * 0.70, C * 0.52, W + 200, C * 0.66))
+    xe = edge_x(body, C * 0.52 - 1, 'max')
+    xs = edge_x(body, C * 0.52 - 1, 'min') if xe else None
+    if xe:
+        e = m.serif.e * 0.9
+        spur = polygon([(xs + 10, C * 0.52), (xe + e, C * 0.52), (xe + e, C * 0.52 - m.serif.t),
+                        (xe - 4, C * 0.52 - m.serif.h * 0.9), (xs + 10, C * 0.52 - m.serif.h * 0.9)])
+        body = union([body, spur])
     return G(body, W, None, m.v(24, 18))
 
 

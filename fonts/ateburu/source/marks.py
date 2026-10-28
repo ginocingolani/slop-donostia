@@ -94,7 +94,7 @@ def tilde(m):
         hobby((-w * 0.17, y0 + b + amp), (1, 0), (w * 0.17, y0 + b), (1, 0)),
         hobby((w * 0.17, y0 + b), (1, 0), (-x0, y0 + b + amp - 2), (0.55, 1)),
     ]
-    return G(stroke(sp, a, b, knots=[(0, 0.9), (1, 1.0), (2, 1.0), (3, 0.9)], name='tilde'), 0, 0, 0)
+    return G(stroke(sp, a, b, knots=[(0, 0.9), (1, 1.0), (2, 1.0), (3, 0.9)], name='tilde', fine=2), 0, 0, 0)
 
 
 @mark('macroncomb', 0x0304, 'top')
@@ -150,7 +150,7 @@ def cedilla(m):
         hobby((r * 0.62, -84), (1, -0.25), (r * 0.30, -150 - 6 * k), (-1, -0.55)),
         hobby((r * 0.30, -150 - 6 * k), (-1, -0.55), (-m.v(64, 70), -176 + b * 0.8), (-1, 0.08)),
     ]
-    return G(stroke(sp, a, b, knots=[(0, 1.02), (1, 1.08), (2, 1.0), (3, 0.78)], name='cedilla'), 0, 0, 0)
+    return G(stroke(sp, a, b, knots=[(0, 1.02), (1, 1.08), (2, 1.0), (3, 0.78)], name='cedilla', fine=4), 0, 0, 0)
 
 
 @mark('commaaccentcomb', 0x0326, 'bottom')
@@ -173,7 +173,7 @@ def ogonek(m):
         hobby((0, 36), (-0.18, -1), (-m.v(46, 52), -96), (0.05, -1)),
         hobby((-m.v(46, 52), -96), (0.05, -1), (m.v(40, 46) + 6 * k, -172), (1, 0.12)),
     ]
-    return G(stroke(sp, a, b, knots=[(0, 1.04), (1, 1.0), (2, 0.66)], name='ogonek'), 0, 0, 0)
+    return G(stroke(sp, a, b, knots=[(0, 1.04), (1, 1.0), (2, 0.66)], name='ogonek', fine=2), 0, 0, 0)
 
 
 @mark('caroncomb.alt', None, 'caron')
