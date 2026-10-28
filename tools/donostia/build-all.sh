@@ -38,6 +38,7 @@ $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js
 $NODE "$HERE/bake-alderdi.mjs"       # js/donostia/data-alderdi.js (Alderdi Eder's gardens)
+$NODE "$HERE/bake-seamarks.mjs"      # js/donostia/data-seamarks.js (the aids to navigation: lighthouses, leading lights, buoys)
 # the port's boats: digitised again from the orthophoto when the raw cache has it, else baked from the committed JSON
 if [ -s "$HERE/raw/ortho/ortho2025-port_x-350_z-300.jpg" ]; then
   $NODE "$HERE/digitise-boats.mjs"   # tools/donostia/data/port_boats.json
