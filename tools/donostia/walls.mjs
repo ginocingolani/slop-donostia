@@ -329,9 +329,15 @@ export function detectStairs({ dtm, walls, loadLayer, scanRings, skip = () => fa
     for (const r of f.g) {
       const n = r.length / 2;
       if (n < 3) continue;
-      let area = 0, cx = 0, cz = 0;
-      for (let i = 0, j = n - 1; i < n; j = i++) area += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
+      let area = 0, perimeter = 0, cx = 0, cz = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        area += r[2 * j] * r[2 * i + 1] - r[2 * i] * r[2 * j + 1];
+        perimeter += Math.hypot(r[2 * i] - r[2 * j], r[2 * i + 1] - r[2 * j + 1]);
+      }
       if (Math.abs(area / 2) < 0.5) continue;
+      // (nor a sliver under STAIR_THIN wide, a flight's parapet or edge the map draws as stairs: built as a slab at the
+      // flight's level it hung in the air over the steps, the Pico del Loro's curved flight's)
+      if (Math.abs(area) / perimeter < STAIR_THIN / 2) continue;
       for (let k = 0; k < r.length; k += 2) { cx += r[k]; cz += r[k + 1]; }
       cx /= n; cz /= n;
       if (skip(cx, cz)) continue;
