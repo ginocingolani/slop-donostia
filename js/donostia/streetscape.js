@@ -268,9 +268,11 @@ function benchGeometry() {
 }
 
 // The plinth's section across the railing [off (m, + to the sea), dy (m, above the promenade)], from deep in the paving
-// on the land side, over the chamfered top, out round the little cornice and down the wall's face
+// on the land side, over the chamfered top, out round the little cornice and down behind the wall's face. On a shore wall
+// the railing's line keeps 19-25 cm behind the masonry (tools/donostia/bake-streetscape.mjs): the skirt down from the
+// cornice stays 15 cm out, behind the face (where it reached past it, it showed as a flat grey board in the masonry)
 const PLINTH = [[-0.24, -0.5], [-0.24, 0.17], [-0.19, PLINTH_H], [0.21, PLINTH_H], [0.21, 0.12], [0.27, 0.08], [0.27, -0.02],
-  [0.21, -0.06], [0.21, -1.6]];
+  [0.15, -0.06], [0.15, -1.6]];
 const MONUMENT_INSET = [0.5, 1.2, 1.2]; // the candelabra's & obelisks' axes stand this far inland of the railing's line
 
 // La Concha's barandilla and everything on its line, from the baked runs ([x, y, z] cm, y the promenade; travelling
