@@ -7,8 +7,9 @@ import { pointInRing } from './geom.js';
 // in the LiDAR terrain.
 //
 // The lighthouse (lit September 1864): a white two-storey keeper's house with a short polygonal tower on its seaward
-// (north) side; 10 m to the top, focal plane 53 m above the sea, Fl W 5 s, 9 nm (es.wikipedia "Faro de la isla de Santa
-// Clara"; OSM way 28161366). Since 2021 Cristina Iglesias' "Hondalea" fills the house; its outside is unchanged.
+// (north) side; 10 m to the top, focal plane 53 m above the sea (es.wikipedia "Faro de la isla de Santa Clara"; OSM way
+// 28161366). Its light, D 1482 in js/donostia/data-seamarks.js: Fl W 5 s, 1 s flashes, 9 nm (NGA Pub. 113, OSM), a
+// lantern that flashes in place. Since 2021 Cristina Iglesias' "Hondalea" fills the house; its outside is unchanged.
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['santa-klara-itsasargia'] and ctx = { GEO, terrain, kit }.
 
@@ -169,7 +170,7 @@ export function build(sites, ctx) {
     bin.add(M.paint, WORLD.cylinder(tx, tz, 0.1, lr + 0.25, lanternTop, lanternTop + 0.7, 16), DARK);
     bin.add(M.metal, WORLD.box(tx, tz, 0.04, 0.04, lanternTop + 0.7, lanternTop + 1.2), DARK);
     const focal = (top + 0.75 + lanternTop) / 2;
-    light = createLighthouseLight({ x: tx, y: focal, z: tz, radius: lr, period: 5, flashes: [0], flashLength: 0.7 });
+    light = createLighthouseLight({ x: tx, y: focal, z: tz, radius: lr, ref: 'D 1482' });
     bin.add(light.lantern, WORLD.cylinder(tx, tz, lr, lr, top + 0.75, lanternTop, 16));
   }
 
@@ -202,7 +203,7 @@ export function build(sites, ctx) {
   bin.build(group);
   if (light) {
     group.add(light.object);
-    relayUpdate(group, (dt, elapsed, camera) => light.update(elapsed, camera));
+    relayUpdate(group, (dt, elapsed, camera) => light.update(camera));
   }
   return group;
 }

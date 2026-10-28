@@ -1,18 +1,21 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  Fn, float, vec3, vec4, uniform, uv, mix, max, abs, dot, pow, clamp, floor, fract, length, normalize, smoothstep, mrt,
+  Fn, float, vec3, vec4, uniform, uv, mix, max, abs, dot, pow, floor, fract, normalize, smoothstep, mrt,
   positionWorld, normalWorld, cameraPosition, mx_noise_float
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
 import { IGELDO } from '../data-funicular.js';
+import { SEAMARKS } from '../data-seamarks.js';
+import { seamarkClock, lightLevel, beamAzimuth } from '../seamark-timing.js';
 import { ringArea, wound, insetRing, simplify, clipRing, hipRoof, pointInRing } from './geom.js';
 
 // js/donostia/landmarks/igeldo.js
 // Monte Igeldo: the 1855 lighthouse on the cliff, El Torreón above the amusement park, the Montaña Suiza scenic railway
 // round the summit and the 1912 funicular climbing from Ondarreta, with its two cars running. The first half of the
 // file is a small kit shared with the other western landmarks (santa-klara.js, miramar.js, haizearen-orrazia.js,
-// ulia-dorrea.js): vertex-coloured materials, parts merged per material, a sweep along a path and a lighthouse light.
+// ulia-dorrea.js): vertex-coloured materials, parts merged per material, a sweep along a path and a lighthouse's lantern
+// and beams (their glow is js/donostia/seamarks.js's, with the other aids to navigation).
 //
 // build(sites, ctx) receives the GEO.landmarks entries ['igeldo-itsasargia', 'igeldo-torreoia'] and
 // ctx = { GEO, terrain, kit }; the funicular, turrets and the coaster's loop come from js/donostia/data-funicular.js
@@ -316,7 +319,8 @@ let beamMaterial = null;
 function getBeamMaterial() {
   if (beamMaterial) return beamMaterial;
   // A sweeping beam in the night air: an open cone (uv.y = 0 at the lantern, 1 at the far end), brightest along its
-  // axis as seen from the camera, fading with distance (after tsl-materials.js's createGodRayMaterial)
+  // axis as seen from the camera, fading with distance (after tsl-materials.js's createGodRayMaterial). Seen from well
+  // above, a beam in the haze is a faint shaft: a subtle sweep from the air.
   const mat = new THREE.MeshBasicNodeMaterial({
     transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
   });
@@ -327,7 +331,8 @@ function getBeamMaterial() {
     const viewDir = normalize(cameraPosition.sub(positionWorld));
     const edge = smoothstep(0.05, 0.7, abs(dot(viewDir, normalWorld)));
     const fade = pow(float(1.0).sub(along), 1.7).mul(smoothstep(0.0, 0.02, along));
-    return fade.mul(edge).mul(nightOf()).mul(0.14);
+    const above = mix(float(0.3), float(1.0), smoothstep(0.55, 0.12, abs(viewDir.y)));
+    return fade.mul(edge).mul(above).mul(nightOf()).mul(0.1);
   })();
   beamMaterial = mat;
   return mat;
@@ -340,89 +345,57 @@ function createLanternMaterial(flash) {
   return mat;
 }
 
-function createFlareMaterial(flash) {
-  const mat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
-  mat.mrtNode = effectMRT;
-  mat.colorNode = vec3(1.0, 0.92, 0.76).mul(3.0);
-  mat.opacityNode = Fn(() => {
-    const r = length(uv().sub(0.5)).mul(2.0);
-    const glow = pow(clamp(float(1.0).sub(r), 0.0, 1.0), 2.6);
-    return glow.mul(flash).mul(nightOf());
-  })();
-  return mat;
-}
-
-// A lighthouse's light at (x, y, z) (the focal plane), with a lantern of `radius`. The character repeats every
-// `period` s with flashes starting at `flashes` (s into the period) and lasting `flashLength` s. With `beams`, the
-// flashes come from a rotating optic: one beam per flash, sweeping clockwise from above, so a viewer anywhere sees
-// the published sequence; without, the lamp just flashes. Returns the lantern material, an Object3D with the beams &
-// flare, and update(elapsed, camera).
-export function createLighthouseLight({ x, y, z, radius, period, flashes, flashLength, beams = false, beamLength = 280 }) {
+// The light of a lighthouse at (x, y, z) (the focal plane), with a lantern of `radius`; `ref`, its Admiralty number in
+// js/donostia/data-seamarks.js, gives its character. The lights' clock and a character's sums are
+// js/donostia/seamark-timing.js's, so the lantern flashes with the light's glow, which js/donostia/seamarks.js draws
+// at the focal plane this reports (userData.seamark). With `beams` (a revolving optic), one beam per flash sweeps
+// round clockwise seen from above, so a viewer anywhere sees the published sequence; without, the lamp just flashes.
+// Returns the lantern material, an Object3D with the beams, and update(camera).
+export function createLighthouseLight({ x, y, z, radius, ref, beams = false, beamLength = 280 }) {
+  const light = SEAMARKS.find((l) => l.ref === ref);
+  if (!light) throw new Error(`no light ${ref} in data-seamarks.js`);
   const group = new THREE.Group();
   group.name = 'LighthouseLight';
+  group.userData.seamark = { ref, x, y, z, radius };
   const flash = uniform(0);
   const lantern = createLanternMaterial(flash);
-  const omega = (2 * Math.PI) / period;
-  const halfWidth = Math.max(0.03, (omega * flashLength) / 2);
-  const offsets = flashes.map((t) => -omega * t);
-  let beamMesh = null;
+  const omega = (2 * Math.PI) / light.period;
+  let beamMesh = null, spread = 0;
   if (beams) {
-    const cones = offsets.map((off) => {
+    const cones = [];
+    for (let k = 0; k < light.on.length; k += 2) {
+      const a = light.on[k], b = light.on[k + 1];
+      const halfWidth = Math.max(0.03, (omega * (b - a)) / 2);
+      spread = Math.max(spread, 2 * halfWidth + 0.05);
       const g = new THREE.CylinderGeometry(beamLength * Math.tan(halfWidth), radius * 0.7, beamLength, 24, 1, true);
       g.rotateZ(-Math.PI / 2);
       g.translate(beamLength / 2, 0, 0);
-      g.rotateY(-off);
-      return g;
-    });
+      // each beam lags the optic's zero by the middle of its flash
+      g.rotateY((omega * (a + b)) / 2);
+      cones.push(g);
+    }
     beamMesh = new THREE.Mesh(mergeGeometries(cones, false), getBeamMaterial());
     beamMesh.position.set(x, y, z);
     beamMesh.castShadow = beamMesh.receiveShadow = false;
     beamMesh.renderOrder = 2;
     group.add(beamMesh);
   }
-  const sprite = new THREE.Sprite(createFlareMaterial(flash));
-  sprite.position.set(x, y, z);
-  sprite.renderOrder = 3;
-  group.add(sprite);
 
-  const TAU = 2 * Math.PI;
   let frames = 0;
-  const update = (elapsed, camera) => {
+  const update = (camera) => {
+    const t = seamarkClock();
     const cam = camera.position;
     const dx = cam.x - x, dy = cam.y - y, dz = cam.z - z;
-    const flat = Math.sqrt(dx * dx + dz * dz), dist = Math.sqrt(flat * flat + dy * dy);
-    let f = 0;
-    if (beams) {
-      const theta = (omega * elapsed) % TAU;
-      beamMesh.rotation.y = -theta;
-      const psi = Math.atan2(dz, dx);
-      for (let k = 0; k < offsets.length; k++) {
-        let d = theta + offsets[k] - psi;
-        d -= TAU * Math.round(d / TAU);
-        f += Math.exp(-(d / halfWidth) * (d / halfWidth));
-      }
+    let f = lightLevel(light, t, Math.atan2(dz, dx));
+    if (beamMesh) {
+      beamMesh.rotation.y = -beamAzimuth(light, t);
       // the beams are flat cones: a viewer far above or below their plane catches little of them
-      const elev = Math.atan2(dy, flat) / (2 * halfWidth + 0.05);
+      const elev = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) / spread;
       f *= Math.exp(-elev * elev);
-    } else {
-      const p = elapsed % period;
-      for (let k = 0; k < flashes.length; k++) {
-        const t = p - flashes[k];
-        if (t > 0 && t < flashLength) f += Math.min(1, t / 0.08) * Math.min(1, (flashLength - t) / 0.15);
-      }
+      // they stay visible for the first frames so the pipeline warm-up compiles them
+      beamMesh.visible = frames++ < 4 || cityUniforms.uInteriorGlow.value > 0.85;
     }
-    flash.value = Math.min(1, f);
-    // the flare sits just in front of the lantern (so the glass doesn't hide it) at a steady size on screen
-    const push = (radius + 0.8) / Math.max(dist, 1e-3);
-    sprite.position.set(x + dx * push, y + dy * push, z + dz * push);
-    const size = Math.min(70, Math.max(3, dist * 0.028));
-    sprite.scale.set(size, size, 1);
-    // everything stays visible for the first frames so the pipeline warm-up compiles it
-    const night = cityUniforms.uInteriorGlow.value > 0.85;
-    const warm = frames < 4;
-    frames++;
-    if (beamMesh) beamMesh.visible = warm || night;
-    sprite.visible = warm || (night && f > 0.01);
+    flash.value = f;
   };
   return { lantern, object: group, update };
 }
@@ -437,7 +410,8 @@ const STEEL = rgb(0x6b6f72);
 
 // Faro de Igueldo (Manuel Peironcely, 1854-55): a white two-storey keeper's house with a cylindrical tower on its
 // seaward end; light 13 m above the ground, focal plane 130 m above the sea (es.wikipedia "Faro del monte Igueldo";
-// OSM node 361064995 gives 134 m). Character Fl(2+1) W 15 s: flashes 0.4 s long, eclipses of 1.8, 6 and 6 s, 26 nm.
+// OSM node 361064995, NGA Pub. 113 and the INE give 134 m). Its light, D 1483 in js/donostia/data-seamarks.js: Fl(2+1)
+// W 15 s, flashes 0.4 s long, eclipses of 1.8, 6 and 6 s, 26 nm, from a revolving optic.
 function buildLighthouse(site, ctx, bin, glass) {
   const { kit, GEO } = ctx;
   const ring = site.footprint;
@@ -517,9 +491,7 @@ function buildLighthouse(site, ctx, bin, glass) {
   bin.add(M.metal, ball, DARK_GREEN);
   bin.add(M.metal, WORLD.box(tx, tz, 0.04, 0.04, lanternTop + 1.0, lanternTop + 1.8), DARK_GREEN);
 
-  const light = createLighthouseLight({
-    x: tx, y: focal, z: tz, radius: 1.12, period: 15, flashes: [0, 2.2, 8.6], flashLength: 0.4, beams: true, beamLength: 300
-  });
+  const light = createLighthouseLight({ x: tx, y: focal, z: tz, radius: 1.12, ref: 'D 1483', beams: true, beamLength: 300 });
   const lens = new THREE.CylinderGeometry(1.12, 1.12, lanternTop - top - 0.95, 20);
   lens.translate(tx, (top + 0.95 + lanternTop) / 2, tz);
   bin.add(light.lantern, lens);
@@ -1319,7 +1291,7 @@ export function build(sites, ctx) {
   if (lighthouse?.footprint) {
     const light = buildLighthouse(lighthouse, ctx, bin, glass);
     group.add(light.object);
-    updaters.push((dt, elapsed, camera) => light.update(elapsed, camera));
+    updaters.push((dt, elapsed, camera) => light.update(camera));
   }
   if (torreon?.footprint) buildTorreon(torreon, ctx, bin, glass);
   const funicular = buildFunicular(ctx, bin);
