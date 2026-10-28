@@ -54,7 +54,7 @@ const night = () => smoothstep(0.55, 1.2, cityUniforms.uInteriorGlow);
 function createGlowMaterial(uClock, seaLevel) {
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   mat.fog = false; // the haze would add its colour too: the glows dim with distance themselves
-  // as the lighthouses' flares (js/donostia/landmarks/igeldo.js): leave the normal & metalness buffers the SSR pass reads
+  // as Igeldo's beams (js/donostia/landmarks/igeldo.js): leave the normal & metalness buffers the SSR pass reads
   mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
   const P = attribute('aSeamarkPos', 'vec4'); // x, y, z of the focal plane, lantern radius (m)
   const C = attribute('aSeamarkColour', 'vec4'); // linear rgb, range (nm)
@@ -164,19 +164,18 @@ class Parts {
     this.geos = [];
   }
 
-  add(geo, hex, x, y, z, { floating = false, rotateY = 0 } = {}) {
+  add(geo, hex, x, y, z, { floating = false } = {}) {
     const g = geo.index ? geo.toNonIndexed() : geo;
-    if (rotateY) g.rotateY(rotateY);
     g.translate(x, y, z);
     g.deleteAttribute('uv');
     const n = g.attributes.position.count, c = new THREE.Color(hex);
-    const colour = new Float32Array(n * 3), float2 = new Float32Array(n * 2);
+    const colour = new Float32Array(n * 3), afloat = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) {
       colour.set([c.r, c.g, c.b], i * 3);
-      float2.set([floating ? 1 : 0, x], i * 2);
+      afloat.set([floating ? 1 : 0, x], i * 2);
     }
     g.setAttribute('color', new THREE.BufferAttribute(colour, 3));
-    g.setAttribute('aSeamarkFloat', new THREE.BufferAttribute(float2, 2));
+    g.setAttribute('aSeamarkFloat', new THREE.BufferAttribute(afloat, 2));
     this.geos.push(g);
   }
 
@@ -236,7 +235,7 @@ function carriers(lights, terrain, anchors) {
       if (mount.pattern === 'vertical') {
         // vertical stripes: eight staves of the pillar, alternately the two colours
         for (let k = 0; k < 8; k++) {
-          const g = new THREE.CylinderGeometry(0.28, 0.45, y - 1.2, 8, 1, true, (k * Math.PI) / 4, Math.PI / 4);
+          const g = new THREE.CylinderGeometry(0.28, 0.45, y - 1.2, 2, 1, true, (k * Math.PI) / 4, Math.PI / 4);
           parts.add(g, k % 2 ? c1 : c0, x, (0.8 + y - 0.4) / 2, z, opts);
         }
       } else parts.cylinder(x, z, 0.45, 0.28, 0.8, y - 0.4, c0, opts);
