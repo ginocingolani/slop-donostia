@@ -11,6 +11,14 @@
     font-weight: 600 900;
     font-display: block;
   }
+  /* The same file under a second name and URL, for the "with the feature" side of the feature table: Chrome on macOS
+     can reuse a word's shaping across font-feature-settings in one font (see README.md, "Known issue") */
+  @font-face {
+    font-family: 'Ateburu FX';
+    src: url('webfonts/Ateburu-Variable.woff2?fx') format('woff2');
+    font-weight: 600 900;
+    font-display: block;
+  }
   :root {
     --paper: #f3efe6;
     --ink: #17191c;
@@ -41,6 +49,7 @@
   }
   section { padding: 36px 0; border-bottom: 1px solid var(--rule); }
   .ab { font-family: 'Ateburu', serif; }
+  .fx { font-family: 'Ateburu FX', serif; }
   .w600 { font-weight: 600; } .w750 { font-weight: 750; } .w900 { font-weight: 900; }
   .identity { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
   .identity figure { margin: 0; border: 1px solid var(--rule); padding: 10px 12px 12px; background: rgba(255,255,255,0.35); }
@@ -66,6 +75,13 @@
   .controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 0 0 16px; font-size: 13px; color: var(--muted); }
   .controls input[type=range] { width: 220px; }
   .waterfall .line { letter-spacing: 0.02em; }
+  .curv .line { font-size: 56px; letter-spacing: 0.02em; }
+  .features { width: 100%; border-collapse: collapse; }
+  .features td { border-top: 1px solid var(--rule); padding: 10px 10px 8px 0; vertical-align: baseline; }
+  .features td.k { font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); width: 190px; }
+  /* no letter-spacing here: browsers turn calt off under letter-spacing */
+  .features td.s { font-size: 30px; line-height: 1.2; font-weight: 750; }
+  .features td.s .x { display: block; color: #8a4f17; }
   footer { padding: 28px 0 60px; color: var(--muted); font-size: 13px; }
   footer p { max-width: 820px; }
   a { color: inherit; }
@@ -76,8 +92,9 @@
   <h1>Ateburu</h1>
   <p class="lede">A display face drawn from the carved inscriptions of the Basque Country: the lintels, stelae and
   slabs of the 16th to 19th centuries, as Louis Colas drew them in <i>La tombe basque</i> (1923). Heavy, wide, low in
-  contrast, with short flared serifs; its Basque identity rides on a handful of letters. Variable weight 600–900.
-  Version 0.100. SIL Open Font License 1.1, no Reserved Font Name.</p>
+  contrast, with short flared serifs; its Basque identity rides on a handful of letters, and the stones' other habits
+  (the dotted i, the minuscules among capitals, the nexus letters) wait behind OpenType features. Variable weight
+  600–900 and curvature 0–100. Version 0.200. SIL Open Font License 1.1, no Reserved Font Name.</p>
 </header>
 
 <section class="wrap">
@@ -85,7 +102,7 @@
   <div class="identity">
     <figure><div class="g w750">A</div><figcaption>Crowned A: a flat bar over the apex, reaching left, and a crossbar that dips into a V (Colas figs. 83, 85, 126, 283).</figcaption></figure>
     <figure><div class="g w750">R</div><figcaption>Long leg that runs out past the bowl and flicks up (figs. 83, 85, 283; the flick is the 20th-c. sign-painters').</figcaption></figure>
-    <figure><div class="g w750">K</div><figcaption>Curved arm and leg, owned as a modern convention: old Basque spelling rarely used K.</figcaption></figure>
+    <figure><div class="g w750">K</div><figcaption>Curved arm from an open crotch, R's leg and flick: owned as a modern convention, since old Basque spelling rarely used K.</figcaption></figure>
     <figure><div class="g w750">E</div><figcaption>Wedge-ended arms, the middle one shorter (figs. 83, 85, 127, 283).</figcaption></figure>
     <figure><div class="g w750">G</div><figcaption>Spurred G with a short bar (figs. 83, 85, 283).</figcaption></figure>
     <figure><div class="g w750">4</div><figcaption>Open 4, the bar running on past the stem (figs. 126, 281, 541).</figcaption></figure>
@@ -122,10 +139,18 @@
   </div>
 </section>
 
+<section class="wrap curv">
+  <h2>Curvature · CURV 0 (Straight), 50 (Carved), 100 (Curved) · Bold 700</h2>
+  <div class="line ab" style="font-weight:700; font-variation-settings:'CURV' 0">HAVDA·ERROTA·SENPERECO</div>
+  <div class="line ab" style="font-weight:700; font-variation-settings:'CURV' 50">HAVDA·ERROTA·SENPERECO</div>
+  <div class="line ab" style="font-weight:700; font-variation-settings:'CURV' 100">HAVDA·ERROTA·SENPERECO</div>
+</section>
+
 <section class="wrap waterfall">
-  <h2>Weight</h2>
+  <h2>Weight and curvature</h2>
   <div class="controls">
     <label>wght <input type="range" id="wght" min="600" max="900" value="750" step="1"> <output id="wout">750</output></label>
+    <label>CURV <input type="range" id="curv" min="0" max="100" value="0" step="1"> <output id="cout">0</output></label>
   </div>
   <div id="vary" class="ab" style="font-weight:750">
     <div class="line" style="font-size:72px">HAVDA·ERROTA·1652</div>
@@ -135,7 +160,37 @@
 </section>
 
 <section class="wrap">
-  <h2>Glyph set (v0.1) · lowercase letters map to the same capitals</h2>
+  <h2>OpenType features · above without, below with (Bold 750)</h2>
+  <table class="features">
+    <tr><td class="k">calt (on by default)<br>A's crown after T V W Y; short R, K legs</td>
+        <td class="s"><span class="ab" style="font-feature-settings:'calt' 0">TALO VALLE YATE ARRATE BIKTOR</span><span class="x fx">TALO VALLE YATE ARRATE BIKTOR</span></td></tr>
+    <tr><td class="k">dlig<br>nexus letters</td>
+        <td class="s"><span class="ab">KONTXA HAITZ ETSAI TALAIA TERRAZA TRENA NEKANE ANDRE MENDI DENDA LANDA MARIA</span><span class="x fx" style="font-feature-settings:'dlig'">KONTXA HAITZ ETSAI TALAIA TERRAZA TRENA NEKANE ANDRE MENDI DENDA LANDA MARIA</span></td></tr>
+    <tr><td class="k">ss01<br>dotted i</td>
+        <td class="s"><span class="ab">DONOSTIA IBAIA Ibaia PÍO</span><span class="x fx" style="font-feature-settings:'ss01'">DONOSTIA IBAIA Ibaia PÍO</span></td></tr>
+    <tr><td class="k">ss01 + cv01 1 + cv02 1<br>tall stem, round dot</td>
+        <td class="s"><span class="ab">ZURRIOLA AIETE ÍÑIGO</span><span class="x fx" style="font-feature-settings:'ss01', 'cv01' 1, 'cv02' 1">ZURRIOLA AIETE ÍÑIGO</span></td></tr>
+    <tr><td class="k">ss02<br>small o after L T K R</td>
+        <td class="s"><span class="ab">LO TO KOLDO ROSA</span><span class="x fx" style="font-feature-settings:'ss02'">LO TO KOLDO ROSA</span></td></tr>
+    <tr><td class="k">ss03<br>inscription unicase (lowercase input)</td>
+        <td class="s"><span class="ab">Hemen bete dena · zahar</span><span class="x fx" style="font-feature-settings:'ss03'">Hemen bete dena · zahar</span></td></tr>
+    <tr><td class="k">ss04<br>Roman A, R, K</td>
+        <td class="s"><span class="ab">ARKAITZ PARKEA</span><span class="x fx" style="font-feature-settings:'ss04'">ARKAITZ PARKEA</span></td></tr>
+    <tr><td class="k">ss05<br>plain figures</td>
+        <td class="s"><span class="ab">1457 · 2075</span><span class="x fx" style="font-feature-settings:'ss05'">1457 · 2075</span></td></tr>
+    <tr><td class="k">ss06<br>curiosities</td>
+        <td class="s"><span class="ab">EGUNSENTIA DUDA</span><span class="x fx" style="font-feature-settings:'ss06'">EGUNSENTIA DUDA</span></td></tr>
+    <tr><td class="k">ss08 (or cv03 1)<br>straight-armed K</td>
+        <td class="s"><span class="ab">KALEA KOSTALDEA</span><span class="x fx" style="font-feature-settings:'ss08'">KALEA KOSTALDEA</span></td></tr>
+    <tr><td class="k">tnum<br>tabular figures</td>
+        <td class="s"><span class="ab">1111 · 4747 · 1919</span><span class="x fx" style="font-feature-settings:'tnum'">1111 · 4747 · 1919</span></td></tr>
+    <tr><td class="k">locl, lang="ca"<br>L·L → Ŀ L</td>
+        <td class="s"><span class="ab" lang="es">COL·LEGI PAL·LA</span><span class="x fx" lang="ca">COL·LEGI PAL·LA</span></td></tr>
+  </table>
+</section>
+
+<section class="wrap">
+  <h2>Glyph set (v0.2) · GF Latin Core and Ꝑ · lowercase letters map to the same capitals</h2>
   <div class="grid" id="grid"></div>
 </section>
 
@@ -194,7 +249,18 @@
   fill(document.getElementById('dark600'), 600);
   fill(document.getElementById('light900'), 900);
 
-  const SET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZŒ0123456789ÁÉÍÓÚÜÑÇÀÈÒ·.,:;!?¡¿\'’‘"“”-–—()/&';
+  // every codepoint but the lowercase letters, which show their capitals; combining marks on a dotted circle
+  const SET = ["!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4",
+    "5", "6", "7", "8", "9", ":", ";", "<", "=", ">", "?", "@", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K",
+    "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^", "_", "`", "{", "|",
+    "}", "~", "¡", "¢", "£", "¥", "§", "¨", "©", "ª", "«", "®", "¯", "°", "´", "¶", "·", "¸", "º", "»", "¿", "À", "Á",
+    "Â", "Ã", "Ä", "Å", "Æ", "Ç", "È", "É", "Ê", "Ë", "Ì", "Í", "Î", "Ï", "Ð", "Ñ", "Ò", "Ó", "Ô", "Õ", "Ö", "×", "Ø",
+    "Ù", "Ú", "Û", "Ü", "Ý", "Þ", "ß", "÷", "Ā", "Ă", "Ą", "Ć", "Ĉ", "Ċ", "Č", "Ď", "Đ", "Ē", "Ĕ", "Ė", "Ę", "Ě", "Ĝ",
+    "Ğ", "Ġ", "Ģ", "Ĥ", "Ħ", "Ĩ", "Ī", "Ĭ", "Į", "İ", "Ĵ", "Ķ", "Ĺ", "Ļ", "Ľ", "Ŀ", "Ł", "Ń", "Ņ", "Ň", "Ō", "Ŏ", "Ő",
+    "Œ", "Ŕ", "Ŗ", "Ř", "Ś", "Ŝ", "Ş", "Š", "Ţ", "Ť", "Ũ", "Ū", "Ŭ", "Ů", "Ű", "Ų", "Ŵ", "Ŷ", "Ÿ", "Ź", "Ż", "Ž", "Ș",
+    "Ț", "ȷ", "ˆ", "ˇ", "˘", "˙", "˚", "˛", "˜", "˝", "◌̀", "◌́", "◌̂", "◌̃", "◌̄", "◌̆", "◌̇", "◌̈", "◌̊", "◌̋", "◌̌",
+    "◌̦", "◌̧", "◌̨", "Ẁ", "Ẃ", "Ẅ", "ẞ", "Ỳ", "–", "—", "‘", "’", "‚", "“", "”", "„", "•", "…", "‹", "›", "€", "™",
+    "−", "◌", "Ꝑ"];
   const grid = document.getElementById('grid');
   for (const ch of SET) {
     const cell = document.createElement('div');
@@ -204,15 +270,22 @@
     c.textContent = ch;
     const u = document.createElement('div');
     u.className = 'u';
-    u.textContent = 'U+' + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+    const cp = [...ch].pop().codePointAt(0);
+    u.textContent = 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
     cell.append(c, u);
     grid.append(cell);
   }
 
+  const vary = document.getElementById('vary');
   const wght = document.getElementById('wght');
+  const curv = document.getElementById('curv');
   wght.addEventListener('input', () => {
-    document.getElementById('vary').style.fontWeight = wght.value;
+    vary.style.fontWeight = wght.value;
     document.getElementById('wout').textContent = wght.value;
+  });
+  curv.addEventListener('input', () => {
+    vary.style.fontVariationSettings = `'CURV' ${curv.value}`;
+    document.getElementById('cout').textContent = curv.value;
   });
 </script>
 </body>
