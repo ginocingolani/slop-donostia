@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { uniform } from 'three/tsl';
+import { float, vec3, vec4, attribute, uniform, abs, smoothstep, mrt } from 'three/tsl';
+import { cityUniforms } from '../city-uniforms.js';
 import { FERRY } from './data-boats.js';
 import { Builder, addHull, V, P, HULL, DECK, GLASS, STEEL, DARK, LIGHT, SLOTS, createBoatMaterial, srgb } from './boats.js';
 import { ferryRounds, SERVICE } from './ferry-timeline.js';
@@ -13,7 +14,7 @@ import { ferryRounds, SERVICE } from './ferry-timeline.js';
 // passenger deck of benches under a white roof on posts with solar panels & life-raft canisters on it, the wheelhouse
 // forward under the roof's front edge, steel rails round the bow. Scaled per ferry to its measured length & beam.
 // Built on boats.js's builder & material (its paints, sheer stripe, heave & roll on the sea's level): one instanced mesh
-// of two, its poses written on the CPU each frame.
+// of two, its poses written on the CPU each frame; under way, a wake of foam behind each (one more mesh for both).
 // buildFerries(seaLevel, clock) -> Object3D | null. clock() gives the time of day (h) the lighting shows (main.js: the
 // preset's); userData.update(dt, elapsed, camera) moves the ferries; userData.offset (s) shifts their rounds (to look at a
 // ferry under way: slopDebug.world.modules.ferries.userData.offset = 300).
@@ -116,6 +117,103 @@ function ferryBody() {
   return b.build();
 }
 
+// --- the wakes ---------------------------------------------------------------------------------------------------------
+
+// Behind a ferry under way, a ribbon on the water from its stern: where the stern was, a sample every WAKE.step metres
+// it went (WAKE.samples of them, kept WAKE.life seconds), as wide as the hull at the stern and spreading as a Kelvin
+// wake's arms do (19.5° either side: 0.35 m a metre behind). Two things show on it: the churned water straight behind,
+// a pale band little wider than the hull that dies out over WAKE.wash metres, and the two arms, thin lines of foam
+// along its edges that last WAKE.arms metres; both fade with age and with how slowly the ferry went (full at
+// WAKE.full m/s, as its square). One mesh for both ferries, rebuilt on the CPU each frame.
+const WAKE = { samples: 40, step: 2.5, life: 40, lift: 0.06, wash: 45, arms: 110, full: 4 };
+
+function createWakeMaterial() {
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  // aWake: across the ribbon (-1..1), the arms' opacity, the wash's, the wash's half-width as a share of the ribbon's
+  const w = attribute('aWake', 'vec4'), across = abs(w.x);
+  const wash = w.z.mul(float(1).sub(smoothstep(w.w.mul(0.55), w.w, across)));
+  const arms = w.y.mul(smoothstep(0.9, 0.965, across)).mul(float(1).sub(smoothstep(0.975, 1.0, across)));
+  mat.colorNode = vec3(0.92, 0.95, 0.95).mul(float(1).sub(smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow).mul(0.8)));
+  mat.opacityNode = wash.max(arms);
+  // (as streetscape.js's pools of lamplight: the water's normal & glossiness under the foam go, so it reflects no sky)
+  mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  return mat;
+}
+
+function createWakes(rounds, seaLevel) {
+  const S = WAKE.samples + 1, n = rounds.length;
+  const pos = new Float32Array(n * S * 2 * 3), attr = new Float32Array(n * S * 2 * 4), index = [];
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i + 1 < S; i++) {
+      const a = (k * S + i) * 2;
+      index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aWake', new THREE.BufferAttribute(attr, 4).setUsage(THREE.DynamicDrawUsage));
+  geo.setIndex(index);
+  geo.boundingSphere = new THREE.Sphere();
+  const mesh = new THREE.Mesh(geo, createWakeMaterial());
+  mesh.name = 'FerryWakes';
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.matrixAutoUpdate = false;
+  // per ferry, its stern's track: [x, z, time, speed] newest first
+  const tracks = rounds.map(() => []);
+  const stern = (r, p) => {
+    const h = (p.heading * Math.PI) / 180;
+    return [p.x - Math.sin(h) * r.length * 0.45, p.z - Math.cos(h) * r.length * 0.45];
+  };
+  // poses: the ferries' now; poseAt(k, t): ferry k's at another time (the rounds), to lay the track it left afresh
+  const update = (poses, now, poseAt) => {
+    const y = (seaLevel?.value ?? 0) + WAKE.lift;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    poses.forEach((p, k) => {
+      const r = rounds[k], h = (p.heading * Math.PI) / 180, fx = Math.sin(h), fz = Math.cos(h);
+      const [sx, sz] = stern(r, p), track = tracks[k];
+      // at first, or after a jump (the time of day changed, the rounds were shifted), the track it left till now
+      if (!track.length || Math.hypot(sx - track[0][0], sz - track[0][1]) > 30) {
+        track.length = 0;
+        for (let back = 0; back <= WAKE.life && track.length < WAKE.samples; back += 0.5) {
+          const q = poseAt(k, now - back), [x, z] = stern(r, q), last = track[track.length - 1];
+          if (!last || Math.hypot(x - last[0], z - last[1]) >= WAKE.step) track.push([x, z, now - back, Math.abs(q.speed)]);
+        }
+      }
+      if (Math.hypot(sx - track[0][0], sz - track[0][1]) >= WAKE.step) {
+        track.unshift([sx, sz, now, Math.abs(p.speed)]);
+        if (track.length > WAKE.samples) track.length = WAKE.samples;
+      }
+      // the ribbon: the stern now, then the track (the last sample repeated, unseen, to the end); d: metres behind
+      const ribbon = [[sx, sz, now, Math.abs(p.speed)], ...track], last = ribbon.length - 1;
+      let d = 0;
+      for (let i = 0; i < S; i++) {
+        const q = ribbon[Math.min(i, last)];
+        if (i > 0 && i <= last) d += Math.hypot(q[0] - ribbon[i - 1][0], q[1] - ribbon[i - 1][1]);
+        // across the track, from the samples before & after (the ferry's middle before the stern)
+        const a = i === 0 ? [p.x, p.z] : ribbon[Math.min(i - 1, last)], b = ribbon[Math.min(i + 1, last)];
+        let nx = -(a[1] - b[1]), nz = a[0] - b[0];
+        const l = Math.hypot(nx, nz);
+        if (l > 1e-6) { nx /= l; nz /= l; } else { nx = fz; nz = -fx; }
+        const half = r.beam * 0.45 + 0.35 * d, age = now - q[2];
+        const fade = i > last ? 0 : Math.max(0, 1 - age / WAKE.life) ** 2 * Math.min(1, q[3] / WAKE.full) ** 2;
+        const arms = 0.32 * fade * Math.exp(-d / WAKE.arms), wash = 0.55 * fade * Math.exp(-d / WAKE.wash);
+        const share = Math.min(1, (r.beam * 0.4 + 0.04 * d) / half);
+        const v = (k * S + i) * 2;
+        pos.set([q[0] + nx * half, y, q[1] + nz * half, q[0] - nx * half, y, q[1] - nz * half], v * 3);
+        attr.set([1, arms, wash, share, -1, arms, wash, share], v * 4);
+        minX = Math.min(minX, q[0] - half); maxX = Math.max(maxX, q[0] + half);
+        minZ = Math.min(minZ, q[1] - half); maxZ = Math.max(maxZ, q[1] + half);
+      }
+    });
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.aWake.needsUpdate = true;
+    geo.boundingSphere.center.set((minX + maxX) / 2, y, (minZ + maxZ) / 2);
+    geo.boundingSphere.radius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 1;
+  };
+  return { mesh, update };
+}
+
 // --- build -------------------------------------------------------------------------------------------------------------
 
 /**
@@ -145,20 +243,22 @@ export function buildFerries(seaLevel = null, clock = () => 12) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.matrixAutoUpdate = false;
+    const wakes = createWakes(rounds, seaLevel);
     const group = new THREE.Group();
     group.name = 'DonostiaFerries';
-    group.add(mesh);
+    group.add(mesh, wakes.mesh);
     group.userData.offset = 0;
 
     // Each frame: the ferries' poses (under way within the service's hours, else at their berths) into the storage
-    // buffer, the bounding sphere round both
+    // buffer, the bounding sphere round both, their wakes
     const poses = rounds.map((r) => r.berth), sphere = geo.boundingSphere;
     group.userData.update = (dt, elapsed, camera) => {
       const hour = clock(), sailing = hour >= SERVICE.from && hour < SERVICE.to;
+      const poseAt = (k, t) => (sailing ? rounds[k].pose(t + group.userData.offset) : rounds[k].berth);
       const a = instances.array;
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
       rounds.forEach((r, k) => {
-        const p = sailing ? r.pose(elapsed + group.userData.offset) : r.berth, h = (p.heading * Math.PI) / 180;
+        const p = poseAt(k, elapsed), h = (p.heading * Math.PI) / 180;
         poses[k] = p;
         a.set([p.x, p.z, Math.sin(h), Math.cos(h)], k * SLOTS * 4);
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
@@ -168,6 +268,8 @@ export function buildFerries(seaLevel = null, clock = () => 12) {
       sphere.center.set((minX + maxX) / 2, 3, (minZ + maxZ) / 2);
       sphere.radius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 12;
       mesh.visible = camera.position.distanceTo(sphere.center) - sphere.radius < FAR;
+      wakes.update(poses, elapsed, poseAt);
+      wakes.mesh.visible = mesh.visible && sailing;
     };
     group.userData.stats = () => ({ ferries: N, triangles: body.attributes.position.count / 3, poses: poses.map((p) => ({ ...p })) });
     return group;
