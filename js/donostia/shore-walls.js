@@ -9,7 +9,8 @@
 // face) with, at each vertex, the level of the promenade behind (deck) and of the ground at its foot measured by the
 // LiDAR (foot). The low side lies on the (-dz, dx) side of the direction of travel (dx, dz), as for the railing.
 
-// A tunnel portal's face carries f: 1 (wallSnaps puts the samples it shares with another wall onto it).
+// A tunnel portal's face carries f: 1 (wallSnaps puts the samples it shares with another wall onto it, and those by its
+// corners with the walls that run on from it onto the corner).
 //
 // A wall may carry h: [first, last + 1, ...], runs of its segments that are hidden: the terrain steps there as at any wall,
 // but the masonry is a beach access's own (js/donostia/beach-access.js) or a tunnel portal's (js/donostia/tunnels.js) and
@@ -188,6 +189,52 @@ export function wallSnaps(walls, grid, sides = null) {
     const q = pick;
     snaps.set(k, { side: pickSide, wall: q.wall, seg: q.seg, x: q.x, z: q.z, nx: q.nx, nz: q.nz, deck: q.deck, foot: q.foot, back: 0 });
   }
+  // Where a tunnel portal's face and a wall that runs on from it share an end, no terrain edge may join a sample on one
+  // to a sample on the other: it cut across the corner, and the triangle under it stood in front of the masonry as a
+  // blade. The samples on either within a cell of the corner go onto the corner itself (on their own side: the top or
+  // the foot, behind both faces), and then, while two neighbours on the two walls remain, the nearer the corner of them
+  for (const c of faceCorners(walls)) {
+    const toCorner = (s) => Object.assign(s, { x: c.x, z: c.z, nx: c.nx, nz: c.nz, deck: c.deck, foot: c.foot, back: RECESS, corner: true });
+    const mine = [...snaps].filter(([, s]) => (s.wall === c.a || s.wall === c.b) && Math.hypot(s.x - c.x, s.z - c.z) < 3 * res);
+    for (const [, s] of mine) if (Math.hypot(s.x - c.x, s.z - c.z) < res) toCorner(s);
+    for (let moved = true, pass = 0; moved && pass < 8; pass++) {
+      moved = false;
+      for (const [k, s] of mine) {
+        if (s.corner) continue;
+        const i = k % w, j = (k - i) / w;
+        for (const [a, b] of nb) {
+          const o = snaps.get((j + b) * w + i + a);
+          if (!o || o.corner || o.wall === s.wall || (o.wall !== c.a && o.wall !== c.b)) continue;
+          toCorner(Math.hypot(s.x - c.x, s.z - c.z) <= Math.hypot(o.x - c.x, o.z - c.z) ? s : o);
+          moved = true;
+          break;
+        }
+      }
+    }
+    // (and the samples that project beyond both walls' ends, which no wall moved: in front of a corner the hill's nose
+    // stands out from, or behind one the courtyard turns in, the triangles from the corner's top or foot to them stood
+    // out of the masonry: those next to the corner on its other side go onto it too). high: the side of the walls the
+    // ground stands high on, the wedge between them where wall b runs off to wall a's high side
+    const cr = (p, q) => p[0] * q[1] - p[1] * q[0];
+    const wedge = cr(c.ua, c.ub);
+    const inWedge = (dx, dz) => cr(c.ua, [dx, dz]) * wedge >= 0 && cr([dx, dz], c.ub) * wedge >= 0;
+    const convex = c.ub[0] * c.na[0] + c.ub[1] * c.na[1] < 0;
+    const ci = Math.round((c.x - x0) / res - 0.5), cj = Math.round((c.z - z0) / res - 0.5);
+    for (let j = cj - 2; j <= cj + 2; j++) for (let i = ci - 2; i <= ci + 2; i++) {
+      if (i < 0 || j < 0 || i >= w || j >= h) continue;
+      const k = j * w + i;
+      if (snaps.has(k)) continue;
+      const dx = x0 + (i + 0.5) * res - c.x, dz = z0 + (j + 0.5) * res - c.z;
+      if (Math.hypot(dx, dz) > 1.5 * res) continue;
+      const side = inWedge(dx, dz) === convex ? -1 : 1;
+      let by = false;
+      for (const [a, b] of nb) {
+        const o = snaps.get((j + b) * w + i + a);
+        if (o && o.corner && o.side === -side && Math.hypot(o.x - c.x, o.z - c.z) < 1e-6) by = true;
+      }
+      if (by) snaps.set(k, toCorner({ side, wall: c.a, seg: 0 }));
+    }
+  }
   // Where the line bends, the terrain's face between two samples on it (an edge of a triangle) is a chord of the bend,
   // which stands in front of the masonry where the line turns away from its low side: both samples go back by as much
   // (with a margin: they go back square to their own segments, the chord a little less at the bend), at most as far as
@@ -198,7 +245,7 @@ export function wallSnaps(walls, grid, sides = null) {
       const ii = i + a, jj = j + b;
       if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue;
       const o = snaps.get(jj * w + ii);
-      if (!o || o.wall !== s.wall || o.seg === s.seg) continue;
+      if (!o || s.corner || o.corner || o.wall !== s.wall || o.seg === s.seg) continue;
       const sag = chordSag(walls[s.wall].p, s, o);
       if (sag > 0) s.back = Math.max(s.back, Math.min(SAG_MAX, 1.5 * sag + RECESS));
     }
@@ -208,6 +255,43 @@ export function wallSnaps(walls, grid, sides = null) {
 
 const SAG_MAX = 0.45; // m
 const STEP_PREFER = 1; // m
+
+// The corners where a tunnel portal's face (f) and another wall share an end vertex: [{ a, b (the walls), x, z, deck,
+// foot (the face's there), nx, nz (towards the low side of both: the mean of their ends' normals), na (a's low side
+// there), ua, ub (the ways a and b run off from the corner) }]
+function faceCorners(walls) {
+  const out = [];
+  const endNormal = (p, v) => {
+    const k = v === 0 ? 0 : p.length / 4 - 2;
+    const dx = p[4 * k + 4] - p[4 * k], dz = p[4 * k + 5] - p[4 * k + 1], l = Math.hypot(dx, dz) || 1;
+    return [-dz / l, dx / l];
+  };
+  // (the way a wall runs off from its end vertex v)
+  const away = (p, v) => {
+    const o = v === 0 ? 1 : p.length / 4 - 2;
+    const dx = p[4 * o] - p[4 * v], dz = p[4 * o + 1] - p[4 * v + 1], l = Math.hypot(dx, dz) || 1;
+    return [dx / l, dz / l];
+  };
+  walls.forEach((a, ai) => {
+    if (!a.f) return;
+    for (const va of [0, a.p.length / 4 - 1]) {
+      const x = a.p[4 * va], z = a.p[4 * va + 1];
+      walls.forEach((b, bi) => {
+        if (bi === ai) return;
+        for (const vb of [0, b.p.length / 4 - 1]) {
+          if (Math.hypot(b.p[4 * vb] - x, b.p[4 * vb + 1] - z) > 0.05) continue;
+          const na = endNormal(a.p, va), nb = endNormal(b.p, vb);
+          const nx = na[0] + nb[0], nz = na[1] + nb[1], l = Math.hypot(nx, nz) || 1;
+          out.push({
+            a: ai, b: bi, x, z, deck: a.p[4 * va + 2], foot: a.p[4 * va + 3], nx: nx / l, nz: nz / l, na,
+            ua: away(a.p, va), ub: away(b.p, vb)
+          });
+        }
+      });
+    }
+  });
+  return out;
+}
 
 // How far the chord between two points on a wall line (on segments s.seg & o.seg) stands in front of the vertices
 // between them (on the low side)
