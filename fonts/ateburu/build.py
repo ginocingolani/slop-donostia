@@ -3,12 +3,13 @@
 
 Builds Ateburu, an original display face in the Basque lettering tradition (letra vasca), from its source: the
 letters are drawn in code in source/glyphs.py with the toolkit in source/geometry.py. Two masters, HUD (wght 600, for
-light-on-dark place names at 12-20 px) and Black (wght 900), are built from the same drawing functions with different
-parameters, made interpolation-compatible, spaced and kerned, and written as:
+light-on-dark place names at 12-20 px) and Black (wght 900), each drawn straight (CURV 0) and curved (CURV 100), are
+built from the same drawing functions with different parameters, made interpolation-compatible, spaced and kerned,
+and written as:
 
-    source/masters/Ateburu-HUD.ttf, source/masters/Ateburu-Black.ttf   the two masters
-    source/Ateburu.designspace                                         wght 600-900, four named instances
-    variable/Ateburu[wght].ttf                                         the variable font
+    source/masters/Ateburu-{HUD,Black,HUDCurved,BlackCurved}.ttf      the four masters
+    source/Ateburu.designspace                                         wght 600-900 x CURV 0-100, named instances
+    variable/Ateburu[CURV,wght].ttf                                    the variable font
     static/Ateburu-{SemiBold,Bold,ExtraBold,Black}.ttf                 static instances
     webfonts/Ateburu-Variable.woff2                                    the variable font for the web
     webfonts/Ateburu-HUD.woff2                                         the SemiBold (HUD) instance, subset, for the app
@@ -40,6 +41,7 @@ from fontTools.otlLib.builder import buildStatTable  # noqa: E402
 from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: E402
 from fontTools.ttLib import TTFont, newTable  # noqa: E402
 from fontTools.varLib import build as varlib_build  # noqa: E402
+from fontTools.varLib.models import VariationModel  # noqa: E402
 
 import geometry  # noqa: E402
 import glyphs as G  # noqa: E402
@@ -56,12 +58,28 @@ TIMESTAMP = timestampFromString('Tue Oct 27 00:00:00 2026')
 
 UPM = 1000
 ASCENT, DESCENT = 930, -230   # typo = hhea; line gap 0: "normal" line height 1.16, caps centred in the line
-MASTERS = [G.Master('HUD', 0.0, 600), G.Master('Black', 1.0, 900)]
+# Two axes: weight (600-900) and curvature (CURV 0-100: 0 is the straight-stemmed cut, 100 the curviest that still
+# reads). One master at each corner of the designspace; t and c are the normalised positions on the two axes.
+MASTERS = [G.Master('HUD', 0.0, 600, 0.0), G.Master('Black', 1.0, 900, 0.0),
+           G.Master('HUD Curved', 0.0, 600, 1.0), G.Master('Black Curved', 1.0, 900, 1.0)]
+WGHT = (600, 900)
+CURV = (0, 100)
 INSTANCES = [('SemiBold', 600), ('Bold', 700), ('ExtraBold', 800), ('Black', 900)]
+MODEL = VariationModel([{'wght': m.t, 'CURV': m.c} for m in MASTERS], axisOrder=['wght', 'CURV'])
+
+
+def scalars(t, c=0.0):
+    """Each master's weight at normalised location (t on wght, c on CURV), as the variable font interpolates"""
+    return MODEL.getMasterScalars({'wght': t, 'CURV': c})
+
+
+def mix(values, sc):
+    return sum(w * v for w, v in zip(sc, values) if w)
+
 
 OUT_MASTERS = os.path.join(HERE, 'source', 'masters')
 OUT_DS = os.path.join(HERE, 'source', f'{FAMILY}.designspace')
-OUT_VF = os.path.join(HERE, 'variable', f'{FAMILY}[wght].ttf')
+OUT_VF = os.path.join(HERE, 'variable', f'{FAMILY}[CURV,wght].ttf')
 OUT_STATIC = os.path.join(HERE, 'static')
 OUT_WEB = os.path.join(HERE, 'webfonts')
 REPORT = os.path.join(HERE, 'source', 'build-report.json')
@@ -74,12 +92,16 @@ REPORT = os.path.join(HERE, 'source', 'build-report.json')
 def draw_all():
     drawn = {}   # name -> [G per master]
     for name, (unis, fn) in G.GLYPHS.items():
-        drawn[name] = [fn(m) for m in MASTERS]
+        gs = []
+        for m in MASTERS:
+            with geometry.curvature(m.c):
+                gs.append(fn(m))
+        drawn[name] = gs
     return drawn
 
 
 def outlines(drawn):
-    """name -> geometry.Outline (compatible exact outlines of both masters), None for empty glyphs"""
+    """name -> geometry.Outline (compatible exact outlines of all masters), None for empty glyphs"""
     out, errors = {}, []
     for name, gs in drawn.items():
         if gs[0].path is None:
@@ -319,27 +341,30 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
-def build_font(t, weight, names, drawn, outl, sb, kern):
-    """A complete TrueType font at interpolation position t (0 = HUD master, 1 = Black master): outlines interpolated
-    exactly and rounded once, side bearings, anchors and kerning interpolated"""
+def build_font(loc, weight, names, drawn, outl, sb, kern):
+    """A complete TrueType font at normalised location loc = (t, c) (t: 0 = 600, 1 = 900; c: 0 = CURV 0, 1 = CURV
+    100): outlines interpolated exactly and rounded once, side bearings, anchors and kerning interpolated, all with
+    the variable font's own model"""
+    t, c = loc
+    sc = scalars(t, c)
     order = glyph_order()
     glyf, hmtx, cmap, anchors = {}, {}, {}, {}
     nd = notdef_outline()
-    glyf['.notdef'] = tt_glyph(nd.at(t), 40)
+    glyf['.notdef'] = tt_glyph(nd.at(sc), 40)
     hmtx['.notdef'] = int(round(lerp(500, 540, t))) + 80
     for name, gs in drawn.items():
-        g0, g1 = gs[0], gs[-1]
-        lsb = lerp(sb[name][0][0], sb[name][-1][0], t)
-        rsb = lerp(sb[name][0][1], sb[name][-1][1], t)
-        w = lerp(g0.w, g1.w, t)
+        g0 = gs[0]
+        lsb = mix([v[0] for v in sb[name]], sc)
+        rsb = mix([v[1] for v in sb[name]], sc)
+        w = mix([g.w for g in gs], sc)
         lsb_i = int(round(lsb))
         if g0.adv is not None:
             glyf[name] = TTGlyphPen(None).glyph()
-            hmtx[name] = int(round(lerp(g0.adv, g1.adv, t)))
+            hmtx[name] = int(round(mix([g.adv for g in gs], sc)))
         else:
-            glyf[name] = tt_glyph(outl[name].at(t), lsb_i)
+            glyf[name] = tt_glyph(outl[name].at(sc), lsb_i)
             hmtx[name] = int(round(lsb_i + w + rsb))
-        anchors[name] = (lsb_i + lerp(g0.top, g1.top, t), lsb_i + lerp(g0.bottom, g1.bottom, t))
+        anchors[name] = (lsb_i + mix([g.top for g in gs], sc), lsb_i + mix([g.bottom for g in gs], sc))
         for u in G.GLYPHS[name][0]:
             cmap[u] = name
     for name, uni, base, mark in G.COMPOSITES:
@@ -378,7 +403,7 @@ def build_font(t, weight, names, drawn, outl, sb, kern):
     fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=int(round(lerp(60, 80, t))))
     fb.setupHead(unitsPerEm=UPM, fontRevision=float(VERSION), created=TIMESTAMP, modified=TIMESTAMP)
     fb.font['head'].flags |= 0x0008  # integer scaling
-    fb.addOpenTypeFeatures(kern_fea({k: [int(round(lerp(v[0], v[-1], t)))] for k, v in kern.items()}, 0))
+    fb.addOpenTypeFeatures(kern_fea({k: [int(round(mix(v, sc)))] for k, v in kern.items()}, 0))
     gasp = newTable('gasp')
     gasp.version = 1
     gasp.gaspRange = {0xFFFF: 0x000F}
@@ -427,8 +452,12 @@ def finish_static(font, style):
 def build_variable(master_paths):
     ds = DesignSpaceDocument()
     ax = AxisDescriptor()
-    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'wght', 'Weight', 600, 600, 900
+    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'wght', 'Weight', WGHT[0], WGHT[0], WGHT[1]
     ax.labelNames = {'en': 'Weight'}
+    ds.addAxis(ax)
+    ax = AxisDescriptor()
+    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'CURV', 'Curvature', CURV[0], CURV[0], CURV[1]
+    ax.labelNames = {'en': 'Curvature'}
     ds.addAxis(ax)
     for m, path in zip(MASTERS, master_paths):
         s = SourceDescriptor()
@@ -437,7 +466,7 @@ def build_variable(master_paths):
         s.name = f'{FAMILY} {m.name}'
         s.familyName = FAMILY
         s.styleName = m.name
-        s.location = {'Weight': m.wght}
+        s.location = {'Weight': m.wght, 'Curvature': m.curv}
         ds.addSource(s)
     for style, w in INSTANCES:
         i = InstanceDescriptor()
@@ -445,7 +474,7 @@ def build_variable(master_paths):
         i.styleName = style
         i.name = f'{FAMILY} {style}'
         i.postScriptFontName = f'{FAMILY}-{style}'
-        i.location = {'Weight': w}
+        i.location = {'Weight': w, 'Curvature': CURV[0]}
         ds.addInstance(i)
     ds.write(OUT_DS)
     vf, _, _ = varlib_build(ds)
@@ -458,8 +487,12 @@ def build_variable(master_paths):
                      (4, f'{FAMILY} SemiBold'), (6, f'{FAMILY}-SemiBold'), (16, FAMILY), (17, 'SemiBold'),
                      (25, FAMILY)):
         name.setName(val, nid, 3, 1, 0x409)
-    buildStatTable(vf, [dict(tag='wght', name='Weight', values=[
-        dict(value=w, name=s, flags=0) for s, w in INSTANCES])], elidedFallbackName=2)
+    buildStatTable(vf, [
+        dict(tag='wght', name='Weight', values=[dict(value=w, name=s, flags=0) for s, w in INSTANCES]),
+        dict(tag='CURV', name='Curvature', values=[dict(value=0, name='Straight', flags=0x2),
+                                                    dict(value=50, name='Carved', flags=0),
+                                                    dict(value=100, name='Curved', flags=0)]),
+    ], elidedFallbackName=2)
     vf['OS/2'].usWeightClass = 600
     return vf
 
@@ -469,16 +502,18 @@ def main():
     if geometry.STROKE_ERRORS:
         print('stroke fitting error > 1.5 units:', geometry.STROKE_ERRORS)
     outl = outlines(drawn)
-    tt = {name: ([o.at(m.t) for m in MASTERS] if o else [[] for _ in MASTERS]) for name, o in outl.items()}
+    tt = {name: ([o.at(scalars(m.t, m.c)) for m in MASTERS] if o else [[] for _ in MASTERS])
+          for name, o in outl.items()}
     sb = spacing(drawn, tt)
     kern = kerning(drawn, tt, sb)
 
     os.makedirs(OUT_MASTERS, exist_ok=True)
     master_paths, problems, qa_notes = [], [], {}
     for m in MASTERS:
-        names = {**names_for(m.name, m.wght), 'familyName': f'{FAMILY} {m.name}', 'styleName': 'Regular'}
-        font = build_font(m.t, m.wght, names, drawn, outl, sb, kern)
-        p = os.path.join(OUT_MASTERS, f'{FAMILY}-{m.name}.ttf')
+        names = {**names_for(m.name, m.wght), 'familyName': f'{FAMILY} {m.name}', 'styleName': 'Regular',
+                 'psName': f'{FAMILY}-{m.name.replace(" ", "")}'}
+        font = build_font((m.t, m.c), m.wght, names, drawn, outl, sb, kern)
+        p = os.path.join(OUT_MASTERS, f'{FAMILY}-{m.name.replace(" ", "")}.ttf')
         font.save(p)
         master_paths.append(p)
         errs, notes = qa.check_font(TTFont(p))
@@ -495,8 +530,8 @@ def main():
     os.makedirs(OUT_WEB, exist_ok=True)
     statics = []
     for style, w in INSTANCES:
-        t = (w - MASTERS[0].wght) / (MASTERS[-1].wght - MASTERS[0].wght)
-        font = build_font(t, w, names_for(style, w), drawn, outl, sb, kern)
+        t = (w - WGHT[0]) / (WGHT[1] - WGHT[0])
+        font = build_font((t, 0.0), w, names_for(style, w), drawn, outl, sb, kern)
         finish_static(font, style)
         p = os.path.join(OUT_STATIC, f'{FAMILY}-{style}.ttf')
         font.save(p)

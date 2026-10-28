@@ -16,10 +16,13 @@ ACCENT_GAP = 54  # between the cap line and the bottom of a capital accent
 
 
 class Master:
-    """The design parameters of one master. t = 0 is HUD (wght 600), t = 1 is Black (wght 900)."""
+    """The design parameters of one master. t = 0 is HUD (wght 600), t = 1 is Black (wght 900); c = 0 is the straight
+    cut (CURV 0), c = 1 the curved one (CURV 100). Weight-dependent numbers come from v(); the curvature reaches the
+    drawing through geometry.curvature() (stems, diagonals, wedge ends) and through m.c in the glyphs that bend."""
 
-    def __init__(self, name, t, wght):
-        self.name, self.t, self.wght = name, t, wght
+    def __init__(self, name, t, wght, c=0.0):
+        self.name, self.t, self.wght, self.c = name, t, wght, c
+        self.curv = round(c * 100)
         v = self.v
         self.C = CAP
         self.o = OVERSHOOT

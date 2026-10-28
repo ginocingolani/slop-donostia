@@ -4,16 +4,33 @@
     <axis tag="wght" name="Weight" minimum="600" maximum="900" default="600">
       <labelname xml:lang="en">Weight</labelname>
     </axis>
+    <axis tag="CURV" name="Curvature" minimum="0" maximum="100" default="0">
+      <labelname xml:lang="en">Curvature</labelname>
+    </axis>
   </axes>
   <sources>
     <source filename="masters/Ateburu-HUD.ttf" name="Ateburu HUD" familyname="Ateburu" stylename="HUD">
       <location>
         <dimension name="Weight" xvalue="600"/>
+        <dimension name="Curvature" xvalue="0"/>
       </location>
     </source>
     <source filename="masters/Ateburu-Black.ttf" name="Ateburu Black" familyname="Ateburu" stylename="Black">
       <location>
         <dimension name="Weight" xvalue="900"/>
+        <dimension name="Curvature" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="masters/Ateburu-HUDCurved.ttf" name="Ateburu HUD Curved" familyname="Ateburu" stylename="HUD Curved">
+      <location>
+        <dimension name="Weight" xvalue="600"/>
+        <dimension name="Curvature" xvalue="100"/>
+      </location>
+    </source>
+    <source filename="masters/Ateburu-BlackCurved.ttf" name="Ateburu Black Curved" familyname="Ateburu" stylename="Black Curved">
+      <location>
+        <dimension name="Weight" xvalue="900"/>
+        <dimension name="Curvature" xvalue="100"/>
       </location>
     </source>
   </sources>
@@ -21,21 +38,25 @@
     <instance name="Ateburu SemiBold" familyname="Ateburu" stylename="SemiBold" postscriptfontname="Ateburu-SemiBold">
       <location>
         <dimension name="Weight" xvalue="600"/>
+        <dimension name="Curvature" xvalue="0"/>
       </location>
     </instance>
     <instance name="Ateburu Bold" familyname="Ateburu" stylename="Bold" postscriptfontname="Ateburu-Bold">
       <location>
         <dimension name="Weight" xvalue="700"/>
+        <dimension name="Curvature" xvalue="0"/>
       </location>
     </instance>
     <instance name="Ateburu ExtraBold" familyname="Ateburu" stylename="ExtraBold" postscriptfontname="Ateburu-ExtraBold">
       <location>
         <dimension name="Weight" xvalue="800"/>
+        <dimension name="Curvature" xvalue="0"/>
       </location>
     </instance>
     <instance name="Ateburu Black" familyname="Ateburu" stylename="Black" postscriptfontname="Ateburu-Black">
       <location>
         <dimension name="Weight" xvalue="900"/>
+        <dimension name="Curvature" xvalue="0"/>
       </location>
     </instance>
   </instances>

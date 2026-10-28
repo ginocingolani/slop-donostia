@@ -6,10 +6,26 @@ from the master's parameters (see glyphs.py). Strokes meet one another only at t
 tangents, so the booleans give clean corners; within one primitive (a serifed stem, a bracketed diagonal) the joins are
 drawn exactly and stay smooth.
 """
+import contextlib
 import math
 
 import pathops
 from fontTools.cu2qu import curves_to_quadratic
+
+# The curvature (CURV axis, 0..1) the primitives below draw at: set by build.py around each master's drawing. At 0
+# every primitive draws exactly as in the straight cut; above 0 the stems flare towards their ends, serif brackets
+# and wedge ends curve into their strokes, and diagonals may bow.
+CURV = 0.0
+
+
+@contextlib.contextmanager
+def curvature(c):
+    global CURV
+    old, CURV = CURV, c
+    try:
+        yield
+    finally:
+        CURV = old
 
 # ---------------------------------------------------------------------------------------------------------------------
 # vectors and Béziers
@@ -720,7 +736,8 @@ def _align_pair(a, b, na, nb):
     """Align two cyclic segment lists from two masters. Every segment of the shorter list maps to a run of one or more
     consecutive segments of the longer one (dynamic programming over all start rotations, cost = distance of the
     normalised run ends); the shorter list's segments are split to match, and where the two masters disagree on a
-    segment's type the straight one becomes a (straight) cubic. Returns the two lists, now structurally identical."""
+    segment's type the straight one becomes a (straight) cubic. Returns the two lists, now structurally identical, and
+    the operations done to `a` (see _apply_ops), so that lists already aligned with `a` can follow it."""
     swap = len(a) > len(b)
     if swap:
         a, b, na, nb = b, a, nb, na
@@ -760,25 +777,45 @@ def _align_pair(a, b, na, nb):
         runs.append((k, j))
         j = k
     runs.reverse()
-    a_out, b_out = [], []
+    a_out, b_out, splits, conv = [], [], [], []
     for (k, j), seg in zip(runs, a):
         run = bb[k:j]
+        fr = []
         if len(run) == 1:
             pieces = [seg]
         else:
             ls = [_seg_length(*s) for s in run]
             tot = sum(ls) or 1.0
-            fr, acc = [], 0.0
+            acc = 0.0
             for l_ in ls[:-1]:
                 acc += l_
                 fr.append(acc / tot)
             pieces = _seg_split(seg[0], seg[1], fr)
+        splits.append(fr)
         for p, q in zip(pieces, run):
-            if p[0] != q[0]:
+            differ = p[0] != q[0]
+            if differ:
                 p, q = _as_cubic(p), _as_cubic(q)
             a_out.append(p)
             b_out.append(q)
-    return (b_out, a_out) if swap else (a_out, b_out)
+            conv.append(differ)
+    if swap:   # the caller's `a` was the longer list: it was rotated
+        return b_out, a_out, ('rot', r, conv)
+    return a_out, b_out, ('split', splits, conv)
+
+
+def _apply_ops(segs, ops):
+    """Do to a segment list what _align_pair did to its reference (the list must match the reference's structure)"""
+    kind, x, conv = ops
+    if kind == 'rot':
+        segs = segs[x:] + segs[:x]
+    else:
+        out = []
+        for seg, fr in zip(segs, x):
+            out += _seg_split(seg[0], seg[1], fr) if fr else [seg]
+        segs = out
+    return [_as_cubic(sg) if c else sg for sg, c in zip(segs, conv)]
+
 
 class CompatError(Exception):
     pass
@@ -872,19 +909,18 @@ def _compatible(name, masters, max_err):
 
     order = sorted(range(n), key=lambda i: cbox(ref[i]))
     ref = [ref[i] for i in order]
-    aligned = [ref]
-    if len(masters) != 2:
-        raise CompatError(f'{name}: the aligner handles two masters')
-    pool = list(masters[1])
-    mine, newref = [], []
-    for c in ref:
-        cc = norm(0, _centroid(c))
-        best = min(pool, key=lambda d: length(sub(norm(1, _centroid(d)), cc)))
-        pool.remove(best)
-        a2, b2 = _align_pair(c, best, lambda p: norm(0, p), lambda p: norm(1, p))
-        newref.append(a2)
-        mine.append(b2)
-    aligned = [newref, mine]
+    # every other master is aligned with the reference in turn; when that splits or rotates the reference, the masters
+    # aligned before follow it, so all of them stay structurally identical
+    per_contour = [[c] for c in ref]
+    for k in range(1, len(masters)):
+        pool = list(masters[k])
+        for ci, c in enumerate(ref):
+            cc = norm(0, _centroid(c))
+            best = min(pool, key=lambda d, k=k: length(sub(norm(k, _centroid(d)), cc)))
+            pool.remove(best)
+            a2, b2, ops = _align_pair(per_contour[ci][0], best, lambda p: norm(0, p), lambda p, k=k: norm(k, p))
+            per_contour[ci] = [a2] + [_apply_ops(x, ops) for x in per_contour[ci][1:]] + [b2]
+    aligned = [[per_contour[ci][k] for ci in range(n)] for k in range(len(masters))]
 
     # start every contour at its lowest-then-leftmost on-curve point (same index in every master)
     for ci in range(n):
@@ -998,20 +1034,29 @@ def _compatible(name, masters, max_err):
 
 class Outline:
     """One glyph's compatible outlines: per master, contours of exact (float) TrueType points [(on, (x, y))], and per
-    contour the indices of its smooth on-curve points. at(t) interpolates between the first and last master and
-    rounds to integers keeping smooth points smooth."""
+    contour the indices of its smooth on-curve points. at(scalars) interpolates the masters with the given weights (one
+    per master, from the designspace's variation model) and rounds to integers keeping smooth points smooth."""
 
     def __init__(self, masters, smooth):
         self.masters, self.smooth = masters, smooth
 
-    def exact(self, t):
-        a, b = self.masters[0], self.masters[-1]
-        return [[(on, (p[0] + (q[1][0] - p[0]) * t, p[1] + (q[1][1] - p[1]) * t)) for (on, p), q in zip(ca, cb)]
-                for ca, cb in zip(a, b)]
-
-    def at(self, t):
+    def exact(self, scalars):
+        """The first master plus the weighted differences of the others (scalars sum to 1): on one axis this is
+        exactly p0 + t (p1 - p0), so the straight cut rounds as it always has"""
         out = []
-        for c, smooth in zip(self.exact(t), self.smooth):
+        for cs in zip(*self.masters):
+            pts = []
+            for ps in zip(*cs):
+                x0, y0 = ps[0][1]
+                x = x0 + sum(w * (p[1][0] - x0) for w, p in zip(scalars[1:], ps[1:]) if w)
+                y = y0 + sum(w * (p[1][1] - y0) for w, p in zip(scalars[1:], ps[1:]) if w)
+                pts.append((ps[0][0], (x, y)))
+            out.append(pts)
+        return out
+
+    def at(self, scalars):
+        out = []
+        for c, smooth in zip(self.exact(scalars), self.smooth):
             pts = [(on, (int(round(p[0])), int(round(p[1])))) for on, p in c]
             out.append(_keep_smooth(c, pts, smooth))
         return out
