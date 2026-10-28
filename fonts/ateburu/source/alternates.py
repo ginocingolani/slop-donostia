@@ -171,7 +171,7 @@ def I_ss06(m):
     return G(union([Gl.I(m).path, rect(-ext, CAP * 0.5 - t / 2, s + ext, CAP * 0.5 + t / 2)]), s, m.sp + ext, m.sp + ext)
 
 
-@glyph('uniA750', 0xA750)
+@glyph('uniA750', 0xA750, 0xA751)
 def P_stroke(m):
     """Ꝑ, P with a stroke through its stem (per, pro), common in the abbreviations of the stones"""
     g = Gl.P(m)

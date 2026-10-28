@@ -1,5 +1,5 @@
 {
- "glyphs": 349,
+ "glyphs": 350,
  "kerning": {
   "A C": [
    -112,
@@ -25252,6 +25252,7 @@
    "at: kink of 2.1\u00b0 at (683, 326)",
    "section: kink of 4.5\u00b0 at (109, 2)",
    "section: kink of 4.5\u00b0 at (407, 631)",
+   "paragraph: kink of 4.2\u00b0 at (270, 720)",
    "registered: kink of 3.6\u00b0 at (274, 290)",
    "registered: kink of 8.3\u00b0 at (473, 344)",
    "ordfeminine: extreme without a point near (121.5, 365.5)",
@@ -25333,6 +25334,7 @@
    "sterling: kink of 3.2\u00b0 at (73, 374)",
    "section: kink of 4.5\u00b0 at (100, 2)",
    "section: kink of 4.5\u00b0 at (398, 631)",
+   "paragraph: kink of 4.2\u00b0 at (268, 720)",
    "registered: kink of 4.4\u00b0 at (463, 344)",
    "registered: kink of 3.2\u00b0 at (538, 254)",
    "ordfeminine: kink of 1.7\u00b0 at (341, 375)",
@@ -25422,6 +25424,7 @@
    "section: kink of 1.8\u00b0 at (158, -17)",
    "section: kink of 3.4\u00b0 at (228, -18)",
    "section: kink of 3.4\u00b0 at (294, 654)",
+   "paragraph: kink of 4.5\u00b0 at (270, 720)",
    "registered: kink of 3.4\u00b0 at (291, 287)",
    "registered: kink of 6.3\u00b0 at (460, 344)",
    "registered: kink of 5.9\u00b0 at (552, 242)",
@@ -25507,6 +25510,7 @@
    "yen: 1.0-unit stub at (290, 278)",
    "section: kink of 1.8\u00b0 at (220, -12)",
    "section: kink of 1.6\u00b0 at (299, 647)",
+   "paragraph: kink of 4.3\u00b0 at (269, 720)",
    "registered: kink of 3.6\u00b0 at (282, 289)",
    "registered: kink of 7.2\u00b0 at (466, 344)",
    "trademark: kink of 4.4\u00b0 at (209, 502)",
@@ -25586,6 +25590,7 @@
    "at: kink of 4.3\u00b0 at (542, -104)",
    "section: kink of 3.9\u00b0 at (380, 278)",
    "section: kink of 3.9\u00b0 at (144, 359)",
+   "paragraph: kink of 4.7\u00b0 at (269, 720)",
    "registered: kink of 3.4\u00b0 at (299, 286)",
    "registered: kink of 7.3\u00b0 at (453, 344)",
    "registered: kink of 4.6\u00b0 at (553, 235)",
@@ -25681,6 +25686,7 @@
    "at: kink of 4.3\u00b0 at (533, -104)",
    "section: kink of 3.9\u00b0 at (370, 278)",
    "section: kink of 3.9\u00b0 at (134, 359)",
+   "paragraph: kink of 4.7\u00b0 at (260, 720)",
    "registered: kink of 1.9\u00b0 at (539, 236)",
    "registered: kink of 2.7\u00b0 at (550, 241)",
    "ordfeminine: kink of 1.9\u00b0 at (393, 386)",
@@ -25781,6 +25787,7 @@
    "at: kink of 4.3\u00b0 at (542, -104)",
    "section: kink of 3.9\u00b0 at (380, 278)",
    "section: kink of 3.9\u00b0 at (144, 359)",
+   "paragraph: kink of 4.7\u00b0 at (269, 720)",
    "registered: kink of 3.4\u00b0 at (299, 286)",
    "registered: kink of 7.3\u00b0 at (453, 344)",
    "registered: kink of 4.6\u00b0 at (553, 235)",
@@ -25826,20 +25833,20 @@
    "b.unc: kink of 2.3\u00b0 at (68, 199)"
   ],
   "grid (soft notes per instance)": [
-   "wght 600 CURV 25: 122",
-   "wght 600 CURV 50: 137",
-   "wght 600 CURV 75: 343",
-   "wght 700 CURV 25: 124",
-   "wght 700 CURV 50: 192",
-   "wght 700 CURV 75: 357",
-   "wght 700 CURV 100: 112",
-   "wght 800 CURV 25: 184",
-   "wght 800 CURV 50: 189",
-   "wght 800 CURV 75: 307",
-   "wght 800 CURV 100: 120",
-   "wght 900 CURV 25: 113",
-   "wght 900 CURV 50: 174",
-   "wght 900 CURV 75: 278"
+   "wght 600 CURV 25: 123",
+   "wght 600 CURV 50: 138",
+   "wght 600 CURV 75: 344",
+   "wght 700 CURV 25: 125",
+   "wght 700 CURV 50: 193",
+   "wght 700 CURV 75: 358",
+   "wght 700 CURV 100: 113",
+   "wght 800 CURV 25: 185",
+   "wght 800 CURV 50: 190",
+   "wght 800 CURV 75: 308",
+   "wght 800 CURV 100: 121",
+   "wght 900 CURV 25: 114",
+   "wght 900 CURV 50: 175",
+   "wght 900 CURV 75: 279"
   ]
  },
  "spacing": {
@@ -27807,20 +27814,20 @@
   ],
   "greater": [
    [
-    60,
-    60
+    89,
+    89
    ],
    [
-    50,
-    50
+    82,
+    82
    ],
    [
-    60,
-    60
+    89,
+    89
    ],
    [
-    50,
-    50
+    82,
+    82
    ]
   ],
   "guillemetleft": [
@@ -28167,20 +28174,20 @@
   ],
   "less": [
    [
-    60,
-    60
+    89,
+    89
    ],
    [
-    50,
-    50
+    82,
+    82
    ],
    [
-    60,
-    60
+    89,
+    89
    ],
    [
-    50,
-    50
+    82,
+    82
    ]
   ],
   "m.unc": [
@@ -28239,20 +28246,20 @@
   ],
   "multiply": [
    [
-    70,
-    70
+    98,
+    98
    ],
    [
-    60,
-    60
+    92,
+    92
    ],
    [
-    70,
-    70
+    98,
+    98
    ],
    [
-    60,
-    60
+    92,
+    92
    ]
   ],
   "n.unc": [
@@ -28410,7 +28417,7 @@
    ],
    [
     27,
-    56
+    55
    ],
    [
     12,
@@ -29009,6 +29016,24 @@
    [
     0,
     0
+   ]
+  ],
+  "uni25CC": [
+   [
+    50,
+    50
+   ],
+   [
+    44,
+    44
+   ],
+   [
+    50,
+    50
+   ],
+   [
+    44,
+    44
    ]
   ],
   "uniA750": [

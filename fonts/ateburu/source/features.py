@@ -85,9 +85,9 @@ def gsub():
 
 
 def mark_bases():
-    """The glyphs that take combining marks: the letters drawn as such and their plain copies"""
+    """The glyphs that take combining marks: the letters drawn as such, the dotted circle and their plain copies"""
     names = glyph_names()
-    out = [n for n in LETTERS if n in names]
+    out = [n for n in LETTERS + ['uni25CC'] if n in names]
     out += [n for n in G.GLYPHS if n.startswith(('i.', 'dotlessi.')) and n not in out]
     out += [c[0] for c in G.COMPOSITES if c[2] is not None and c[3] is None and c[0] not in out]
     return out

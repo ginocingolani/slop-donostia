@@ -2,25 +2,28 @@
 """fonts/ateburu/build.py
 
 Builds Ateburu, an original display face in the Basque lettering tradition (letra vasca), from its source: the
-letters are drawn in code in source/glyphs.py with the toolkit in source/geometry.py. Two masters, HUD (wght 600, for
-light-on-dark place names at 12-20 px) and Black (wght 900), each drawn straight (CURV 0) and curved (CURV 100), are
-built from the same drawing functions with different parameters, made interpolation-compatible, spaced and kerned,
-and written as:
+letters are drawn in code in source/glyphs.py (and the modules it imports) with the toolkit in source/geometry.py.
+Four masters, HUD (wght 600, for light-on-dark place names at 12-20 px) and Black (wght 900), each drawn straight
+(CURV 0) and curved (CURV 100), are built from the same drawing functions with different parameters, made
+interpolation-compatible, spaced and kerned, and written as:
 
     source/masters/Ateburu-{HUD,Black,HUDCurved,BlackCurved}.ttf      the four masters
     source/Ateburu.designspace                                         wght 600-900 x CURV 0-100, named instances
     variable/Ateburu[CURV,wght].ttf                                    the variable font
-    static/Ateburu-{SemiBold,Bold,ExtraBold,Black}.ttf                 static instances
+    static/Ateburu-{SemiBold,Bold,ExtraBold,Black}.ttf                 static instances (CURV 0), autohinted
     webfonts/Ateburu-Variable.woff2                                    the variable font for the web
-    webfonts/Ateburu-HUD.woff2                                         the SemiBold (HUD) instance, subset, for the app
+    webfonts/Ateburu-HUD.woff2                                         the SemiBold (HUD) instance, subset, unhinted,
+                                                                       for the app
 
 All outputs are committed, so the app needs nothing from here. To rebuild:
 
-    python3 -m venv .venv && .venv/bin/pip install fonttools==4.55.3 skia-pathops==0.8.0.post2 brotli==1.1.0
+    python3 -m venv .venv && .venv/bin/pip install fonttools==4.55.3 skia-pathops==0.8.0.post2 brotli==1.1.0 \
+        ttfautohint-py==0.6.1
     .venv/bin/python fonts/ateburu/build.py
 
 The build is deterministic: the same source gives the same bytes (fixed timestamps, no randomness). It fails if a
-glyph's masters are incompatible or an outline has the wrong direction or overlapping contours.
+glyph's masters are incompatible or an outline has the wrong direction or overlapping contours, at the masters, the
+statics or any point of a wght x CURV grid between them.
 
 SIL Open Font License 1.1, no Reserved Font Name: see OFL.txt. Copyright 2026 The Ateburu Project Authors.
 """
@@ -41,6 +44,7 @@ from fontTools.misc.timeTools import timestampFromString  # noqa: E402
 from fontTools.otlLib.builder import buildStatTable  # noqa: E402
 from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: E402
 from fontTools.ttLib import TTFont, newTable  # noqa: E402
+from fontTools.ttLib.tables import ttProgram  # noqa: E402
 from fontTools.varLib import build as varlib_build  # noqa: E402
 from fontTools.varLib.models import VariationModel  # noqa: E402
 
@@ -56,15 +60,16 @@ import unicase as UC  # noqa: E402  (registers the inscription unicase forms)
 import qa  # noqa: E402
 
 FAMILY = 'Ateburu'  # the working name: rename here (and in the file names below) if the family is renamed
-VERSION = '0.100'
+VERSION = '0.200'
 COPYRIGHT = 'Copyright 2026 The Ateburu Project Authors (https://github.com/ginocingolani/slop-donostia)'
 LICENSE = ('This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available '
            'with a FAQ at: https://openfontlicense.org')
 LICENSE_URL = 'https://openfontlicense.org'
 VENDOR = 'NONE'
-TIMESTAMP = timestampFromString('Tue Oct 27 00:00:00 2026')
+TIMESTAMP = timestampFromString('Wed Oct 28 00:00:00 2026')
 
 UPM = 1000
+WIN = None          # (usWinAscent, usWinDescent) for the whole family, set by main() once the masters are built
 ASCENT, DESCENT = 930, -230   # typo = hhea; line gap 0: "normal" line height 1.16, caps centred in the line
 # Two axes: weight (600-900) and curvature (CURV 0-100: 0 is the straight-stemmed cut, 100 the curviest that still
 # reads). One master at each corner of the designspace; t and c are the normalised positions on the two axes.
@@ -409,7 +414,7 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
             hmtx[name] = int(round(mix([g.adv for g in gs], sc)))
         else:
             glyf[name] = tt_glyph(outl[name].at(sc), lsb_i)
-            hmtx[name] = int(round(lsb_i + w + rsb))
+            hmtx[name] = int(round(lsb + w + rsb))      # rounded once, so equal advances stay equal (maths signs)
         anchors[name] = {k: lsb_i + mix([getattr(g, k) for g in gs], sc) for k in ('top', 'bottom', 'ogonek', 'caron')}
         if gs[0].top_y is not None:
             anchors[name]['top_y'] = mix([g.top_y for g in gs], sc)
@@ -462,11 +467,12 @@ def build_font(loc, weight, names, drawn, outl, sb, kern):
     fb.setupNameTable(names)
     ymax = max(getattr(glyf_t[n], 'yMax', 0) for n in order if glyf_t[n].numberOfContours)
     ymin = min(getattr(glyf_t[n], 'yMin', 0) for n in order if glyf_t[n].numberOfContours)
+    win_a, win_d = WIN if WIN else (max(ASCENT, ymax), max(-DESCENT, -ymin))
     fb.setupOS2(usWeightClass=weight, fsType=0, achVendID=VENDOR, sTypoAscender=ASCENT, sTypoDescender=DESCENT,
-                sTypoLineGap=0, usWinAscent=max(ASCENT, ymax), usWinDescent=max(-DESCENT, -ymin), sxHeight=G.CAP,
+                sTypoLineGap=0, usWinAscent=win_a, usWinDescent=win_d, sxHeight=G.CAP,
                 sCapHeight=G.CAP, fsSelection=0x80, ulUnicodeRange1=0b11, ulCodePageRange1=1,
                 usDefaultChar=0, usBreakChar=32, version=4)
-    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=int(round(lerp(60, 80, t))))
+    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=60)   # one value for the family
     fb.setupHead(unitsPerEm=UPM, fontRevision=float(VERSION), created=TIMESTAMP, modified=TIMESTAMP)
     fb.font['head'].flags |= 0x0008  # integer scaling
     mark_tops = {n: max(p[1] for p in glyf[n].coordinates) for n, c in MK.MARK_CLASS.items() if c == 'top'}
@@ -515,8 +521,29 @@ def names_for(style, weight, variable=False):
 
 def finish_static(font, style):
     os2 = font['OS/2']
-    os2.fsSelection = 0x80 | (0x20 if style == 'Bold' else 0) | (0x40 if style == 'Regular' else 0)
+    os2.fsSelection = 0x80 | (0x20 if style == 'Bold' else 0x40)   # every style but Bold is named 'Regular' (ID 2)
     font['head'].macStyle = 0x01 if style == 'Bold' else 0
+
+
+def hint_static(path):
+    """Autohint a static with ttfautohint, reproducibly: no version info in the name table, and head.modified put back
+    to TIMESTAMP (ttfautohint stamps the time of the run)"""
+    from ttfautohint import ttfautohint
+    with open(path, 'rb') as f:
+        data = f.read()
+    font = TTFont(io.BytesIO(ttfautohint(in_buffer=data, no_info=True)))
+    font['head'].modified = TIMESTAMP
+    font.recalcTimestamp = False
+    font.save(path)
+
+
+def smart_dropout(font):
+    """The unhinted variable font: no hints, but smart dropout control in 'prep', so that thin joins do not drop out
+    under the TrueType rasteriser (what gftools fix-nonhinting does)"""
+    prep = newTable('prep')
+    prep.program = ttProgram.Program()
+    prep.program.fromAssembly(['PUSHW[ ]', '511', 'SCANCTRL[ ]', 'PUSHB[ ]', '4', 'SCANTYPE[ ]'])
+    font['prep'] = prep
 
 
 def build_variable(master_paths):
@@ -564,6 +591,8 @@ def build_variable(master_paths):
                                                     dict(value=100, name='Curved', flags=0)]),
     ], elidedFallbackName=2)
     vf['OS/2'].usWeightClass = 600
+    vf['OS/2'].fsSelection |= 0x40          # nameID 2 is 'Regular'
+    smart_dropout(vf)
     return vf
 
 
@@ -591,6 +620,14 @@ def main():
         qa_notes[m.name] = notes
     if problems:
         raise SystemExit('outline problems:\n  ' + '\n  '.join(problems))
+    # one set of Windows metrics for the whole family: the masters' extremes bound every instance's
+    global WIN
+    fonts = [TTFont(p) for p in master_paths]
+    WIN = (max(f['OS/2'].usWinAscent for f in fonts), max(f['OS/2'].usWinDescent for f in fonts))
+    for f, p in zip(fonts, master_paths):
+        f['OS/2'].usWinAscent, f['OS/2'].usWinDescent = WIN
+        f.recalcTimestamp = False
+        f.save(p)
 
     vf = build_variable(master_paths)
     os.makedirs(os.path.dirname(OUT_VF), exist_ok=True)
@@ -605,6 +642,7 @@ def main():
         finish_static(font, style)
         p = os.path.join(OUT_STATIC, f'{FAMILY}-{style}.ttf')
         font.save(p)
+        hint_static(p)
         statics.append(p)
         errs, notes = qa.check_font(TTFont(p))
         if errs:
@@ -646,6 +684,7 @@ def main():
     options.name_languages = ['*']
     options.notdef_outline = True
     options.recalc_timestamp = False
+    options.hinting = False          # the app's text is drawn by browsers that need no hints
     sub = subset.Subsetter(options)
     sub.populate(unicodes=[u for u in HUD_UNICODES if u in hud.getBestCmap()])
     sub.subset(hud)

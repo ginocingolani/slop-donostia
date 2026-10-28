@@ -38,6 +38,11 @@ def math_w(m):
     return m.v(470, 510)
 
 
+def math_sb(m, W):
+    """side bearings that give a math sign drawn W wide the advance of the plus (tabular math signs)"""
+    return (math_w(m) + 2 * m.v(56, 46) - W) / 2
+
+
 @glyph('plus', 0x2B)
 def plus(m):
     W = math_w(m)
@@ -67,7 +72,7 @@ def multiply(m):
     t = m.hair * 1.02
     a = diag(*diag_through((0, AXIS - W / 2), (W, AXIS + W / 2), t, AXIS - W / 2, AXIS + W / 2))
     b = diag(*diag_through((W, AXIS - W / 2), (0, AXIS + W / 2), t, AXIS - W / 2, AXIS + W / 2))
-    return G(union([a, b]), W, m.v(70, 60), m.v(70, 60))
+    return G(union([a, b]), W, math_sb(m, W), math_sb(m, W))
 
 
 @glyph('divide', 0xF7)
@@ -92,13 +97,13 @@ def chevron_path(m, w, h, t, x0=0, y=AXIS, point_left=True):
 @glyph('less', 0x3C)
 def less(m):
     W = math_w(m) * 0.86
-    return G(chevron_path(m, W, W * 1.04, m.v(118, 156)), W, m.v(60, 50), m.v(60, 50))
+    return G(chevron_path(m, W, W * 1.04, m.v(118, 156)), W, math_sb(m, W), math_sb(m, W))
 
 
 @glyph('greater', 0x3E)
 def greater(m):
     W = math_w(m) * 0.86
-    return G(chevron_path(m, W, W * 1.04, m.v(118, 156), point_left=False), W, m.v(60, 50), m.v(60, 50))
+    return G(chevron_path(m, W, W * 1.04, m.v(118, 156), point_left=False), W, math_sb(m, W), math_sb(m, W))
 
 
 @glyph('asciicircum', 0x5E)
@@ -370,7 +375,7 @@ def paragraph(m):
     x1 = m.v(260, 285)
     x2 = x1 + t + m.v(68, 56)        # the slit between the stems stays open at every weight
     W = x2 + t
-    bowl = inter(oval(x1, CAP * 0.72, x1, CAP * 0.28 + 1, 0.56), rect(-10, CAP * 0.40, x1 + 1, CAP + 10))
+    bowl = inter(oval(x1, CAP * 0.72, x1, CAP * 0.28 + 1, 0.56), rect(-10, CAP * 0.40, x1 + 1, CAP))
     return G(union([bowl, rect(x1 - 1, 0, x1 + t, CAP), rect(x2, 0, x2 + t, CAP), rect(x1, CAP - h, x2 + t, CAP)]),
              W, None, None)
 
@@ -492,3 +497,15 @@ def trademark(m):
     t = scaled(T.path, k, 0, CAP, 0, CAP)
     mm = scaled(M.path, k, 0, CAP, T.w * k + gap, CAP)
     return G(union([t, mm]), (T.w + M.w) * k + gap, m.v(40, 34), m.v(40, 34))
+
+
+@glyph('uni25CC', 0x25CC)
+def dottedcircle(m):
+    """◌, the stand-in base that shows a combining mark alone: twelve small lozenges round the cap height's middle.
+    The marks attach to it as to a capital (features.mark_bases)"""
+    r = CAP * 0.36
+    dx, dy = Gl.dot_size(m)
+    dx, dy = dx * 0.42, dy * 0.42
+    cx, cy = r + dx, CAP / 2
+    dots = [lozenge(cx + r * math.cos(math.pi * k / 6), cy + r * math.sin(math.pi * k / 6), dx, dy) for k in range(12)]
+    return G(union(dots), 2 * (r + dx), m.v(50, 44), m.v(50, 44))
