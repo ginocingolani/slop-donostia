@@ -50,6 +50,7 @@ import marks as MK  # noqa: E402  (registers the marks and spacing accents)
 import latin  # noqa: E402,F401  (registers the extended Latin letters and the accented composites)
 import symbols  # noqa: E402,F401  (registers the symbols and the rest of the punctuation)
 import alternates as ALT  # noqa: E402  (registers the alternates the features reach)
+import nexus as NX  # noqa: E402  (registers the nexus letters)
 import qa  # noqa: E402
 
 FAMILY = 'Ateburu'  # the working name: rename here (and in the file names below) if the family is renamed
@@ -284,7 +285,10 @@ LATIN_EXTRA = ['AE', 'OE', 'Oslash', 'Thorn', 'Eth', 'Hbar', 'Lslash', 'Ldot', '
 # alternates kerned like the rest (the dotted i's, the Ks)
 KERN_ALTERNATES = (['K.straight', 'K.roman', 'A.r', 'A.roman', 'R.short', 'R.roman', 'K.short', 'K.straight.short',
                     'o.small', 'four.ss05', 'seven.ss05', 'five.ss05'] +
-                   [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS])
+                   [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS] + [n for n, _ in NX.NEXUS])
+# a nexus kerns on its left like its first letter and on its right like its last
+KERN_LEFT_OPEN |= {n for n, letters in NX.NEXUS if letters[-1] in KERN_LEFT_OPEN}
+KERN_RIGHT_OPEN |= {n for n, letters in NX.NEXUS if letters[0] in KERN_RIGHT_OPEN}
 
 
 def kerning(drawn, tt, sb):

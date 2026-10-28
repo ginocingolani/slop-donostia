@@ -96,9 +96,12 @@ def mark_bases():
 def gdef():
     import marks as MK
     names = glyph_names()
+    import nexus as NX
     marks_ = [n for n in MK.MARK_CLASS if n in names]
-    bases = sorted(n for n in names if n not in marks_)
-    return ('table GDEF {\n  GlyphClassDef [' + ' '.join(bases) + '], , [' + ' '.join(marks_) + '], ;\n} GDEF;\n')
+    ligs = [n for n, _ in NX.NEXUS if n in names]
+    bases = sorted(n for n in names if n not in marks_ and n not in ligs)
+    return ('table GDEF {\n  GlyphClassDef [' + ' '.join(bases) + '], [' + ' '.join(ligs) + '], [' + ' '.join(marks_)
+            + '], ;\n} GDEF;\n')
 
 
 def marks(anchors, mark_tops, cap, mark_class, mkmk_gap, accent_gap):
@@ -166,6 +169,13 @@ def gsub2():
     kk = family('K')
     L.append(f'  sub [{" ".join(kk)}] by [{" ".join(n + ".roman" if n != "K" else "K.roman" for n in kk)}];')
     L.append('} ss04;')
+    L.append('')
+    # dlig: the nexus letters (before calt, which would otherwise turn the A of TA first)
+    import nexus as NX
+    L.append('feature dlig {')
+    for name, letters in NX.NEXUS:
+        L.append(f'  sub {" ".join(letters)} by {name};')
+    L.append('} dlig;')
     L.append('')
     # calt
     nxt = a_fam + [n + '.r' if n != 'A' else 'A.r' for n in a_fam] + tvwy + ['J']

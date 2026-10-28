@@ -542,17 +542,13 @@ def K_roman(m):
 # diagonals
 
 
-@glyph('A', 0x41, 0x61)
-def A(m, flag='l'):
-    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
-    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V.
-    flag='r' turns the crown's long end to the right (calt uses it after T, V, W and Y, whose arms overhang the A's
-    left)"""
+def a_geometry(m):
+    """The crowned A's frame: width W, the apex's left x ax0 and width apex_w, the legs' horizontal widths l_hw and
+    r_hw. The apex width is solved so that the legs' inner edges meet just under the crown"""
     C, h = m.C, m.hair
     W = m.v(660, 800)               # 0.200: the Black wider than before, so its kite counter opens
     hc = h * 0.98
     thin, thick = m.thin * 0.92, m.thick * 0.96
-    # solve the apex width so that the legs' inner edges meet just under the crown
     apex_w = m.v(170, 220)
     for _ in range(8):
         ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
@@ -563,6 +559,18 @@ def A(m, flag='l'):
     ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
     l_hw = thin / math.sin(math.atan2(C, ax0))
     r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
+    return W, ax0, apex_w, l_hw, r_hw
+
+
+@glyph('A', 0x41, 0x61)
+def A(m, flag='l', crowned=True):
+    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
+    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V.
+    flag='r' turns the crown's long end to the right (calt uses it after T, V, W and Y, whose arms overhang the A's
+    left)"""
+    C, h = m.C, m.hair
+    W, ax0, apex_w, l_hw, r_hw = a_geometry(m)
+    hc = h * 0.98
     left = diag((0, 0), (l_hw, 0), (ax0, C), (ax0 + l_hw, C),
                 {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)}, bend=bow(m, 9))
     right = diag((W - r_hw, 0), (W, 0), (ax0 + apex_w - r_hw, C), (ax0 + apex_w, C),
@@ -591,7 +599,7 @@ def A(m, flag='l'):
     xl, xr = lx(y_side) - 40, rx(y_side) + 40
     vbar = polygon([(xl, y_side + 10), (xm, y_mid), (xr, y_side + 10), (xr, y_side + 10 - hb * 1.08),
                     (xm, y_mid - hb * 1.12), (xl, y_side + 10 - hb * 1.08)])
-    shape = union([left, right, crown, vbar])
+    shape = union([left, right, crown, vbar] if crowned else [left, right, vbar])
     # ink traps in the counter's lower corners, where the V meets the legs
     up_l = unit((ax0, C))
     up_r = unit(((ax0 + apex_w - r_hw) - (W - r_hw), C))
