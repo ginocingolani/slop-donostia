@@ -637,7 +637,7 @@ function shoreWalls(dtm, grid, classes) {
   const at = (k) => [grid.x0 + ((k % grid.w) + 0.5) * grid.res, grid.z0 + (Math.floor(k / grid.w) + 0.5) * grid.res];
   // In front: out to where the (battered) face meets the ground and a cell beyond, nothing stands above the foot; what
   // drops takes the class of the ground beyond (the beach, the rocks, the water)
-  const BAND = 2.9, PAD = 9;
+  const BAND = 2.9, SMEAR = 4.5, PAD = 9;
   const index = wallIndex(walls, 16, PAD);
   const seen = new Uint8Array(grid.w * grid.h);
   let lowered = 0, raised = 0;
@@ -657,13 +657,22 @@ function shoreWalls(dtm, grid, classes) {
       const q = nearestWall(walls, x, z, PAD, index);
       if (!q || q.end || q.d <= 0) continue;
       const w = walls[q.wall];
-      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little)
-      if (Math.hypot(x - q.x, z - q.z) > BAND + w.b * Math.max(0, q.deck - q.foot)) continue;
+      // (the band measured from the wall itself: beyond a bend's vertex the distance off the segment's line says little;
+      // in front of the beaches' walls, out to SMEAR the sand or the water still a metre over the foot and below the
+      // promenade: the LiDAR spreads the fall of the Pico del Loro's wall over 3-4 m)
+      const dist = Math.hypot(x - q.x, z - q.z), v = grid.data[k];
+      const smear = (w.t === WALL.concha || w.t === WALL.zurriola) && dist <= SMEAR && v > q.foot + 1 && v < q.deck - 1 &&
+        (classes[k] === GROUND.beach || classes[k] === GROUND.water);
+      if (dist > BAND + w.b * Math.max(0, q.deck - q.foot) && !smear) continue;
       const snapped = snaps.get(k);
-      if (grid.data[k] > q.foot + 0.1 || snapped) {
-        if (grid.data[k] > q.foot + 0.1) { grid.data[k] = q.foot; lowered++; }
-        const out = BAND + 2 + w.b * Math.max(0, q.deck - q.foot) - q.d;
-        const beyond = classAt(x + q.nx * out, z + q.nz * out);
+      const out = BAND + 2 + w.b * Math.max(0, q.deck - q.foot) - q.d, bx = x + q.nx * out, bz = z + q.nz * out;
+      const beyond = classAt(bx, bz);
+      // (where the sea comes up to a beach's wall, down to its floor beyond: the LiDAR has the sea's surface at the foot,
+      // which would stand out of the water as a ledge along the wall)
+      const sea = beyond === GROUND.water && (w.t === WALL.concha || w.t === WALL.zurriola) ? grid.sample(bx, bz) : NaN;
+      const foot = Number.isFinite(sea) ? Math.min(q.foot, sea) : q.foot;
+      if (v > foot + 0.1 || snapped) {
+        if (v > foot + 0.1) { grid.data[k] = foot; lowered++; }
         if (beyond >= 0 && beyond !== GROUND.building) classes[k] = beyond;
       }
     }
