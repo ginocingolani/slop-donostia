@@ -24,6 +24,7 @@ glyph's masters are incompatible or an outline has the wrong direction or overla
 
 SIL Open Font License 1.1, no Reserved Font Name: see OFL.txt. Copyright 2026 The Ateburu Project Authors.
 """
+import io
 import json
 import os
 import sys
@@ -603,6 +604,23 @@ def main():
         if errs:
             raise SystemExit(f'outline problems in {style}:\n  ' + '\n  '.join(errs))
         qa_notes[style] = notes
+
+    # the rest of the designspace: instances between the masters must not overlap or turn either
+    grid = {}
+    for w in (600, 700, 800, 900):
+        for c in (0, 25, 50, 75, 100):
+            if c == 0 or (c == 100 and w in (600, 900)):
+                continue          # the statics and the masters are checked above
+            t = (w - WGHT[0]) / (WGHT[1] - WGHT[0])
+            font = build_font((t, c / 100), w, names_for('SemiBold', w), drawn, outl, sb, kern)
+            buf = io.BytesIO()
+            font.save(buf)
+            buf.seek(0)
+            errs, notes = qa.check_font(TTFont(buf))
+            if errs:
+                raise SystemExit(f'outline problems at wght {w} CURV {c}:\n  ' + '\n  '.join(errs))
+            grid[f'wght {w} CURV {c}'] = len(notes)
+    qa_notes['grid (soft notes per instance)'] = [f'{k}: {v}' for k, v in grid.items()]
 
     web = TTFont(OUT_VF)
     web.recalcTimestamp = False

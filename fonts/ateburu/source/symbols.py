@@ -365,10 +365,11 @@ def section(m):
 
 @glyph('paragraph', 0xB6)
 def paragraph(m):
-    W = m.v(500, 540)
     t = m.stem * 0.72
     h = m.hair * 0.9
-    x1, x2 = W * 0.52, W - t
+    x1 = m.v(260, 285)
+    x2 = x1 + t + m.v(68, 56)        # the slit between the stems stays open at every weight
+    W = x2 + t
     bowl = inter(oval(x1, CAP * 0.72, x1, CAP * 0.28 + 1, 0.56), rect(-10, CAP * 0.40, x1 + 1, CAP + 10))
     return G(union([bowl, rect(x1 - 1, 0, x1 + t, CAP), rect(x2, 0, x2 + t, CAP), rect(x1, CAP - h, x2 + t, CAP)]),
              W, None, None)

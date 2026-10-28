@@ -15,7 +15,7 @@ TX, TZ and TS are modern digraphs (batua); historically CH, TCH and TZ were writ
 """
 import math
 
-from geometry import bar, diag, diff, polygon, rect, shift, stem, union
+from geometry import bar, diag, diff, inter, polygon, rect, shift, stem, union
 import glyphs as Gl
 from glyphs import G, glyph
 
@@ -208,9 +208,16 @@ def A_N(m):
     A = Gl.A(m)
     WA, ax0, apex_w, l_hw, r_hw = Gl.a_geometry(m)
     sn = m.stem * 0.88
-    xr = ax0 + apex_w + m.v(470, 500)
-    dw = m.thick / math.sin(math.atan2(C, xr - sn - (ax0 + apex_w)))
-    d = polygon([(xr - dw, -m.op), (xr, -m.op), (ax0 + apex_w, C), (ax0 + apex_w - dw, C)])
+    apex_r = ax0 + apex_w
+    # the wedge between the A's right leg and the diagonal is the N's lower counter: it must stay open at the Black,
+    # so the right stem goes where the diagonal clears the A's right foot by `gap`
+    a_right = A.path.bounds[2]
+    gap = m.v(118, 112)
+    xr = a_right + gap + m.thick
+    for _ in range(8):
+        dw = m.thick / math.sin(math.atan2(C + m.op, xr - apex_r))
+        xr = a_right + gap + dw
+    d = polygon([(xr - dw, -m.op), (xr, -m.op), (apex_r, C), (apex_r - dw, C)])
     right = stem(xr - sn, xr, -m.op, C, m.serif, bl=False, br=False, flare_l=m.flare, flare_r=m.flare)
     return G(union([A.path, d, right]), xr, None, m.sp)
 
@@ -230,10 +237,14 @@ def M_A(m):
     xA = vx - ax0 * yv / C - l_hw * 0.5
     A = Gl.A(m)
     # the M's first diagonal: a straight stroke from the top of the left leg down to the vertex on the A's left leg,
-    # run on 80 units past it so that it ends buried in that leg (no sliver of counter where they meet)
+    # run on 80 units past it so that it ends buried in that leg (no sliver of counter where they meet), and cut at the
+    # leg's inner edge so that nothing of it shows inside the A
     dlw = thick / math.sin(math.atan2(C - yv, vx - splay))
     slope = (vx - splay) / (C - yv)
     y_end = yv - 80
     x_end = splay + slope * (C - y_end)
     dl = polygon([(splay, C), (splay + dlw, C), (x_end + dlw, y_end), (x_end, y_end)])
-    return G(union([left, dl, shift(A.path, xA, 0)]), xA + WA, None, None)
+    inner = xA + l_hw - 2            # the leg's inner edge at the baseline; it leans right by ax0 over the cap height
+    keep = polygon([(-500, -100), (inner - ax0 * 100 / C, -100), (inner + ax0 * (C + 100) / C, C + 100),
+                    (-500, C + 100)])
+    return G(union([left, inter(dl, keep), shift(A.path, xA, 0)]), xA + WA, None, None)
