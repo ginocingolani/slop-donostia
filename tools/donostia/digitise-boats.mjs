@@ -731,7 +731,9 @@ const DROP = [
   // hull read as five small boats)
   ['fishing boat', [43.8, -208, 51.8, -208, 51.8, -195.8, 43.8, -195.8]],
   // a motor boat under way down the north basin's fairway, its wake behind it: nothing moored there
-  ['under way', [-44, -187, -36, -187, -36, -180, -44, -180]]
+  ['under way', [-44, -187, -36, -187, -36, -180, -44, -180]],
+  // the foot of the Mollaerdia's west-face stair, pale steps at the water read as an open boat once the stair is cut in
+  ['stair foot', [-50.5, -151, -45, -151, -45, -145.5, -50.5, -145.5]]
 ];
 const FIX = [
   [5.21, -174.12, { family: 'sail' }], // a sailboat on the north basin's T pontoon (its stern is cut square)
