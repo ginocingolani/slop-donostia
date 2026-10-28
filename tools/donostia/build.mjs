@@ -7,6 +7,7 @@
 //   js/donostia/geodata.js             frame, terrain metadata (with the shore walls), buildings, landmark sites &
 //                                      teleports
 //   js/donostia/data-beach-access.js  the stairs & ramps down to the beaches (tools/donostia/beach-access.mjs)
+//   js/donostia/data-tunnels.js        the tunnels' portals (tools/donostia/tunnels.mjs)
 // --preview writes debug images (hillshade, building heights) into the given folder.
 // Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
@@ -18,12 +19,14 @@ import {
 } from './lib.mjs';
 import { detectWalls, detectStairs, stairWalls, joinPortWalls, quayEdges, buildingFaces, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
+import { tunnelPortals } from './tunnels.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
 const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
 const OUT_ACCESS = path.join(ROOT, 'js', 'donostia', 'data-beach-access.js');
+const OUT_TUNNELS = path.join(ROOT, 'js', 'donostia', 'data-tunnels.js');
 const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
@@ -797,6 +800,59 @@ function harbourBed(grid, kind, walls) {
     `${HARBOUR_BED} m or deeper`);
 }
 
+// --- 4f. The tunnels' portals ----------------------------------------------------------------------------------------
+
+// tools/donostia/tunnels.mjs finds the portals' faces where the roads, paths & railways in OSM's tunnels run into the
+// ground, and the municipal map's retaining walls round them; the terrain steps at both as at the shore walls
+// (stepAtWalls; the faces are hidden walls, js/donostia/tunnels.js builds the portals). In front of a retaining wall over
+// a bank the samples out to BANK_REACH come down to the wall's foot (stepAtWalls takes a promenade's width), and the
+// municipal map's stairs by these walls are built as the shore's are (walls.mjs's detectStairs, the terrain kept under
+// them). `walls` and `stairs` grow. Returns the portals (js/donostia/data-tunnels.js).
+const BANK_REACH = 5; // m
+function tunnelWalls(dtm, walls, stairs, grid, classes, access) {
+  const { portals, walls: added } = tunnelPortals({ dtm, loadLayer, lonLatToLocal, core: CORE, walls, log });
+  const first = walls.length;
+  walls.push(...added);
+  // (the ground keeps its classes: in front of these walls lies the road, a walk, a courtyard, which stepAtWalls would
+  // take from the ground beyond, past the walk's sea wall)
+  const kept = classes.slice();
+  const { lowered, raised } = stepAtWalls(walls, grid, classes, new Set(added.map((_, k) => first + k)));
+  classes.set(kept);
+  // the bank before a retaining wall levelled with its foot
+  const index = wallIndex(added, 16, BANK_REACH + 1);
+  let banked = 0;
+  for (let j = 0; j < grid.h; j++) for (let i = 0; i < grid.w; i++) {
+    const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+    if (!index.near(x, z).length) continue;
+    const q = nearestWall(added, x, z, BANK_REACH, index);
+    if (!q || q.end || q.d <= 0 || added[q.wall].h) continue;
+    const k = j * grid.w + i;
+    if (grid.data[k] > q.foot + 0.1) { grid.data[k] = q.foot; banked++; }
+  }
+  // the stairs by these walls (not the beaches' nor the shore's, found already)
+  const known = new Set(stairs.map((st) => { let x = 0, z = 0; for (let k = 0; k < st.p.length; k += 2) { x += st.p[k]; z += st.p[k + 1]; } return `${Math.round(x / st.p.length * 20)},${Math.round(z / st.p.length * 20)}`; }));
+  const flights = detectStairs({
+    dtm, walls: added, loadLayer, scanRings, log,
+    skip: (x, z) => access.claimed(x, z) || known.has(`${Math.round(x * 10)},${Math.round(z * 10)}`)
+  });
+  let under = 0;
+  for (const st of flights) {
+    const [a, b, c, cx, cz] = st.plane;
+    scanRings([st.p], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+      const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+      const y = Math.min(st.top, Math.max(st.bot, c + a * (x - cx) + b * (z - cz))) - 0.12;
+      const k = j * grid.w + i;
+      if (grid.data[k] > y) { grid.data[k] = y; under++; }
+    });
+    const { plane, ...rest } = st;
+    stairs.push(rest);
+  }
+  log(`tunnels: ${added.length} walls (${portals.length} portals' faces); ${lowered} terrain samples in front dropped to ` +
+    `the road, ${raised} behind levelled with the ground over the bore, ${banked} of the banks before them; ` +
+    `${flights.length} flights by them (${under} samples kept under the steps)`);
+  return portals;
+}
+
 function writeTerrainPNG(grid, blue, file, text) {
   const px = new Uint8Array(grid.w * grid.h * 3);
   for (let k = 0; k < grid.data.length; k++) {
@@ -1104,6 +1160,7 @@ lap('ground classes');
 const { walls, access, faces } = shoreWalls(dtm, core.grid, coreClasses);
 const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access, faces);
 harbourBed(core.grid, core.kind, walls);
+const portals = tunnelWalls(dtm, walls, stairs, core.grid, coreClasses, access);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -1153,6 +1210,14 @@ const accessJs = `// js/donostia/data-beach-access.js — generated by tools/don
   `export const BEACH_ACCESS = ${JSON.stringify(access.data)};\n`;
 fs.writeFileSync(OUT_ACCESS, accessJs);
 log(`${path.relative(ROOT, OUT_ACCESS)}: ${(accessJs.length / 1e3).toFixed(1)} kB`);
+
+const tunnelsJs = `// js/donostia/data-tunnels.js — generated by tools/donostia/build.mjs (tools/donostia/tunnels.mjs); do not edit.\n` +
+  `// © OpenStreetMap contributors (ODbL) · Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 ` +
+  `(CC BY-SA 3.0) · Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi (LiDAR, CC BY 4.0)\n` +
+  licenceComment('osm', 'c500', 'geoeuskadi') +
+  `export const TUNNELS = ${JSON.stringify({ portals })};\n`;
+fs.writeFileSync(OUT_TUNNELS, tunnelsJs);
+log(`${path.relative(ROOT, OUT_TUNNELS)}: ${(tunnelsJs.length / 1e3).toFixed(1)} kB`);
 
 if (PREVIEW) {
   fs.mkdirSync(PREVIEW, { recursive: true });
