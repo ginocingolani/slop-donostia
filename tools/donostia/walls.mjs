@@ -16,6 +16,9 @@ const SEARCH = 7; // m: the drop must lie this close to the shoreline
 const WALL_MIN = 1.4; // m: lower steps are kerbs, low terraces & rocks
 const STEEP = 0.25; // m of fall per STEP that still belongs to the face (a 1 in 2 slope)
 const DECK = [0.5, 4.5]; // m behind the crest over which the promenade level is taken
+const WALK = 2, WALK_RISE = 0.6; // m: the narrowest walk along a wall that a bank may rise behind; the most it rises across
+const FALLS = 3; // the falls tried in each profile
+const JOIN_MISSES = 5; // by a beach, the profiles between two runs of one wall that may miss it
 const SPREAD0 = 1.8; // m: how far the 1 m LiDAR spreads a plumb wall's fall (10 to 90 %)
 // Ground classes (GEO.terrain.classes) a wall may hold up: paving & roads, the beach-front gardens; flat unmapped ground
 // (natural) only where very flat (the port's & the river's quays, which the municipal map leaves blank)
@@ -44,38 +47,65 @@ function resample(pts, closed) {
   });
 }
 
-// The wall in the profile square to the shoreline at node P, or null. u runs along the normal (-tz, tx).
-function profileWall(dtm, P, classAt) {
+// The wall in the profile square to the shoreline at node P, or null. u runs along the normal (-tz, tx). beach: P lies on
+// a beach's edge (the falls after the steepest are tried, and a walk with a bank behind it holds a wall up).
+function profileWall(dtm, P, classAt, beach) {
   const nx = -P.tz, nz = P.tx;
   const N = Math.round((2 * HALF) / STEP) + 1;
-  let h = new Float64Array(N);
+  const h = new Float64Array(N);
   for (let i = 0; i < N; i++) {
     const u = -HALF + i * STEP;
     h[i] = dtm.sample(P.x + nx * u, P.z + nz * u);
     if (!Number.isFinite(h[i])) return null;
   }
-  // the steepest 3 m fall near the shoreline, in either direction
+  // the steepest 3 m fall near the shoreline, in either direction; by a beach, the next steepest too while none makes a
+  // wall (behind the walk round the Pico del Loro, Miramar's garden bank falls faster than the sea wall in front of it)
   const span = Math.round(1.5 / STEP), reach = Math.round(SEARCH / STEP), mid = (N - 1) / 2;
-  let best = 0, at = -1;
+  const falls = [];
   for (let i = Math.max(span, mid - reach); i <= Math.min(N - 1 - span, mid + reach); i++) {
     const d = h[i - span] - h[i + span];
-    if (Math.abs(d) > Math.abs(best)) { best = d; at = i; }
+    if (Math.abs(d) >= WALL_MIN) falls.push([i, d]);
   }
-  if (Math.abs(best) < WALL_MIN) return null;
-  // turn the profile so the low side lies at +u
-  const s = Math.sign(best);
-  if (s < 0) { h = h.reverse(); at = N - 1 - at; }
+  falls.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || a[0] - b[0]);
+  const tried = [];
+  for (const [i, d] of falls) {
+    if (tried.some((t) => Math.abs(t - i) <= 2 * span)) continue; // (one try per fall)
+    if (tried.push(i) > (beach ? FALLS : 1)) break;
+    // turn the profile so the low side lies at +u
+    const w = d > 0 ? profileFall(h, i, 1, P, classAt, beach) : profileFall(h.slice().reverse(), N - 1 - i, -1, P, classAt, beach);
+    if (w) return w;
+  }
+  return null;
+}
+
+// The wall of the fall at `at` in the profile h (turned so the low side lies at +u; s: +1 as sampled, -1 turned), or null
+function profileFall(h, at, s, P, classAt, beach) {
+  const N = h.length, nx = -P.tz, nz = P.tx;
   let top = at, toe = at;
   while (top > 0 && h[top - 1] - h[top] > STEEP) top--;
   while (toe < N - 1 && h[toe] - h[toe + 1] > STEEP) toe++;
   const crest = h[top], foot = h[toe];
-  // the promenade behind: flat
-  const deckSamples = [];
-  for (let i = top - Math.round(DECK[1] / STEP); i <= top - Math.round(DECK[0] / STEP); i++) if (i >= 0) deckSamples.push(h[i]);
+  // the promenade behind: flat; or, by a beach, a walk WALK wide or more along the wall with the ground behind it only
+  // rising (the walk round the Pico del Loro under Miramar's gardens, Ondarreta's end climbing to it): the walk's level
+  const deckSamples = [], walk = [];
+  let rising = true;
+  for (let i = top - Math.round(DECK[1] / STEP); i <= top - Math.round(DECK[0] / STEP); i++) {
+    if (i < 0) continue;
+    deckSamples.push(h[i]);
+    if (i >= top - Math.round(WALK / STEP)) walk.push(h[i]);
+    if (i > 0 && h[i - 1] < h[i] - 0.1) rising = false;
+  }
   if (deckSamples.length < 4) return null;
   deckSamples.sort((a, b) => a - b);
-  const deck = deckSamples[deckSamples.length >> 1];
-  const rough = deckSamples[deckSamples.length - 1] - deckSamples[0];
+  let deck = deckSamples[deckSamples.length >> 1];
+  let rough = deckSamples[deckSamples.length - 1] - deckSamples[0];
+  if (beach && rough > 1.2 && rising && walk.length >= 3) {
+    const walkRough = Math.max(...walk) - Math.min(...walk);
+    if (walkRough <= WALK_RISE) {
+      deck = median(walk);
+      rough = walkRough;
+    }
+  }
   const height = Math.min(crest, deck + 0.3) - foot;
   const extent = (toe - top) * STEP;
   if (height < WALL_MIN || deck - foot < WALL_MIN || crest - deck > 1.3 || rough > 1.2) return null;
@@ -144,7 +174,7 @@ function simplify(pts, tol) {
 
 /**
  * dtm: the 1 m Grid (lib.mjs) with sample(x, z); classAt(x, z): ground class of the 2 m core; guides: shorelines in
- * priority order, { pts (flat x, z), closed, type(x, z) -> WALL id }; exclude(x, z): no wall here (stairs down to the
+ * priority order, { pts (flat x, z), closed, type(x, z) -> WALL id, beach (a beach's edge) }; exclude(x, z): no wall here (stairs down to the
  * beach, buildings that stand in the wall's line, bridges). Returns [{ t, b, p: [x, z, deck, foot, ...] }].
  */
 export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () => {} }) {
@@ -160,7 +190,7 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
     const nodes = resample(guide.pts, guide.closed);
     const hits = nodes.map((P) => {
       if (P.x < bounds.minX || P.x > bounds.maxX || P.z < bounds.minZ || P.z > bounds.maxZ) return null;
-      const w = profileWall(dtm, P, classAt);
+      const w = profileWall(dtm, P, classAt, guide.beach);
       if (!w || exclude(w.x, w.z) || claimed.has(ck(w.x, w.z))) return null;
       return w;
     });
@@ -176,6 +206,19 @@ export function detectWalls({ dtm, classAt, guides, exclude, bounds, log = () =>
       cur.push({ k, hit: w, node: nodes[k] });
     });
     flush();
+    // by a beach, two runs a few metres apart, facing the same way at the same level with nothing between them that cuts
+    // a wall (stairs, a building), are one wall the profiles lost for a moment (where the walk round the Pico del Loro
+    // leaves La Concha's promenade, its LiDAR dips)
+    if (guide.beach) {
+      for (let r = runs.length - 1; r > 0; r--) {
+        const a = runs[r - 1], b = runs[r], e = a[a.length - 1].hit, f = b[0].hit;
+        if (b[0].k - a[a.length - 1].k - 1 > JOIN_MISSES || e.s !== f.s || Math.abs(e.deck - f.deck) > 1) continue;
+        const l = Math.hypot(f.x - e.x, f.z - e.z);
+        let clear = true;
+        for (let t = 0; t <= l && clear; t += 0.5) clear = !exclude(e.x + ((f.x - e.x) * t) / (l || 1), e.z + ((f.z - e.z) * t) / (l || 1));
+        if (clear) runs.splice(r - 1, 2, a.concat(b));
+      }
+    }
     // a closed shoreline's run that wraps round its start
     if (guide.closed && runs.length > 1) {
       const first = runs[0], last = runs[runs.length - 1];
@@ -520,14 +563,45 @@ function coastType(x, z, nx, nz) {
   return WALL.quay;
 }
 
+// A beach's edge drawn out round a rock and back to within NOTCH[0] of where it left, over NOTCH[1] to NOTCH[2] of edge
+// (the rock ribs the map draws into the beach under the Pico del Loro's walk): the mouth instead. The profiles along the
+// notch's sides would look along the wall rather than across it, and split its run in two. (Returns the ring itself
+// where it has none.)
+const NOTCH = [2.5, 8, 40]; // m
+function dropNotches(r) {
+  const n = r.length / 2;
+  const at = (i) => [r[2 * (i % n)], r[2 * (i % n) + 1]];
+  let perimeter = 0;
+  for (let i = 0; i < n; i++) perimeter += Math.hypot(at(i + 1)[0] - at(i)[0], at(i + 1)[1] - at(i)[1]);
+  const keep = new Uint8Array(n).fill(1);
+  for (let i = 0; i < n; i++) {
+    if (!keep[i]) continue;
+    const [ax, az] = at(i);
+    let len = 0, cut = 0;
+    for (let s = 1; s < n; s++) {
+      const [px, pz] = at(i + s - 1), [qx, qz] = at(i + s);
+      len += Math.hypot(qx - px, qz - pz);
+      if (len > NOTCH[2] || len > perimeter / 3) break;
+      if (len >= NOTCH[1] && Math.hypot(qx - ax, qz - az) < NOTCH[0]) cut = s;
+    }
+    for (let s = 1; s < cut; s++) keep[(i + s) % n] = 0;
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(r[2 * i], r[2 * i + 1]);
+  return out.length >= 6 ? out : r;
+}
+
 /**
  * The shorelines to look along, in priority order: the edges of the municipal map's beaches; the OSM river & docks at
  * sea level (seaLevel(rings) decides, as build.mjs's water mask); the OSM coastline; the OSM breakwaters.
  */
 export function shoreGuides({ loadLayer, osmPolygons, lonLatToLocal, seaLevel }) {
   const guides = [];
-  for (const f of loadLayer('c500_HONDARTZA.json').features) {
-    for (const r of f.g) if (r.length >= 6) guides.push({ pts: r, closed: true, type: (x) => (x > 400 ? WALL.zurriola : WALL.concha) });
+  // (each beach's edge without its notches, then as drawn, for the walls round them that no run claimed)
+  const beaches = loadLayer('c500_HONDARTZA.json').features.flatMap((f) => f.g.filter((r) => r.length >= 6));
+  const trimmed = beaches.map(dropNotches);
+  for (const r of [...trimmed, ...beaches.filter((r, i) => trimmed[i] !== r)]) {
+    guides.push({ pts: r, closed: true, beach: true, type: (x) => (x > 400 ? WALL.zurriola : WALL.concha) });
   }
   const osm = loadLayer('osm_places.json').elements;
   for (const e of osm) {
