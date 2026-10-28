@@ -139,7 +139,8 @@ map.
   map leaves it out under the promenade's deck; its run and form were read off Wikimedia Commons photographs (freely
   licensed, credited in the module) used as references only: nothing derived from their pixels is committed.
 - Shore stairs (`walls.mjs`, `GEO.terrain.stairs`): the municipal map's stairs (`ESKAILERA`) by a wall, within 3 m of
-  it, or 8 m for a piece that falls a metre or more below the promenade. Each piece gets a plane fitted to the 1 m LiDAR
+  it, or 8 m for a piece that falls a metre or more below the promenade; not the slivers under 0.6 m wide (a flight's
+  parapet or edge drawn as stairs, which hung in the air as a slab: 4 of them, the Pico del Loro's curved flight's). Each piece gets a plane fitted to the 1 m LiDAR
   inside it, giving its fall, its downhill direction and its top & bottom between the promenade and the wall's foot. A
   piece that hardly falls is a landing. The walls stop half a metre short of them, the 2 m samples inside are kept
   under the slope, and `shore.js` builds them as solid steps of about 17 cm. The beaches' stairs are not among them:
@@ -298,19 +299,26 @@ map.
   one bore make it double). Each face is a hidden wall of `GEO.terrain.walls` (`f: 1`), so the terrain steps at it:
   the road in front, the ground over the bore behind; where a sample shares triangles with a face and another wall,
   in front of both it goes onto the face (left off it, it drew a ramp from the face's top across the opening's flank),
-  behind the other it stays up. Round each portal (45 m) the municipal walls (`HORMA`) stand as retaining walls
+  behind the other it stays up. Where a retaining wall runs on from a face, the two share an end, and no terrain edge
+  joins a sample on one to a sample on the other (it cut across the corner, its triangle a blade in front of the
+  masonry): the samples on either within a cell of the corner go onto it, at the top or the foot, then the nearer of
+  any two neighbours still on the two walls, and the unsnapped samples by it on its other side (in front of a corner
+  the hill's nose stands out from, behind one a courtyard turns in). Round each portal (45 m) the municipal walls (`HORMA`) stand as retaining walls
   (`WALL.garden`: grey rubble under a dressed coping, `js/donostia/shore.js`) where the LiDAR 1.5-3.5 m either side
   of their outline steps 1.4 m or more, the road's level within -1.5/+6 m in front and the ground there level, or a
   bank falling away from the wall (its face then goes down to the bank's foot, the bank before it levelled out to 5 m:
   the 2 m grid makes a sawtooth of a bank a cell wide between a wall and a road); of two runs along one wall the one
-  with level ground in front stands. A wall that ends by a face's end runs on to it, the two meeting where their lines
-  cross (the face's end moved along its line, its openings, up to 1 m, to leave 1.2 m beside them); the municipal
+  with level ground in front stands, and of a wall's two faces (facing away from each other: a freestanding wall's, the
+  top of a bank behind it) the taller step; a wall over a bank gives way only to one facing the same way that holds the
+  bank's foot. A wall that ends by a face's end runs on to it, the two meeting where their lines cross (the face's end
+  moved along its line, its openings, up to 1 m, to leave 1.2 m beside them), its foot there the road's, rising no
+  faster than 15 % along it (in front of a cutting's wall by the face the LiDAR has the face's smear); the municipal
   stairs by these walls are built as the shore's (`walls.mjs`'s `detectStairs`). These walls keep the ground classes:
   in front of them lies the road, the walk, a courtyard. Where the walk round the Pico del Loro is a sample wide between
   Miramar's garden wall and the sea wall, the garden wall's samples behind it that share a triangle with the sea wall's
   come down to the walk (else the terrain rose from the sea wall's crest over the garden wall's face in spikes). The portals (`js/donostia/tunnels.js`): the face in masonry
   from under the road to the ground over the bore, a cornice, a parapet with a white railing on the stone portals (a
-  plain one on the concrete), a pier in each corner where a retaining wall runs on, and the arch: a semicircle where
+  plain one on the concrete), the walls that run on from it meeting it square, and the arch: a semicircle where
   the face is tall enough over a springing of 1.6 m (a road's) or 2.2 m (a path's or a railway's), else a segment
   under a 0.4 m head; through it the bore, traced from the view ray (no geometry behind the face: walls, vault, floor,
   ribs every 3 m, lamps every 4.5 m that light it at night, the far portal's daylight). The Miramar tunnel (1890) is
@@ -323,9 +331,10 @@ map.
   map already leaves the bores out of its roads (the gardens and paths over them are its own), and OSM maps no street
   lamps over them. Left as they were: the cuttings' sides where the map has no wall (the bypass's portals stand in
   slopes the 2 m grid still smears), small pits in the garden behind Miramar's wall where those samples came down, the
-  corners of the Pico del Loro footway's two courtyards (6 m wide: a sample in
-  a corner ramps between the face's top and the side wall's foot beside the corner's pier), the port's and the Paseo
-  Nuevo's portals (a shore wall stands there already).
+  grass bank at the walk's end beyond the footway's east courtyard (the mound's flank, where the map has the walk's
+  parapet and a thin wall the LiDAR does not step at), the port's and the Paseo Nuevo's portals (a shore wall stands
+  there already). The Pico del Loro's curved flight (the beach access) climbs from the rocks to the terrace at the
+  end of Ondarreta's promenade, which leads to the footway's west portal: the east one is reached along the walk.
 - Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
   the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
   road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster

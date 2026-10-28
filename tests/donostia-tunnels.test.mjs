@@ -100,6 +100,15 @@ test('the faces are walls the terrain steps at, retaining walls with copings rou
     assert.ok(w, `a garden wall by the walk at (${x}, ${z})`);
   }
   for (const w of garden) for (let k = 0; k < w.p.length; k += 4) assert.ok(w.p[k + 2] - w.p[k + 3] >= 1.3, 'a step');
+  // the footway's courtyards: walls run on from both ends of each portal's face, square to it (the terrain's samples
+  // by the corners go onto them, js/donostia/shore-walls.js)
+  for (const P of portalsOf(LORETOPEA)) {
+    const n = P.p.length / 4;
+    for (const v of [0, n - 1]) {
+      const shared = garden.some((w) => [0, w.p.length / 4 - 1].some((e) => Math.hypot(w.p[4 * e] - P.p[4 * v], w.p[4 * e + 1] - P.p[4 * v + 1]) < 0.05));
+      assert.ok(shared, `a courtyard wall at the face's end (${P.p[4 * v]}, ${P.p[4 * v + 1]})`);
+    }
+  }
 });
 
 // The baked 2 m terrain (terrain-core.png: R/G heights, B ground classes) and the 1 m ground surfaces (ground-core.png,
