@@ -272,7 +272,8 @@ export function buildFerries(seaLevel = null, clock = () => 12) {
       sphere.radius = Math.hypot(maxX - minX, maxZ - minZ) / 2 + 12;
       mesh.visible = camera.position.distanceTo(sphere.center) - sphere.radius < FAR;
       wakes.update(poses, now, poseAt);
-      wakes.mesh.visible = mesh.visible && sailing;
+      // (moored, the wakes fade out; the mesh stays, so its pipeline compiles with the rest behind the loading screen)
+      wakes.mesh.visible = mesh.visible;
     };
     group.userData.stats = () => ({ ferries: N, triangles: body.attributes.position.count / 3, poses: poses.map((p) => ({ ...p })) });
     return group;
