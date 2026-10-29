@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, attribute, varying, time, sin, cos, abs, min, mix, step, smoothstep, floor, fract,
+  Fn, float, vec2, vec3, vec4, attribute, varying, time, sin, cos, atan, abs, min, mix, step, smoothstep, floor, fract,
   length, pow, uv, texture, positionGeometry, normalGeometry, normalLocal, normalize
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
+import { weatherUniforms } from '../weather-uniforms.js';
 import { decodePNG } from '../png.js';
 import { grid } from './geom.js';
 import { mosaic, PALETTE, BLUE, WHITE, BANNER, medallionUV } from './tifo-design.js';
@@ -22,7 +23,8 @@ import { mosaic, PALETTE, BLUE, WHITE, BANNER, medallionUV } from './tifo-design
 //   The portrait is from a photo by Goiena.eus via Wikimedia Commons (CC BY-SA 4.0; see tools/donostia/README.md).
 // - The flags: on the lower tier either side of the banner and in its top rows, about one fan in three: blue, white
 //   round the banner, a few ikurriñas and striped ones. Each is waved side to side and its cloth ripples (vertex
-//   shader).
+//   shader); with the real-time switch on, a wind turns them to stream downwind and flaps them harder (weatherUniforms:
+//   their defaults leave them as the fans hold them).
 // Cards and flags are two instanced meshes of one material (one pipeline); the banner is a third mesh. The flags are
 // dropped beyond FLAGS_FAR from the stand. The floodlights light all three at night. The group's userData.update(dt,
 // elapsed, camera) does the culling; hide the group to hide the tifo (slopDebug.tifo(false) in ?debug).
@@ -59,24 +61,29 @@ function tifoMaterial() {
   mat.name = 'AnoetaTifo';
   const A = attribute('aTifoA', 'vec4'), B = attribute('aTifoB', 'vec4'), kind = attribute('aTifoKind', 'float');
   const cloth = step(0.5, kind).mul(step(kind, 1.5)), flag = step(0.5, kind), card = float(1).sub(flag);
+  const { uWindDir, uFlagStream, uFlagFlap, uFlagPhase } = weatherUniforms;
   mat.positionNode = Fn(() => {
     const g = positionGeometry, n = normalGeometry, phase = B.y, scale = B.z;
     // a flag's cloth ripples, more away from the pole; the whole flag is waved side to side from the hands, a card
-    // bobs a little in them
-    const ripple = sin(time.mul(5.2).sub(g.x.mul(4.5)).add(phase.mul(3.0))).mul(g.x.div(FLAG.w).mul(0.24)).mul(cloth);
-    const roll = sin(time.mul(1.15).add(phase)).mul(0.38).mul(flag);
+    // bobs a little in them. The wind (real-time switch) quickens & deepens the ripple and calms the waving.
+    const wave = time.mul(5.2).add(uFlagPhase).sub(g.x.mul(4.5)).add(phase.mul(3.0));
+    const ripple = sin(wave).mul(g.x.div(FLAG.w).mul(0.24)).mul(cloth).mul(uFlagFlap);
+    const roll = sin(time.mul(1.15).add(phase)).mul(0.38).mul(flag).mul(float(1).sub(uFlagStream.mul(0.6)));
     const bob = sin(time.mul(1.6).add(phase.mul(2.0))).mul(0.025).mul(card);
     const p = vec3(g.x, g.y, g.z.add(ripple)).mul(scale);
     const cr = cos(roll), sr = sin(roll);
     const x1 = p.x.mul(cr).sub(p.y.mul(sr)), y1 = p.x.mul(sr).add(p.y.mul(cr));
     const nx1 = n.x.mul(cr).sub(n.y.mul(sr)), ny1 = n.x.mul(sr).add(n.y.mul(cr));
     // the ripple's slope turns the cloth's normal
-    const nz0 = n.z.sub(cos(time.mul(5.2).sub(g.x.mul(4.5)).add(phase.mul(3.0))).mul(cloth).mul(0.6));
+    const nz0 = n.z.sub(cos(wave).mul(cloth).mul(0.6).mul(uFlagFlap));
     // lean back (the top away from the face), then the heading
     const ca = cos(B.w), sa = sin(B.w);
     const y2 = y1.mul(ca).add(p.z.mul(sa)), z2 = p.z.mul(ca).sub(y1.mul(sa));
     const ny2 = ny1.mul(ca).add(nz0.mul(sa)), nz2 = nz0.mul(ca).sub(ny1.mul(sa));
-    const s = sin(A.w), c = cos(A.w);
+    // the heading; a flag's turned towards the one its cloth streams downwind at (local +x along the wind)
+    const downwind = atan(uWindDir.y.negate(), uWindDir.x), off = downwind.sub(A.w);
+    const heading = A.w.add(atan(sin(off), cos(off)).mul(uFlagStream).mul(flag));
+    const s = sin(heading), c = cos(heading);
     normalLocal.assign(normalize(vec3(nx1.mul(c).add(nz2.mul(s)), ny2, nz2.mul(c).sub(nx1.mul(s)))));
     return vec3(A.x.add(x1.mul(c)).add(z2.mul(s)), A.y.add(y2).add(bob), A.z.sub(x1.mul(s)).add(z2.mul(c)));
   })();

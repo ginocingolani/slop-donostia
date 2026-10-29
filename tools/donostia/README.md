@@ -383,6 +383,37 @@ map.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
   record refurbishments.
+- The real-time weather's effects (`js/donostia/weather.js`, its numbers in `js/donostia/weather-model.js`, tested in
+  `tests/donostia-weather.test.mjs`), only with the real-time switch on; with it off nothing draws and every uniform
+  they move holds the value that gives the old picture:
+  - What falls: drizzle, rain, showers, a storm's downpour and snow from Open-Meteo's weather code and its 15-minute
+    precipitation (mm/h, snowfall cm/h), one instanced draw of camera-facing streaks or flakes (up to 60,000) in a 30 x
+    24 x 30 m box that follows the camera. The drops keep their places in the city (the box wraps them round), fall at
+    their kind's terminal speed (Gunn & Kinzer: drizzle ~2 m/s, rain 6.5-8.6 m/s, snow ~1 m/s) and drift with the
+    wind, so a storm's rain slants; a drop thinner than a pixel is drawn a pixel wide and as much fainter. They take
+    the hemisphere light the time of day sets, the street lamps' warm glints low over the streets at night
+    (`uInteriorGlow`) and the lightning's flash. A 64 m shelter map round the camera (the ground, the ground over a
+    tunnel, the water's surface, the buildings' eaves inside their outer rings and out of their courtyards) keeps the
+    drops out from under roofs, arcades and tunnels; within 12 m some of the rain's instances are splashes, landing on
+    that surface (the paving, the sand, the roofs, the sea).
+  - Lightning in a storm, two to six flashes a minute at random, one to four strokes each: the hemisphere light, the
+    environment's intensity and the sky's exposure (and the night sky's colour) brighten over whatever the time of day
+    set (as bright as an overcast day at night, a fraction of the daylight by day), the rain with them; a bolt, a
+    second draw only while it shows, now and then. Thunder is an event after the distance's delay (~3 s a km,
+    `weather.userData.onThunder(fn)`): Slop Donostia has no sound yet.
+  - Wetness: `cityUniforms.uRainWetness`, on top of the time of day's `uRoadWetness` (the presets' damp streets at
+    night, which the sky's part keeps), runs on the city's clock: towards ~0.45 under drizzle and ~0.75-0.9 under rain,
+    within a few minutes, and back down over an hour or so after it (sooner in sunshine and wind). It drives the
+    ground's damp, film and puddles (rings spread on them while it rains), darkens the beaches' dry sand to a damp
+    ochre, the grass and earth a little, the facades (their foot most, up to a ragged splash line) and the roofs, and
+    wets the Plaza de la Constitución's paving (not under its arcades). When the switch comes on the streets start as
+    wet as the weather leaves them.
+  - Wind (`js/donostia/weather-uniforms.js`): the trees' sway takes the wind's direction, a strength from its speed
+    (today's fixed breeze is ~4 m/s), a steady lean and its gusts (a smooth random series between the mean wind and the
+    reported gust); the tifo's flags turn to stream downwind and flap harder; Alderdi Eder's ikurriña flies from its
+    pole with the wind (`landmarks/wind-flag.js`; hanging in a calm), the still flag folding away meanwhile.
+  - In the console (`?debug`): `slopDebug.weather.strike({ distance, bearing, bolt })`, `hold(flash)`, `snap(wet)`
+    (settle the eased rain and wind, and with `wet` the streets, on the weather now), `setWetness(w)`, `state()`.
 - The light-building layers repeat each other (EraikinArinak redraws almost every ESTALPEA shed, BEROTEGIA greenhouse
   and KIOSKOA kiosk): `build.mjs` extrudes a light building only when an earlier outline does not already cover it.
   A few stretches of wall are drawn as buildings (ERAIKINA): an outline under 8 m² and under 0.9 m wide is left out

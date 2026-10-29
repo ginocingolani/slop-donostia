@@ -18,6 +18,7 @@ import { buildMarina } from './marina.js';
 import { buildBoats } from './boats.js';
 import { buildSeamarks } from './seamarks.js';
 import { buildFerries } from './ferries.js';
+import { buildWeather } from './weather.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
@@ -102,6 +103,9 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('ferries', buildFerries(water.userData.seaLevel, () => liveSky.hour()));
   // the aids to navigation: the lights (the lighthouses' at their models' lanterns), the posts, columns & buoys
   add('seamarks', buildSeamarks(terrain, { seaLevel: water.userData.seaLevel, landmarks: landmarks.group }));
+  // the real-time weather's rain, snow & lightning, and its wind & wetness on the city's shaders (nothing with the
+  // real-time switch off)
+  add('weather', buildWeather({ GEO, terrain, lighting, renderer, seaLevel: () => water.userData.getSeaLevel?.() ?? 0 }));
   modules.sky = lighting.sky;
   mark('details');
 
@@ -380,6 +384,9 @@ async function initApp() {
       // keyframes' weights, the sun, the moon, the light, the eased weather, the environment map's bakes);
       // await timeOfDay.benchBake(20) times a bake of the environment map
       timeOfDay: Object.assign(() => world.liveSky.debug(), { benchBake: (n) => world.liveSky.benchBake(n), state: () => world.liveSky.state }),
+      // the weather's effects (js/donostia/weather.js) with the switch on: weather.strike({ distance, bearing }),
+      // weather.hold(flash), weather.setWetness(w), weather.state()
+      weather: world.modules.weather?.userData.debug,
       // the tifo on Anoeta's south stand: slopDebug.tifo(false) hides it, tifo(true) shows it, tifo() toggles
       tifo(on) {
         const t = scene.getObjectByName('AnoetaTifo');
