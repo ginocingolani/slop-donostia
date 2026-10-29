@@ -135,6 +135,41 @@ export function surfReport(sea) {
   };
 }
 
+// --- the low-water channels ---------------------------------------------------------------------------------------------
+
+/**
+ * Where the water keeps running at low tide though the terrain's sea floor would dry: the isobaths reach neither the
+ * Urumea's mouth nor Santa Klara's jetty, and the harmonic fill between them and the LiDAR's shore leaves a bar across
+ * the river (-0.4 m) and the ferries' landing in half a metre of water. With the real-time switch on these channels are
+ * dredged to `floor` (m) along `path` ([x, z, ...], local frame), fully within `inner` m of it and blending back into
+ * the fill by `outer`, wherever the fill lies under mean sea level (sea-uniforms.js lowers the terrain and the water's
+ * sea floor alike; with the switch off nothing changes). Traced on the terrain along the river's thalweg (from the bar
+ * out to the -3 m contour and up to the channel's -3.5 m bed) and along the ferries' lanes (js/donostia/data-boats.js
+ * FERRY) to the jetty's head.
+ */
+export const LOW_WATER_CHANNELS = [
+  { name: 'Urumea mouth', floor: -3.3, inner: 12, outer: 30,
+    path: [505, -541, 530, -500, 580, -460, 622, -420, 648, -380, 668, -330, 690, -290, 715, -250, 730, -220] },
+  { name: 'Santa Klara landing', floor: -3.6, inner: 13, outer: 24,
+    path: [-850, 140, -905, 140, -925, 131, -922, 117, -916, 110] }
+];
+
+/** The sea floor at (x, z) once the low-water channels are dredged, from the terrain's `bed` there (m). */
+export function channelFloor(x, z, bed) {
+  let floor = bed;
+  for (const { floor: target, inner, outer, path } of LOW_WATER_CHANNELS) {
+    let d = Infinity;
+    for (let k = 0; k + 3 < path.length; k += 2) {
+      const ax = path[k], az = path[k + 1], dx = path[k + 2] - ax, dz = path[k + 3] - az;
+      const t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0, 1);
+      d = Math.min(d, Math.hypot(x - ax - t * dx, z - az - t * dz));
+    }
+    const mask = smooth(outer, inner, d) * smooth(0.1, -0.4, bed);
+    floor = Math.min(floor, bed + (target - bed) * mask);
+  }
+  return floor;
+}
+
 // --- the port's floating pontoons ----------------------------------------------------------------------------------------
 
 /** The pontoons' level (m, the floats' waterline): the water's, down to where they settle on the basins' bed. */

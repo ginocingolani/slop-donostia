@@ -1,11 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, int, vec2, vec3, vec4, ivec2, color, floor, fract, abs, min, max, clamp, mix, step, smoothstep, dot,
-  sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionView, normalView,
+  sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionLocal, positionView, normalView,
   normalWorldGeometry, cameraPosition, PI
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
-import { seaUniforms } from './sea-uniforms.js';
+import { seaUniforms, channelFloor } from './sea-uniforms.js';
 import { decodePNGOffThread } from './png.js';
 import { releaseImageData } from './terrain.js';
 
@@ -342,6 +342,14 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     rK, kerbed, roadShare, needsNatural, ang, q.x, slot, film, y, ...texels.map((k) => k.id), ...scores];
 
   const mat = new THREE.MeshStandardNodeMaterial();
+  // Live: the low-water channels dredged into the terrain (sea-uniforms.js; the water's sea floor follows them)
+  mat.positionNode = Fn(() => {
+    const pos = positionLocal.toVar();
+    If(uTideLive.greaterThan(0), () => {
+      pos.assign(vec3(pos.x, channelFloor(pos.xz, pos.y), pos.z));
+    });
+    return pos;
+  })();
 
   mat.colorNode = Fn(() => {
     // the slots' variables are declared here, in the main flow, before any branch assigns them
@@ -531,13 +539,17 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     const ground = mix(lit, faceStone, steepFace).toVar();
 
     // Live: below the tidal bands' mark, what the ebb leaves bare (not the beaches' sand, which has its own) is dark,
-    // wet and glossy up to ~1.9 m over the mark, weedy under ~0.6 m, as the walls' band (shore.js tidal)
+    // wet and glossy up to ~1.9 m over the mark, weedy under ~0.6 m, as the walls' band (shore.js tidal); the soft
+    // seabed is wet sand & silt instead, rippled by the current
     If(uTideLive.greaterThan(0), () => {
       const over = y.sub(uTideMark).add(nM.sub(0.5).mul(0.4)).add(nL.sub(0.5).mul(0.3));
       const band = smoothstep(1.9, 0.6, over).mul(float(1).sub(eq(wid, S.beach))).mul(inCore).mul(uTideLive);
       const weed = smoothstep(0.6, -0.2, over).mul(nF.mul(0.4).add(0.6));
-      const wetC = mix(ground.mul(vec3(0.5, 0.5, 0.46)), C.weed.mul(0.6), weed.mul(0.8));
-      ground.assign(mix(ground, wetC, band));
+      const hardWet = mix(ground.mul(vec3(0.5, 0.5, 0.46)), C.weed.mul(0.6), weed.mul(0.8));
+      const silt = mix(C.sandWet, C.sandSwash, nL.mul(0.6).add(0.2)).mul(nM.mul(0.16).add(nF.mul(0.08)).add(0.84));
+      const soft = eq(wid, S.seabed).mul(float(1).sub(steepFace));
+      ground.assign(mix(ground, mix(hardWet, silt, soft), band));
+      relief.addAssign(sin(dot(xz, vec2(0.62, 0.78)).mul(52).add(nM.mul(9))).mul(0.0025).mul(soft.mul(band)).mul(fade(0.03, 0.008)));
       // the sheen of the water just gone off it
       tidalWet.assign(band.mul(smoothstep(1.4, 0.2, y.sub(uSeaLevel))));
     });

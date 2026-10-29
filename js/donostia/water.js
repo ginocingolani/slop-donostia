@@ -7,7 +7,7 @@ import { decodePNGOffThread } from './png.js';
 import { MARINA } from './data-marina.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
 import { FIXED_SEA, seaParams, wavelength } from './sea-state.js';
-import { seaUniforms } from './sea-uniforms.js';
+import { seaUniforms, channelFloor } from './sea-uniforms.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -394,7 +394,14 @@ function createWaterMaterial(terrain, fieldsTex) {
   const floors = select(inCore, floorHeights(core), select(inContext, floorHeights(context), vec3(-60.0))).toVar();
   // against a wall (a step of metres between neighbouring samples) the water keeps the depth of the bed at its foot
   const walled = smoothstep(2.0, 4.0, floors.z.sub(floors.y)).toVar();
-  const seaFloor = mix(floors.x, floors.y, walled).toVar();
+  // (live: with the low-water channels dredged, as the terrain is: sea-uniforms.js)
+  const seaFloor = Fn(() => {
+    const f = mix(floors.x, floors.y, walled).toVar();
+    If(seaUniforms.uTideLive.greaterThan(0.0), () => {
+      f.assign(channelFloor(p.xz, f));
+    });
+    return f;
+  })().toVar();
   // the plane rides the tide and the ponds sit at their own levels: depth is measured from the surface itself
   const depth = max(p.y.sub(seaFloor), 0.0);
 
