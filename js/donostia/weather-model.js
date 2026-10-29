@@ -14,7 +14,7 @@ export const SOUND_SPEED = 340; // m/s
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const RAD = Math.PI / 180;
 
-// --- the wind ------------------------------------------------------------------------------------------------------------
+// --- the wind --------------------------------------------------------------------------------------------------------
 
 /**
  * The wind of a live-state weather in the local frame (x east, z south): { x, z } the unit vector it blows TOWARDS (the
@@ -46,7 +46,7 @@ export function gustFactor(t, seed = 0) {
   return v * v;
 }
 
-// --- what falls ------------------------------------------------------------------------------------------------------------
+// --- what falls ------------------------------------------------------------------------------------------------------
 
 // Per kind: the drops' fall speed (m/s), the streak's length (m, the eye's ~1/30 s at that speed, a little shorter),
 // the drop's width (m), how opaque one reads, and the kind of particle (rain: streaks; snow: flakes)
@@ -88,7 +88,7 @@ export function precipitation(weather) {
   return { kind, particle: f.particle, density: clamp01(density), fall: f.fall, length: f.length, width: f.width, alpha: f.alpha, rate };
 }
 
-// --- wetness ---------------------------------------------------------------------------------------------------------------
+// --- wetness ---------------------------------------------------------------------------------------------------------
 
 /**
  * How wet the streets get under a weather, 0 (dry) .. 1 (standing water everywhere it pools): drizzle wets them to a
@@ -121,7 +121,7 @@ export function stepWetness(w, weather, minutes, daylight = 0) {
   return target + (w - target) * Math.exp(-minutes / tau);
 }
 
-// --- lightning -------------------------------------------------------------------------------------------------------------
+// --- lightning -------------------------------------------------------------------------------------------------------
 
 /** Flashes a minute a weather brings (a thunderstorm only: 2 to 6). */
 export function strikeRate(weather) {

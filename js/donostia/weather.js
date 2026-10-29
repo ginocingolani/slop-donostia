@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, float, ivec2, vec2, vec3, vec4, uniform, attribute, varying, varyingProperty, instanceIndex, positionGeometry,
   cameraPosition, cameraWorldMatrix, time, sin, fract, floor, mod, dot, cross, normalize, length, abs, max, min, mix,
-  smoothstep, step, pow, select, clamp, mrt, textureLoad
+  smoothstep, step, pow, clamp, mrt, textureLoad
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { weatherUniforms } from './weather-uniforms.js';
@@ -30,12 +30,12 @@ import { pointInRing } from './landmarks/geom.js';
 // - Wind: weatherUniforms turn the trees' sway (trees-material.js) and the flags (the tifo's, Alderdi Eder's
 //   ikurriña) to the real wind, its speed and its gusts.
 // With the switch off nothing draws (the meshes are hidden) and every uniform holds its default: today's picture.
-// buildWeather({ GEO, terrain, lighting, renderer, seaLevel }) -> Object3D (seaLevel: a function giving the water's level);
-// its userData.update(dt, elapsed, camera) runs every frame.
+// buildWeather({ GEO, terrain, lighting, renderer, seaLevel }) -> Object3D (seaLevel: a function giving the water's
+// level); its userData.update(dt, elapsed, camera) runs every frame.
 
 // The box of drops round the camera (m). The drops' fall is the integral of the wind & fall speed on the CPU, wrapped
-// at WRAP; the drops fall at 0.8 .. 1.2 times it in steps of 0.1, so a wrap moves each by a multiple of 0.1 * WRAP = 120
-// m, which every side of the box divides: the wrap never shows
+// at WRAP; the drops fall at 0.8 .. 1.2 times it in steps of 0.1, so a wrap moves each by a multiple of 0.1 * WRAP =
+// 120 m, which every side of the box divides: the wrap never shows
 const BOX = new THREE.Vector3(30, 24, 30);
 const WRAP = 1200;
 const MAX_DROPS = 60000;
@@ -66,7 +66,7 @@ const hash31 = Fn(([p]) => {
   return fract(p3.xxy.add(p3.yzz).mul(p3.zyx));
 });
 
-// --- precipitation -------------------------------------------------------------------------------------------------------
+// --- precipitation ---------------------------------------------------------------------------------------------------
 
 function precipitationMesh(shelter) {
   const u = {
@@ -186,7 +186,7 @@ function precipitationMesh(shelter) {
   return mesh;
 }
 
-// --- the shelter map -------------------------------------------------------------------------------------------------------
+// --- the shelter map -------------------------------------------------------------------------------------------------
 
 // The height under which a drop is out of the rain, per metre round the camera: the ground (the terrain over a tunnel
 // included), the water's surface, a building's eaves (inside its outer ring and out of its courtyards). A float
@@ -272,7 +272,7 @@ class ShelterMap {
   }
 }
 
-// --- lightning ------------------------------------------------------------------------------------------------------------
+// --- lightning -------------------------------------------------------------------------------------------------------
 
 // A bolt: a jagged channel from the cloud base to the ground with a branch or two, as a ribbon turned to the camera
 // (aTangent: the channel's direction at the vertex; x of the position: which side). Rebuilt for every strike.
@@ -343,10 +343,10 @@ function channel(top, bottom, n, jag, random) {
   return out;
 }
 
-// --- values the time of day sets and the lightning brightens -------------------------------------------------------------
+// --- values the time of day sets and the lightning brightens ---------------------------------------------------------
 
-// The flash goes over whatever the time of day (lighting.js) last set and comes off again: a value that differs from the
-// one written last frame is a new base
+// The flash goes over whatever the time of day (lighting.js) last set and comes off again: a value that differs from
+// the one written last frame is a new base
 class Boost {
   constructor(get, set, colour = false) {
     this.get = get;
@@ -375,7 +375,7 @@ class Boost {
   }
 }
 
-// --- build -----------------------------------------------------------------------------------------------------------------
+// --- build -----------------------------------------------------------------------------------------------------------
 
 export function buildWeather({ GEO = null, terrain, lighting, renderer = null, seaLevel = () => 0 }) {
   const group = new THREE.Group();
@@ -416,8 +416,8 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     lighting?.uSkyExposure && new Boost(() => lighting.uSkyExposure.value, (v) => { lighting.uSkyExposure.value = v; }),
     lighting?.uNightSkyColor && new Boost(() => lighting.uNightSkyColor.value, (v) => lighting.uNightSkyColor.value.copy(v), true)
   ];
-  // A flash lights the scene from the whole sky, bluish white: as bright as an overcast day's light at night, a fraction
-  // of it over a day's own (`dark`: 1 at night .. 0.3 by day, set every frame)
+  // A flash lights the scene from the whole sky, bluish white: as bright as an overcast day's light at night, a
+  // fraction of it over a day's own (`dark`: 1 at night .. 0.3 by day, set every frame)
   const FLASH_SKY = new THREE.Color(0.75, 0.8, 1.0), FLASH_GROUND = new THREE.Color(0.42, 0.44, 0.52);
   const FLASH_NIGHT_SKY = new THREE.Color(0.5, 0.54, 0.68);
   let dark = 1;
@@ -617,9 +617,9 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     thunderListeners.add(fn);
     return () => thunderListeners.delete(fn);
   };
-  // Debug (slopDebug.weather in ?debug): strike({ distance, bearing, bolt }) now (a bolt is put at that bearing from the
-  // camera, clockwise from north), hold(f) a flash of f (null lets go), snap(wet) the eased rain & wind (and with wet,
-  // the streets' wetness) to the weather now, setWetness(w) the streets' wetness now, state()
+  // Debug (slopDebug.weather in ?debug): strike({ distance, bearing, bolt }) now (a bolt is put at that bearing from
+  // the camera, clockwise from north), hold(f) a flash of f (null lets go), snap(wet) the eased rain & wind (and with
+  // wet, the streets' wetness) to the weather now, setWetness(w) the streets' wetness now, state()
   group.userData.debug = {
     strike(options = {}) {
       const st = lightning.strike(clock, options);

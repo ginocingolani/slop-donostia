@@ -933,7 +933,8 @@ export function build(sites, ctx) {
   const SPEED = 0.32; // rad/s, about three turns a minute
   let flagsCompiled = false;
   group.userData.update = (dt, elapsed, camera) => {
-    // (the flying flags show for the shader compile's frame, dt 0, so their pipeline is built behind the loading screen)
+    // (the flying flags show for the shader compile's frame, dt 0, so their pipeline is built behind the loading
+    // screen)
     if (!flagsCompiled) {
       for (const f of liveFlags) f.visible = dt === 0;
       flagsCompiled = dt > 0;

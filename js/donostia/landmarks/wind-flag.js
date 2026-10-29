@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec3, uv, time, sin, cos, abs, min, max, mix, step, smoothstep, positionGeometry, normalLocal, normalize } from 'three/tsl';
+import {
+  Fn, float, vec3, uv, time, sin, cos, abs, min, max, mix, step, smoothstep, positionGeometry, normalLocal, normalize
+} from 'three/tsl';
 import { weatherUniforms } from '../weather-uniforms.js';
 
 // js/donostia/landmarks/wind-flag.js
@@ -13,7 +15,9 @@ import { weatherUniforms } from '../weather-uniforms.js';
 
 const NX = 14, NY = 6; // cloth cells, fly x hoist
 
-export function windFlag({ hoist, width = 2.0, height = 1.15, red = [0.62, 0.02, 0.04], green = [0.0, 0.3, 0.1], white = [0.82, 0.82, 0.8] }) {
+export function windFlag({
+  hoist, width = 2.0, height = 1.15, red = [0.62, 0.02, 0.04], green = [0.0, 0.3, 0.1], white = [0.82, 0.82, 0.8]
+}) {
   // the cloth: x out to the fly (0..1), y down from the top (0..1), as a grid
   const pos = [], uvs = [], index = [];
   for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++) { pos.push(i / NX, j / NY, 0); uvs.push(i / NX, 1 - j / NY); }
@@ -38,7 +42,8 @@ export function windFlag({ hoist, width = 2.0, height = 1.15, red = [0.62, 0.02,
     // the fly's droop: hanging nearly along the pole in a calm, near level in a gale
     const droop = float(Math.PI / 2 * 0.88).mul(float(1).sub(smoothstep(0.5, 7.0, v).mul(0.88)));
     const cd = cos(droop), sd = sin(droop);
-    // waves running out to the fly, growing towards it: deeper & quicker in a stronger wind (uFlagPhase runs on with it)
+    // waves running out to the fly, growing towards it: deeper & quicker in a stronger wind (uFlagPhase runs on with
+    // it)
     const k = 2.6, arg = x.mul(k).sub(time.mul(5.2).add(uFlagPhase));
     const amp = mix(float(0.05), float(0.16), smoothstep(1.0, 12.0, v)).mul(g.x).mul(smoothstep(0.2, 2.0, v).mul(0.8).add(0.2));
     const wave = sin(arg).mul(amp);
