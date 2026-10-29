@@ -101,7 +101,7 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('seamarks', buildSeamarks(terrain, { seaLevel: water.userData.seaLevel, landmarks: landmarks.group }));
   // the real-time weather's rain, snow & lightning, and its wind & wetness on the city's shaders (nothing with the
   // real-time switch off)
-  add('weather', buildWeather({ terrain, lighting, renderer }));
+  add('weather', buildWeather({ GEO, terrain, lighting, renderer, seaLevel: () => water.userData.getSeaLevel?.() ?? 0 }));
   modules.sky = lighting.sky;
   mark('details');
 

@@ -1,13 +1,14 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, uniform, attribute, varying, varyingProperty, instanceIndex, positionGeometry, cameraPosition,
-  cameraWorldMatrix, time, sin, fract, floor, mod, dot, cross, normalize, length, abs, max, min, mix, smoothstep, step, pow,
-  select, clamp, mrt
+  Fn, float, ivec2, vec2, vec3, vec4, uniform, attribute, varying, varyingProperty, instanceIndex, positionGeometry,
+  cameraPosition, cameraWorldMatrix, time, sin, fract, floor, mod, dot, cross, normalize, length, abs, max, min, mix,
+  smoothstep, step, pow, select, clamp, mrt, textureLoad
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { weatherUniforms } from './weather-uniforms.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
 import { precipitation, windVector, gustFactor, wetnessTarget, stepWetness, strikeRate, Lightning } from './weather-model.js';
+import { pointInRing } from './landmarks/geom.js';
 
 // js/donostia/weather.js
 // The real-time weather's effects (the HUD's real-time switch; live-state.js's weather, its numbers worked out by
@@ -16,7 +17,9 @@ import { precipitation, windVector, gustFactor, wetnessTarget, stepWetness, stri
 //   camera-facing streaks (flakes in snow) in a box that follows the camera. The drops keep their places in the city
 //   as it moves (the box wraps them round), fall at their kind's speed and drift and slant with the wind; one too thin
 //   for a pixel is drawn a pixel wide and as much fainter. They take the sky's light (the hemisphere light the time of
-//   day sets), the street lamps' warm glints at night and the lightning's flash.
+//   day sets), the street lamps' warm glints at night and the lightning's flash. A shelter map round the camera (1 m:
+//   the ground, the sea's surface, the buildings' eaves, holes and all; the ground over a tunnel) keeps them out from
+//   under roofs, arcades and tunnels, and the rain's splashes, some of the same draw's instances, land on its surface.
 // - Lightning in a storm: flashes at random intervals that light the sky, the scene and the rain for a moment (over
 //   whatever the time of day has set: the hemisphere light, the environment's intensity, the sky's exposure), now and
 //   then with a bolt (a second draw, only while it shows); thunder after its distance's delay is an event
@@ -27,7 +30,8 @@ import { precipitation, windVector, gustFactor, wetnessTarget, stepWetness, stri
 // - Wind: weatherUniforms turn the trees' sway (trees-material.js) and the flags (the tifo's, Alderdi Eder's
 //   ikurriña) to the real wind, its speed and its gusts.
 // With the switch off nothing draws (the meshes are hidden) and every uniform holds its default: today's picture.
-// buildWeather({ terrain, lighting, renderer }) -> Object3D; its userData.update(dt, elapsed, camera) runs every frame.
+// buildWeather({ GEO, terrain, lighting, renderer, seaLevel }) -> Object3D (seaLevel: a function giving the water's level);
+// its userData.update(dt, elapsed, camera) runs every frame.
 
 // The box of drops round the camera (m). The drops' fall is the integral of the wind & fall speed on the CPU, wrapped
 // at WRAP; the drops fall at 0.8 .. 1.2 times it in steps of 0.1, so a wrap moves each by a multiple of 0.1 * WRAP = 120
@@ -37,6 +41,12 @@ const WRAP = 1200;
 const MAX_DROPS = 60000;
 // the camera's place in the box, up from its floor; the floor no lower than a metre under the ground beneath
 const BELOW = 0.42;
+// the share of the drops that are splashes on the ground instead (rain only), within SPLASH_REACH m of the camera, each
+// a crown of SPLASH_SIZE m living SPLASH_LIFE s
+const SPLASH_SHARE = 0.15, SPLASH_REACH = 13, SPLASH_SIZE = 0.13, SPLASH_LIFE = 0.45;
+// the shelter map: SHELTER x SHELTER cells of 1 m round the camera (the box and a margin), refilled once the camera is
+// SHELTER_SLACK m off its centre
+const SHELTER = 64, SHELTER_SLACK = 12;
 const EASE = 3; // s: the effects' time constant towards a new weather (it changes in 15-minute steps)
 const WIND_EASE = 6; // s
 
@@ -58,7 +68,7 @@ const hash31 = Fn(([p]) => {
 
 // --- precipitation -------------------------------------------------------------------------------------------------------
 
-function precipitationMesh() {
+function precipitationMesh(shelter) {
   const u = {
     origin: uniform(new THREE.Vector3()), // the box's lowest corner
     offset: uniform(new THREE.Vector3()), // the fall so far (m, wrapped)
@@ -70,7 +80,10 @@ function precipitationMesh() {
     pixel: uniform(0.001), // m a pixel spans per metre of distance
     colour: uniform(new THREE.Color(0.5, 0.5, 0.5)), // the light a drop sends back (sky, sun, flash)
     glint: uniform(new THREE.Color(0, 0, 0)), // the street lamps' warm light at night
-    ground: uniform(0) // the ground's height under the camera
+    ground: uniform(0), // the ground's height under the camera
+    shelterOrigin: uniform(new THREE.Vector2()), // the shelter map's corner (x, z)
+    splashes: uniform(0), // the instances below this index are splashes
+    splashAlpha: uniform(0)
   };
 
   // one quad per drop: x across (-1..1), y along (0..1)
@@ -79,7 +92,8 @@ function precipitationMesh() {
   geo.setIndex([0, 1, 2, 0, 2, 3]);
   geo.instanceCount = 1;
 
-  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  // (double-sided in one pass: three draws a transparent double-sided material twice otherwise, back faces first)
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
   mat.name = 'WeatherPrecipitation';
   mat.mrtNode = effectMRT;
 
@@ -90,6 +104,14 @@ function precipitationMesh() {
   const g = positionGeometry;
   const vAcross = varying(g.x, 'vDropAcross'), vAlong = varying(g.y, 'vDropAlong');
   const vAlpha = varyingProperty('float', 'vDropAlpha'), vGlint = varyingProperty('float', 'vDropGlint');
+  const vSplash = varyingProperty('float', 'vDropSplash');
+  // the cover over a place (m): a drop under it is out of the rain (outside the map: none)
+  const coverAt = (xz) => {
+    const c = floor(xz.sub(u.shelterOrigin));
+    const inMap = step(0, c.x).mul(step(0, c.y)).mul(step(c.x, SHELTER - 1)).mul(step(c.y, SHELTER - 1));
+    const h = textureLoad(shelter, ivec2(clamp(c, 0, SHELTER - 1))).x;
+    return mix(float(-1e4), h, inMap);
+  };
 
   mat.positionNode = Fn(() => {
     const box = vec3(BOX.x, BOX.y, BOX.z);
@@ -98,6 +120,17 @@ function precipitationMesh() {
     // snowflakes wander as they fall
     const wander = vec3(sin(time.mul(0.7).add(r.x.mul(37.0))), 0.0, sin(time.mul(0.55).add(r.z.mul(29.0)))).mul(0.45);
     q.addAssign(wander.mul(u.snow));
+    // a splash: each lands again every SPLASH_LIFE s, somewhere new round the camera, on the surface there
+    const splash = step(i, u.splashes.sub(0.5));
+    const cycle = time.div(SPLASH_LIFE).add(r.y);
+    const life = fract(cycle);
+    const at = hash31(i.add(floor(cycle).mul(7.31)));
+    const sr = at.x.sqrt().mul(SPLASH_REACH), sa = at.y.mul(Math.PI * 2);
+    const sxz = cameraPosition.xz.add(vec2(sr.mul(sin(sa)), sr.mul(sin(sa.add(Math.PI / 2)))));
+    const sy = coverAt(sxz);
+    q.assign(mix(q, vec3(sxz.x, sy.add(SPLASH_SIZE * 0.3), sxz.y), splash));
+    vSplash.assign(splash.mul(life.mul(0.98).add(0.02)));
+    const sheltered = step(q.y, coverAt(q.xz)).mul(float(1).sub(splash));
     const toCam = cameraPosition.sub(q).toVar();
     const dist = length(toCam).toVar();
     const view = toCam.div(max(dist, 0.001));
@@ -112,24 +145,32 @@ function precipitationMesh() {
     const sideV = normalize(mix(side, right, u.snow));
     // a pixel wide at the least, and as much fainter
     const pix = dist.mul(u.pixel);
-    const w = max(u.width, pix.mul(1.3));
-    const len = mix(max(u.length.mul(speed), pix.mul(2.0)), w, u.snow);
+    const w = mix(max(u.width, pix.mul(1.3)), float(SPLASH_SIZE), splash);
+    const len = mix(mix(max(u.length.mul(speed), pix.mul(2.0)), w, u.snow), w.mul(0.7), splash);
     // fade near the camera (no streak across the face), and towards the box's sides so its edges never show
     const centre = u.origin.add(box.mul(vec3(0.5, BELOW, 0.5)));
     const edge = abs(q.sub(centre)).div(box.mul(0.5));
     const fade = smoothstep(0.35, 1.4, dist).mul(smoothstep(1.0, 0.7, max(edge.x, edge.z)))
       .mul(smoothstep(1.55, 1.2, abs(q.y.sub(centre.y)).div(BOX.y * 0.5)));
-    vAlpha.assign(pow(u.width.div(w), 0.6).mul(fade).mul(u.alpha).mul(sparkle.mul(0.5).add(0.75)));
+    vAlpha.assign(mix(pow(u.width.div(w), 0.6).mul(fade).mul(u.alpha), u.splashAlpha.mul(smoothstep(SPLASH_REACH, SPLASH_REACH * 0.6, dist)), splash)
+      .mul(sparkle.mul(0.5).add(0.75)).mul(float(1).sub(sheltered)));
     // the street lamps' light on the drops low over the streets round the camera, a glint on one in a few
     vGlint.assign(smoothstep(12.0, 3.0, q.y.sub(u.ground)).mul(smoothstep(22.0, 5.0, dist)).mul(step(0.86, sparkle).mul(0.85).add(0.15)));
-    return q.add(sideV.mul(g.x.mul(w).mul(0.5))).add(axis.mul(g.y.sub(0.5).mul(len)));
+    // a splash's quad stands upright, facing the camera; a drop under cover folds away
+    const axisS = mix(axis, vec3(0, 1, 0), splash);
+    const sideS = normalize(mix(sideV, normalize(vec3(view.z, 0.0, view.x.negate()).add(vec3(0.0001, 0, 0))), splash));
+    return mix(q.add(sideS.mul(g.x.mul(w).mul(0.5))).add(axisS.mul(g.y.sub(0.5).mul(len))), q, sheltered);
   })();
 
   mat.colorNode = Fn(() => {
     // a streak: brightest along its middle line, tapering to its ends; a flake: a soft disc
     const streak = float(1).sub(vAcross.mul(vAcross)).mul(sin(vAlong.mul(Math.PI)).max(0).sqrt());
     const disc = smoothstep(1.0, 0.35, length(vec2(vAcross, vAlong.sub(0.5).mul(2.0))));
-    const shape = mix(streak, disc, u.snow);
+    // a splash: a crown of droplets thrown up and out, widening and fading through its life
+    const sp = vec2(vAcross, vAlong.sub(0.15).mul(1.6));
+    const crownR = vSplash.mul(0.85).add(0.1);
+    const crown = smoothstep(0.16, 0.0, abs(length(sp).sub(crownR))).mul(step(0.0, sp.y)).mul(float(1).sub(vSplash));
+    const shape = mix(mix(streak, disc, u.snow), crown, step(0.001, vSplash));
     const rgb = vec3(u.colour).add(vec3(u.glint).mul(vGlint));
     return vec4(rgb, clamp(shape.mul(vAlpha), 0, 1));
   })();
@@ -143,6 +184,90 @@ function precipitationMesh() {
   mesh.renderOrder = 3; // over the sea & the sky (drawn after them among the transparent objects)
   mesh.userData.uniforms = u;
   return mesh;
+}
+
+// --- the shelter map -------------------------------------------------------------------------------------------------------
+
+// The height under which a drop is out of the rain, per metre round the camera: the ground (the terrain over a tunnel
+// included), the water's surface, a building's eaves (inside its outer ring and out of its courtyards). A float
+// texture the drop shader reads with textureLoad; refilled on the CPU when the camera has moved SHELTER_SLACK m off its
+// centre or the water has risen or fallen 5 cm.
+class ShelterMap {
+  constructor(GEO, terrain, seaLevel) {
+    this.terrain = terrain;
+    this.seaLevel = seaLevel;
+    this.buildings = GEO?.buildings || [];
+    this.data = new Float32Array(SHELTER * SHELTER).fill(-1e4);
+    this.texture = new THREE.DataTexture(this.data, SHELTER, SHELTER, THREE.RedFormat, THREE.FloatType);
+    this.texture.magFilter = this.texture.minFilter = THREE.NearestFilter;
+    this.texture.generateMipmaps = false;
+    this.texture.needsUpdate = true;
+    this.origin = new THREE.Vector2(1e9, 1e9);
+    this.level = NaN;
+    this.cells = null;
+  }
+
+  // buildings by 64 m cell (their rings' bounds), built the first time it rains
+  index() {
+    const cells = new Map();
+    this.boxes = [];
+    this.buildings.forEach((b, k) => {
+      const ring = b.g?.[0];
+      if (!ring || !(b.eave > -1e3)) return;
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (let i = 0; i < ring.length; i += 2) {
+        x0 = Math.min(x0, ring[i]); x1 = Math.max(x1, ring[i]);
+        z0 = Math.min(z0, ring[i + 1]); z1 = Math.max(z1, ring[i + 1]);
+      }
+      this.boxes[k] = [x0, z0, x1, z1];
+      for (let j = Math.floor(z0 / 64); j <= Math.floor(z1 / 64); j++) {
+        for (let i = Math.floor(x0 / 64); i <= Math.floor(x1 / 64); i++) {
+          const key = i * 65536 + j;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(k);
+        }
+      }
+    });
+    return cells;
+  }
+
+  update(camera) {
+    const cam = camera.position;
+    const level = this.seaLevel();
+    const half = SHELTER / 2;
+    if (Math.abs(cam.x - (this.origin.x + half)) < SHELTER_SLACK && Math.abs(cam.z - (this.origin.y + half)) < SHELTER_SLACK &&
+      Math.abs(level - this.level) < 0.05) return;
+    this.level = level;
+    const ox = Math.round(cam.x) - half, oz = Math.round(cam.z) - half;
+    this.origin.set(ox, oz);
+    const d = this.data;
+    for (let j = 0; j < SHELTER; j++) {
+      for (let i = 0; i < SHELTER; i++) d[j * SHELTER + i] = Math.max(this.terrain ? this.terrain.heightAt(ox + i + 0.5, oz + j + 0.5) : 0, level);
+    }
+    if (!this.cells) this.cells = this.index();
+    const seen = new Set();
+    for (let cj = Math.floor(oz / 64); cj <= Math.floor((oz + SHELTER) / 64); cj++) {
+      for (let ci = Math.floor(ox / 64); ci <= Math.floor((ox + SHELTER) / 64); ci++) {
+        for (const k of this.cells.get(ci * 65536 + cj) || []) {
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const b = this.buildings[k], [x0, z0, x1, z1] = this.boxes[k];
+          const i0 = Math.max(0, Math.floor(x0 - ox)), i1 = Math.min(SHELTER - 1, Math.floor(x1 - ox));
+          const j0 = Math.max(0, Math.floor(z0 - oz)), j1 = Math.min(SHELTER - 1, Math.floor(z1 - oz));
+          for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+              const x = ox + i + 0.5, z = oz + j + 0.5;
+              if (!pointInRing(x, z, b.g[0])) continue;
+              let hole = false;
+              for (let h = 1; h < b.g.length && !hole; h++) hole = pointInRing(x, z, b.g[h]);
+              if (!hole) d[j * SHELTER + i] = Math.max(d[j * SHELTER + i], b.eave);
+            }
+          }
+        }
+      }
+    }
+    this.texture.needsUpdate = true;
+  }
 }
 
 // --- lightning ------------------------------------------------------------------------------------------------------------
@@ -167,7 +292,9 @@ function boltMesh() {
   for (let b = 0; b < BOLT_BRANCHES; b++) strip((BOLT_SEGMENTS + 1 + b * (BOLT_BRANCH_SEGMENTS + 1)) * 2, BOLT_BRANCH_SEGMENTS);
   geo.setIndex(index);
 
-  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const mat = new THREE.MeshBasicNodeMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true
+  });
   mat.name = 'WeatherBolt';
   mat.fog = false; // dimmed by the rain's visibility on the CPU instead
   mat.mrtNode = effectMRT;
@@ -248,10 +375,11 @@ class Boost {
 
 // --- build -----------------------------------------------------------------------------------------------------------------
 
-export function buildWeather({ terrain, lighting, renderer = null }) {
+export function buildWeather({ GEO = null, terrain, lighting, renderer = null, seaLevel = () => 0 }) {
   const group = new THREE.Group();
   group.name = 'Weather';
-  const rain = precipitationMesh();
+  const shelter = new ShelterMap(GEO, terrain, seaLevel);
+  const rain = precipitationMesh(shelter.texture);
   const bolt = boltMesh();
   group.add(rain, bolt);
   const R = rain.userData.uniforms, B = bolt.userData.uniforms;
@@ -435,6 +563,10 @@ export function buildWeather({ terrain, lighting, renderer = null }) {
       const ground = terrain ? terrain.heightAt(cam.x, cam.z) : 0;
       R.ground.value = ground;
       R.origin.value.set(cam.x - BOX.x / 2, Math.max(cam.y - BOX.y * BELOW, ground - 1), cam.z - BOX.z / 2);
+      shelter.update(camera);
+      R.shelterOrigin.value.copy(shelter.origin);
+      R.splashes.value = Math.round(count * SPLASH_SHARE * (1 - s.snow));
+      R.splashAlpha.value = 0.55 * s.rainfall / Math.max(s.density, 0.01);
       R.length.value = s.length;
       R.width.value = s.width;
       R.alpha.value = s.alpha;
