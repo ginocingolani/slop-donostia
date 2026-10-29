@@ -21,6 +21,7 @@ import { buildFerries } from './ferries.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS } from './presets.js';
+import * as live from './live-state.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -365,6 +366,9 @@ async function initApp() {
     const device = renderer.backend.device;
     window.slopDebug = {
       THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
+      // the real-time state (js/donostia/live-state.js): live.setLiveEnabled(true), live.setLiveOverride({ time, rate,
+      // weather, sea }), live.liveSnapshot()
+      live,
       // the tifo on Anoeta's south stand: slopDebug.tifo(false) hides it, tifo(true) shows it, tifo() toggles
       tifo(on) {
         const t = scene.getObjectByName('AnoetaTifo');
