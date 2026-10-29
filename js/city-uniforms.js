@@ -12,6 +12,8 @@ const cityUniforms = {
   uSkySunDir: uniform(new THREE.Vector3(-0.66, 0.34, -0.67).normalize()),
   uInteriorGlow: uniform(0.78),
   uRoadWetness: uniform(0.38),
+  // the real-time weather's rain on top of the time of day's uRoadWetness (js/donostia/weather.js; 0 without it)
+  uRainWetness: uniform(0),
   uCanyonBounce: uniform(0.52)
 };
 
