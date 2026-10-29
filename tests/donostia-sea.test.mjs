@@ -212,3 +212,29 @@ test('spray in a big swell: on the Paseo Nuevo, the Peine del Viento and the Zur
   }
   for (const [, , phase, strength] of places) assert.ok(phase >= 0 && phase < 1 && strength > 0 && strength <= 1);
 });
+
+test('dry pockets: the sea plane leaves the railway cuttings and the underpasses dry at high water, nothing it reaches', async () => {
+  const grid = async (m) => {
+    const b = fs.readFileSync(`${root}${m.url}`);
+    const img = await decodePNG(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+    const n = m.w * m.h, heights = new Float32Array(n), classes = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+      heights[k] = ((img.data[3 * k] << 8) | img.data[3 * k + 1]) / 100 - GEO.terrain.heightOffset;
+      classes[k] = img.data[3 * k + 2];
+    }
+    return { ...m, heights, classes };
+  };
+  const rects = sea.dryPockets([await grid(GEO.terrain.core), await grid(GEO.terrain.context)], 1.75);
+  const covered = (x, z) => rects.some(([x0, z0, x1, z1]) => x >= x0 && x <= x1 && z >= z0 && z <= z1);
+  // the railway cuttings at Anoeta & Amara, an underpass at Loiola: under 1.75 m, and away from the sea
+  for (const [x, z] of [[981, 2192], [569, 1410], [525, 1655], [1207, 1558]]) {
+    assert.ok(bedAt(x, z) < 1.75, `(${x}, ${z}) is low`);
+    assert.ok(covered(x, z), `(${x}, ${z}) kept dry`);
+  }
+  // the sea, the river, the harbour and the beaches stay open
+  for (const [x, z] of [[-300, 500], [-300, 700], [650, -200], [0, -150], [950, -560], [-1000, 520]]) {
+    assert.ok(!covered(x, z), `(${x}, ${z}) open to the sea`);
+  }
+  assert.ok(rects.length > 20 && rects.length < 400, `${rects.length} pockets`);
+  for (const [x0, z0, x1, z1] of rects) assert.ok(x1 > x0 && z1 > z0);
+});

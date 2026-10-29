@@ -6,7 +6,7 @@ import {
 import { decodePNGOffThread } from './png.js';
 import { MARINA } from './data-marina.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
-import { FIXED_SEA, seaParams, wavelength } from './sea-state.js';
+import { FIXED_SEA, BAND_HIGH_WATER, HIGH_WATER, seaParams, wavelength, dryPockets } from './sea-state.js';
 import { seaUniforms, channelFloor } from './sea-uniforms.js';
 import { createSpray } from './spray.js';
 
@@ -675,6 +675,33 @@ function pondMesh(terrain, material) {
 
 // --- Builder ------------------------------------------------------------------------------------------------------------
 
+// The sea plane with holes where ground the sea cannot reach dips under the live tide's high water (sea-state.js
+// dryPockets: railway cuttings, underpasses, ponds' beds), rectangles cut out of the square and triangulated; touching
+// ones merged first (the triangulation wants holes apart)
+export function holedSeaPlane(rects) {
+  const merged = rects.map((r) => [...r]);
+  for (let again = true; again;) {
+    again = false;
+    for (let a = 0; a < merged.length && !again; a++) {
+      for (let b = a + 1; b < merged.length; b++) {
+        const A = merged[a], B = merged[b];
+        if (A[0] > B[2] + 0.5 || B[0] > A[2] + 0.5 || A[1] > B[3] + 0.5 || B[1] > A[3] + 0.5) continue;
+        merged[a] = [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[2], B[2]), Math.max(A[3], B[3])];
+        merged.splice(b, 1);
+        again = true;
+        break;
+      }
+    }
+  }
+  const V = (x, z) => new THREE.Vector2(x, -z); // (the shape's y is the plane's -z once laid flat)
+  const shape = new THREE.Shape([V(-SIZE / 2, -SIZE / 2), V(SIZE / 2, -SIZE / 2), V(SIZE / 2, SIZE / 2), V(-SIZE / 2, SIZE / 2)]);
+  for (const [x0, z0, x1, z1] of merged) shape.holes.push(new THREE.Path([V(x0, z0), V(x0, z1), V(x1, z1), V(x1, z0)]));
+  const geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(-Math.PI / 2);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
 export async function createWater(terrain) {
   const fields = await loadFields();
   const material = createWaterMaterial(terrain, fields);
@@ -714,6 +741,10 @@ export async function createWater(terrain) {
   let blend = 0, target = null, readAt = 0, clock = 0;
   // the spray against the steep shore in a big swell (spray.js), built the first time one comes
   let spray = null;
+  // while the live tide runs, the plane's holes over the dry pockets below the day's high water (in steps of POCKET_STEP
+  // m, at most sea-state.js HIGH_WATER); the plain plane otherwise
+  const plane = geo, POCKET_STEP = 0.25;
+  let pocketsAt = null;
   const SEA_EASE = 4, BLEND = 1.5, READ = 0.25;
   const EASED = ['surf', 'surfPeriodA', 'surfPeriodB', 'swell', 'swellPeriod', 'chop', 'calm', 'whitecaps', 'spray', 'windSpeed'];
   group.userData.seaState = () => ({ ...shown, blend });
@@ -752,6 +783,12 @@ export async function createWater(terrain) {
       }
       applySeaState(S, shown);
       uTideLive.value = b;
+      const high = blend > 0 ? Math.min(HIGH_WATER, Math.ceil(Math.max(live.level, live.mark + BAND_HIGH_WATER) / POCKET_STEP) * POCKET_STEP) : null;
+      if (high !== pocketsAt) {
+        pocketsAt = high;
+        if (sea.geometry !== plane) sea.geometry.dispose();
+        sea.geometry = high == null ? plane : holedSeaPlane(dryPockets([terrain.core, terrain.context], high));
+      }
       if (shown.spray > 0.01 && !spray && fields.image.width > 1) {
         spray = createSpray({ fields: fields.image, context: terrain.context, terrain, seaLevel: uSeaLevel }) || { update() {} };
         if (spray.mesh) group.add(spray.mesh);

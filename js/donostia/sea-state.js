@@ -27,7 +27,7 @@ const NOMINAL_SWELL = 1.2; // m
 // The sector the coast is open to (the exposure field's, tools/donostia/build.mjs SWELL: W to NNE, through north)
 const OPEN_FROM = 285, OPEN_TO = 25;
 // The high water the tidal bands (wet sand, the dark band and the weed on walls & rocks) were drawn for: a spring tide's
-const BAND_HIGH_WATER = 1.5; // m
+export const BAND_HIGH_WATER = 1.5; // m
 // The beaches' exposure to the swell at their surf zones (data/donostia/water.png's R)
 const BEACH_EXPOSURE = { zurriola: 0.6, ondarreta: 0.2, concha: 0.12 };
 
@@ -168,6 +168,86 @@ export function channelFloor(x, z, bed) {
     floor = Math.min(floor, bed + (target - bed) * mask);
   }
   return floor;
+}
+
+// --- the dry pockets -----------------------------------------------------------------------------------------------------
+
+/** m: the highest the live sea is drawn to rise (a spring tide's high water and a storm surge on top) */
+export const HIGH_WATER = 2.2;
+const WATER_CLASS = 7, SEA_BED = 0.5; // the terrain's water class; water cells this low are the sea's or the river's
+
+/**
+ * Ground below `maxLevel` that the sea cannot reach, which the sea plane, one level everywhere, would flood once the
+ * tide rises over it: railway cuttings, underpasses, the beds of ponds, yards behind walls. Returned as rectangles [x0,
+ * z0, x1, z1] (m, local frame) that cover those samples (and the terrain's triangles round them) and none the sea
+ * reaches below maxLevel, for js/donostia/water.js to leave as holes in the plane while the live tide runs. grids: the
+ * terrain's core and then its context ({ x0, z0, w, h, res, heights, classes }, samples at cell centres); the context's
+ * samples under the core are left to it. The sea reaches what is connected, through samples below maxLevel, to its
+ * own and the river's water or to a grid's edge.
+ */
+export function dryPockets(grids, maxLevel = HIGH_WATER) {
+  const rects = [];
+  const [core] = grids;
+  const underCore = (x, z) => x > core.x0 + core.res && x < core.x0 + (core.w - 1) * core.res && z > core.z0 + core.res &&
+    z < core.z0 + (core.h - 1) * core.res;
+  for (const g of grids) {
+    const { w, h, res, heights, classes } = g, n = w * h;
+    const skip = g === core ? null : (i, j) => underCore(g.x0 + (i + 0.5) * res, g.z0 + (j + 0.5) * res);
+    const low = (k) => heights[k] < maxLevel;
+    // the sea's reach
+    const wet = new Uint8Array(n), stack = [];
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const k = j * w + i, edge = i === 0 || j === 0 || i === w - 1 || j === h - 1;
+        if ((classes[k] === WATER_CLASS && heights[k] <= SEA_BED) || (edge && low(k))) { wet[k] = 1; stack.push(k); }
+      }
+    }
+    while (stack.length) {
+      const k = stack.pop(), i = k % w;
+      for (const m of [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w]) {
+        if (m >= 0 && m < n && !wet[m] && low(m)) { wet[m] = 1; stack.push(m); }
+      }
+    }
+    // the rest below it, pocket by pocket; each pocket's bounds (a sample and a half round), split while they take in
+    // any of the sea's
+    const done = new Uint8Array(n);
+    for (let k0 = 0; k0 < n; k0++) {
+      if (wet[k0] || done[k0] || !low(k0)) continue;
+      const cells = [];
+      done[k0] = 1;
+      stack.push(k0);
+      while (stack.length) {
+        const k = stack.pop(), i = k % w;
+        cells.push(k);
+        for (const m of [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w]) {
+          if (m >= 0 && m < n && !wet[m] && !done[m] && low(m)) { done[m] = 1; stack.push(m); }
+        }
+      }
+      const cover = (list, depth) => {
+        let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
+        for (const k of list) {
+          const i = k % w, j = (k - i) / w;
+          i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+        }
+        const a0 = Math.max(0, i0 - 1), a1 = Math.min(w - 1, i1 + 1), b0 = Math.max(0, j0 - 1), b1 = Math.min(h - 1, j1 + 1);
+        let clash = false;
+        for (let j = b0; j <= b1 && !clash; j++) for (let i = a0; i <= a1 && !clash; i++) clash = wet[j * w + i] === 1 && low(j * w + i);
+        if (clash && depth < 12 && list.length > 1) {
+          // halve along the longer side
+          const alongI = i1 - i0 >= j1 - j0, mid = alongI ? (i0 + i1) / 2 : (j0 + j1) / 2;
+          const lo = list.filter((k) => (alongI ? k % w : Math.floor(k / w)) <= mid), hi = list.filter((k) => (alongI ? k % w : Math.floor(k / w)) > mid);
+          if (lo.length && hi.length) { cover(lo, depth + 1); cover(hi, depth + 1); return; }
+        }
+        if (clash) return; // (a single sample against the sea's: left to it)
+        const x = (i) => g.x0 + (i + 0.5) * res, z = (j) => g.z0 + (j + 0.5) * res;
+        if (skip && skip(x((i0 + i1) / 2), z((j0 + j1) / 2))) return;
+        // the samples' cells and half of their neighbours' (the triangles that dip under the level)
+        rects.push([x(i0) - res, z(j0) - res, x(i1) + res, z(j1) + res]);
+      };
+      cover(cells, 0);
+    }
+  }
+  return rects;
 }
 
 // --- the spray's places --------------------------------------------------------------------------------------------------
