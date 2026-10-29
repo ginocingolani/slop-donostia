@@ -196,7 +196,7 @@ export function applyWeather(look, sw) {
 // --- the blend -----------------------------------------------------------------------------------------------------------
 
 /**
- * Blends the presets' fields (and the colour grade's looks, js/post-processing.js's LOOKS) by `weights`. Returns the
+ * Blends the presets' fields (and the colour grade's looks: Donostia's are js/donostia/presets.js's DONOSTIA_CAMERA) by `weights`. Returns the
  * look: the presets' numbers, colours as linear [r, g, b], grade { exposure, contrast, saturation, balance, bloom,
  * threshold }, and the live-only knobs at their neutral values (skyGrey, fogGrey 0, fogHeight 900, nightSky 1).
  */

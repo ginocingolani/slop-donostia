@@ -21,7 +21,7 @@ import { buildFerries } from './ferries.js';
 import { buildWeather } from './weather.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
-import { DONOSTIA_PRESETS } from './presets.js';
+import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
 
@@ -198,7 +198,7 @@ export function createView(renderer, world, camera) {
   ssrPass.intensity.value = 0.5;
   ssrPass.screenEdgeFadeBlack = true;
   const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
-  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask));
+  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask), DONOSTIA_CAMERA);
   const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
   liveSky?.attachGrade(grade);
 
