@@ -456,9 +456,7 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       const tideLine = y.add(nM.sub(0.5).mul(0.5)).add(nL.sub(0.5).mul(0.6));
       sandWet.assign(smoothstep(2.3, 1.2, tideLine));
       swash.assign(smoothstep(0.55, 0.1, tideLine));
-      // the dry sand darkens in the rain, in blotches as the drops pit it (matte: no gloss, unlike the swash's)
-      const rained = smoothstep(0.05, 0.6, cityUniforms.uRainWetness).mul(nM.mul(0.35).add(nF.mul(0.25)).add(0.4)).mul(0.75);
-      const sand = mix(mix(C.sandDry, C.sandDry2, nM.mul(0.6).add(nF.mul(0.4))), C.sandWet, max(sandWet, rained)).mul(nF.mul(0.08).add(0.96));
+      const sand = mix(mix(C.sandDry, C.sandDry2, nM.mul(0.6).add(nF.mul(0.4))), C.sandWet, sandWet).mul(nF.mul(0.08).add(0.96));
       surfColour.assign(mix(sand, C.sandSwash, swash));
       // ripples in the wet sand
       relief.assign(sin(dot(xz, vec2(0.62, 0.78)).mul(52).add(nM.mul(9))).mul(0.0025)
@@ -531,10 +529,15 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     puddle.assign(smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, wetness))
       .mul(flagsW.y).mul(smoothstep(0.985, 0.996, normalWorldGeometry.y)).mul(float(1).sub(kerbStone)));
 
+    // the real-time weather's rain (0 without it): grass, earth & rock a little darker; the beaches' dry sand a damp
+    // ochre, in blotches as the drops pit it (matte, unlike the swash), near & far alike
+    const isBeach = eq(wid, S.beach);
+    const rainedSand = smoothstep(0.05, 0.5, cityUniforms.uRainWetness).mul(isBeach).mul(float(1).sub(sandWet))
+      .mul(smoothstep(0.25, 0.75, nM).mul(0.3).add(0.7));
     const lit = marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
       .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film))
-      // grass, earth & rock darker in the rain too (the real-time weather's; the sand has its own above)
-      .mul(float(1).sub(cityUniforms.uRainWetness.mul(float(1).sub(hard)).mul(float(1).sub(eq(wid, S.beach))).mul(0.16)));
+      .mul(float(1).sub(cityUniforms.uRainWetness.mul(float(1).sub(hard)).mul(float(1).sub(isBeach)).mul(0.16)))
+      .mul(mix(vec3(1), vec3(0.56, 0.53, 0.46), rainedSand));
     // The faces the 2 m grid still draws as steep ramps (a wall's ends, a flight's flanks, the quays and abutments the
     // shore walls leave out): weathered stone rather than the surface's sand or paving stretched down them. The soft
     // surfaces (the woods, gardens and hedges on a hillside) keep their own ground up to the crags, past 60°; the

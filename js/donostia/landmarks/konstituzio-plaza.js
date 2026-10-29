@@ -489,9 +489,9 @@ function pavingMaterial() {
     });
     return mix(plaza, slate, arcade).mul(grain).mul(float(1).sub(w.mul(0.3))).mul(float(1).sub(pool.mul(0.3)));
   })();
-  mat.roughnessNode = mix(mix(float(0.82), float(0.66), arcade), float(0.3), wet.mul(0.85)).mul(float(1).sub(pool.mul(0.85)));
+  mat.roughnessNode = mix(mix(float(0.82), float(0.66), arcade), float(0.38), wet.mul(0.85)).mul(float(1).sub(pool.mul(0.85)));
   const grazing = pow(float(1).sub(clamp(normalize(cameraPosition.sub(positionWorld)).y, 0, 1)), 5).mul(0.98).add(0.02);
-  mat.metalnessNode = clamp(grazing.mul(1.6), 0, 0.85).mul(max(pool, wet.mul(0.4)));
+  mat.metalnessNode = clamp(grazing.mul(1.6), 0, 0.85).mul(max(pool, wet.mul(0.3)));
   // the arcades' lanterns on the slate at night
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
   // (on the square: within a few metres of the arcades' fronts, a box round the square's middle)

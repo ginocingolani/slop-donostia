@@ -113,7 +113,7 @@ function precipitationMesh() {
     // a pixel wide at the least, and as much fainter
     const pix = dist.mul(u.pixel);
     const w = max(u.width, pix.mul(1.3));
-    const len = max(u.length.mul(mix(speed, float(1), u.snow)), pix.mul(2.0));
+    const len = mix(max(u.length.mul(speed), pix.mul(2.0)), w, u.snow);
     // fade near the camera (no streak across the face), and towards the box's sides so its edges never show
     const centre = u.origin.add(box.mul(vec3(0.5, BELOW, 0.5)));
     const edge = abs(q.sub(centre)).div(box.mul(0.5));
@@ -286,15 +286,18 @@ export function buildWeather({ terrain, lighting, renderer = null }) {
     lighting?.uSkyExposure && new Boost(() => lighting.uSkyExposure.value, (v) => { lighting.uSkyExposure.value = v; }),
     lighting?.uNightSkyColor && new Boost(() => lighting.uNightSkyColor.value, (v) => lighting.uNightSkyColor.value.copy(v), true)
   ];
+  // A flash lights the scene from the whole sky, bluish white: as bright as an overcast day's light at night, a fraction
+  // of it over a day's own (`dark`: 1 at night .. 0.3 by day, set every frame)
   const FLASH_SKY = new THREE.Color(0.75, 0.8, 1.0), FLASH_GROUND = new THREE.Color(0.42, 0.44, 0.52);
   const FLASH_NIGHT_SKY = new THREE.Color(0.5, 0.54, 0.68);
+  let dark = 1;
   const flashFns = [
-    (base, f) => base + f * 7,
-    (base, f) => base.lerp(FLASH_SKY, Math.min(1, f * 1.5)),
-    (base, f) => base.lerp(FLASH_GROUND, Math.min(1, f * 1.5)),
-    (base, f) => base + f * 1.6,
-    (base, f) => base * (1 + f * 5),
-    (base, f) => base.lerp(FLASH_NIGHT_SKY, Math.min(1, f * 1.4))
+    (base, f) => base + f * 3.2 * dark,
+    (base, f) => base.lerp(FLASH_SKY, Math.min(1, f * 1.5 * dark)),
+    (base, f) => base.lerp(FLASH_GROUND, Math.min(1, f * 1.5 * dark)),
+    (base, f) => base + f * 0.8 * dark,
+    (base, f) => base * (1 + f * 3 * dark),
+    (base, f) => base.lerp(FLASH_NIGHT_SKY, Math.min(1, f * 1.2))
   ];
   const applyFlash = (f) => boosts.forEach((b, k) => b && b.apply(f, flashFns[k]));
 
@@ -328,7 +331,7 @@ export function buildWeather({ terrain, lighting, renderer = null }) {
     }
     pos.needsUpdate = tan.needsUpdate = true;
     // wider the further it is, so it never shrinks under a few pixels; dimmer through the rain's murk
-    B.width.value = Math.max(3, strike.distance * 0.0016);
+    B.width.value = Math.max(4, strike.distance * 0.0025);
     s.boltFade = Math.exp(-strike.distance / Math.max(liveSnapshot().weather.visibility ?? 10000, 1500) * 0.6);
   }
 
@@ -463,11 +466,12 @@ export function buildWeather({ terrain, lighting, renderer = null }) {
     }
     const flash = s.hold ?? lightning.flash(clock);
     s.flash = flash;
+    dark = 1 - 0.7 * THREE.MathUtils.clamp(snap.sun.elevation / 12, 0, 1);
     applyFlash(flash);
     const current = lightning.current;
     bolt.visible = flash > 0.02 && !!current?.bolt;
     B.light.value = flash * 40 * s.boltFade;
-    if (rain.visible && flash > 0) R.colour.value.addScalar(flash * 1.5);
+    if (rain.visible && flash > 0) R.colour.value.addScalar(flash * 0.6 * dark);
   };
 
   // Thunder: fn(strike) when a strike's thunder reaches the city (strike: Lightning's shape); returns the unsubscribe

@@ -51,11 +51,11 @@ export function gustFactor(t, seed = 0) {
 // Per kind: the drops' fall speed (m/s), the streak's length (m, the eye's ~1/30 s at that speed, a little shorter),
 // the drop's width (m), how opaque one reads, and the kind of particle (rain: streaks; snow: flakes)
 const FALL = {
-  drizzle: { fall: 2.2, length: 0.07, width: 0.0006, alpha: 0.42, particle: 'rain' },
+  drizzle: { fall: 2.2, length: 0.1, width: 0.0008, alpha: 0.8, particle: 'rain' },
   rain: { fall: 6.5, length: 0.24, width: 0.0014, alpha: 0.5, particle: 'rain' },
   showers: { fall: 7.6, length: 0.3, width: 0.0018, alpha: 0.55, particle: 'rain' },
   storm: { fall: 8.6, length: 0.36, width: 0.002, alpha: 0.6, particle: 'rain' },
-  snow: { fall: 1.05, length: 0.011, width: 0.011, alpha: 0.85, particle: 'snow' }
+  snow: { fall: 1.05, length: 0.022, width: 0.022, alpha: 0.9, particle: 'snow' }
 };
 const NONE = Object.freeze({ kind: 'none', particle: 'none', density: 0, fall: 0, length: 0, width: 0, alpha: 0, rate: 0 });
 
@@ -81,7 +81,7 @@ export function precipitation(weather) {
     rate = Math.max(rate, snowfall * 1.0); // ~1 mm of water per cm of fresh snow
     density = Math.max(1 - Math.exp(-snowfall / 1.2), intensity * 0.85);
   } else if (kind === 'drizzle') {
-    density = Math.max(1 - Math.exp(-rate / 0.8), intensity * 0.9);
+    density = Math.max(1 - Math.exp(-rate / 0.4), intensity);
   } else {
     density = Math.max(1 - Math.exp(-rate / 4), intensity * 0.85);
   }
@@ -98,7 +98,7 @@ export function wetnessTarget(weather) {
   const p = precipitation(weather);
   if (p.kind === 'none') return weather?.kind === 'fog' ? 0.14 : 0;
   if (p.kind === 'snow') return 0.3 + 0.35 * (1 - Math.exp(-p.rate / 1.5));
-  return 0.3 + 0.7 * (1 - Math.exp(-Math.max(p.rate, p.density * 4) / 3));
+  return 0.3 + 0.6 * (1 - Math.exp(-Math.max(p.rate, p.density * 4) / 3));
 }
 
 /**
