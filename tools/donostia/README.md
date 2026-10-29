@@ -377,6 +377,49 @@ map.
   (`js/donostia/seamark-timing.js`, which the lighthouses' lanterns and Igeldo's beams share), a revolving optic's
   flashes reaching each bearing as its beams sweep past. In the app's console (`?debug`),
   `slopDebug.world.modules.seamarks.userData.freeze(t)` stops that clock at t s, for renders of a given moment.
+- The sea in real time (`js/donostia/sea-state.js`, no three.js, tested by `tests/donostia-sea.test.mjs`; `water.js`,
+  `sea-uniforms.js`, `spray.js`): with the real-time switch on, the water reads `live-state.js`'s snapshot four times a
+  second and eases into it (everything blends in over 1.5 s from the fixed sea and back out when the switch goes off,
+  after which the fixed sea's uniforms hold exactly their old values and the extras sit in branches that skip them).
+  - The tide: the sea plane stands at `sea.tide.level` (Open-Meteo's `sea_level_height_msl`: about −2.4 to +1.5 m at
+    a spring tide), and so do what floats on it: the pontoons and their gangways' pitch (down to where the pontoons
+    settle on the basins' bed, −2.55 m), the moored boats, the ferries and their wakes, the buoys. The tidal bands
+    (the beaches' wet sand, the walls', rocks', piles', ladders' and slipway's dark band and weed) are drawn from a
+    mark, the last high water less a spring tide's 1.5 m (`bandMark`), so a neap tide's sit lower and the ebb bares
+    the weed; the swash on the sand and on the rocks runs at the water's edge. What the ebb uncovers below the mark
+    turns wet: flat seabed to rippled wet sand and silt, the rest (the quays' and stairs' feet, the rubble the 2 m grid
+    leaves against the moles) dark and weed-grown. The ladders and the fishing quay's strakes, which the bake stops at
+    −1.2 and −0.8 m, go on down past the lowest tides (`LOW_WATER`, −2.6 m) in a mesh only the live tide shows.
+  - Two low-water channels (`LOW_WATER_CHANNELS`): the isobaths reach neither the Urumea's mouth nor Santa Klara's
+    jetty, and the fill between them and the LiDAR's shore leaves a bar across the river at −0.4 m and the ferries'
+    landing in half a metre of water, so a spring tide's low water stranded the river in a pond and the ferries on the
+    sand. With the switch on, a channel traced along the river's thalweg (to −3.3 m) and one along the ferries' lanes
+    to the jetty's head (−3.6 m) are dredged into the terrain's vertices and the water's sea floor alike
+    (`sea-uniforms.js` `channelFloor`), only where the fill lies under mean sea level.
+  - Dry pockets (`dryPockets`): the sea is one plane, so a tide over ground it cannot reach (the railway cuttings at
+    Anoeta and Amara, underpasses, the ponds' beds) would show through it. While the live tide runs the plane is cut
+    with holes over the ground below the day's high water (at most `HIGH_WATER`, 2.2 m) that no path below it joins
+    to the sea or the river, a flood fill of the terrain's two grids (~0.1 s, again when the high water steps by
+    0.25 m).
+  - Waves (`seaParams`): the breakers on the beaches scale with the swell that reaches the coast (the total wave
+    height, cut down by how far its direction lies outside the W-NNE sector the coast is open to: `openTo`) against
+    the 1.2 m north-westerly they were drawn for, Zurriola's the most and La Concha's and Ondarreta's as their
+    exposure (`water.png`'s) already shelters them, none in the port; their period is the swell's, and a big swell
+    breaks all along the shore and trails its foam further. The open sea gets the swell as three long-crested trains
+    from its direction (deep-water wavelengths, the beat gathering them into sets), fading into the bay and gone in
+    the port. The wind sea's four texture layers turn downwind of `weather.windFrom` (spread wider the shorter they
+    are) with an energy from `windSpeed` and `windWaveHeight` (`chopEnergy`: 0.3 in a calm, 1 at the fixed sea's 5 m/s
+    breeze, 2.6 in a gale), the bay glassy under a small swell and light airs; whitecaps from 4.5 m/s
+    (`whitecapCover`, after the Beaufort scale's descriptions), patches drawn out downwind that dissolve into a sheen
+    at a distance. In a swell of 2 m and more (`spray`, full at 3.4 m), every wave that breaks on steep shore throws
+    up a burst of spray, timed to the swell's period and as high as the swell is big (`sprayPlaces`: water exposed to
+    the swell with land standing 1.5 m over mean sea level within two cells, one place every 16 m: the Paseo Nuevo,
+    the Peine del Viento, the Zurriola dike, the cliffs; never a beach): one instanced draw, built the first time a
+    big swell comes.
+  - For the HUD: `surfReport(sea)` (the breakers on Zurriola, Ondarreta and La Concha as the water draws them, and the
+    open sea's Douglas sea state, `douglas`), the water's `userData.seaState()` (the eased values shown).
+  - Debug: `slopDebug.live.setLiveEnabled(true)`, then `slopDebug.live.setLiveOverride({ sea: { level: -2.4,
+    waveHeight: 4, swellHeight: 4, swellFrom: 320, swellPeriod: 14 }, weather: { windSpeed: 12, windFrom: 320 } })`.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
