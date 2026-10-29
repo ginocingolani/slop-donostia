@@ -73,7 +73,11 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   })();
 
   function applyPreset(id) {
-    const look = LOOKS[id] || LOOKS.golden;
+    applyLook(LOOKS[id] || LOOKS.golden);
+  }
+
+  // a look of LOOKS' shape (js/donostia/time-of-day.js blends them for Slop Donostia's real-time switch)
+  function applyLook(look) {
     exposure.value = look.exposure;
     contrast.value = look.contrast;
     saturation.value = look.saturation;
@@ -83,7 +87,7 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   }
 
   applyPreset('golden');
-  return { outputNode, applyPreset };
+  return { outputNode, applyPreset, applyLook, looks: LOOKS };
 }
 
-export { createPostProcessing };
+export { createPostProcessing, LOOKS };
