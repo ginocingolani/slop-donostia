@@ -570,7 +570,8 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
       R.origin.value.set(cam.x - BOX.x / 2, Math.max(cam.y - BOX.y * BELOW, ground - 1), cam.z - BOX.z / 2);
       shelter.update(camera);
       R.shelterOrigin.value.copy(shelter.origin);
-      R.splashes.value = Math.round(count * SPLASH_SHARE * (1 - s.snow));
+      // (no splashes seen from the air: they are within SPLASH_REACH of the camera's foot)
+      R.splashes.value = cam.y - ground < 40 ? Math.round(count * SPLASH_SHARE * (1 - s.snow)) : 0;
       R.splashAlpha.value = 0.3 * s.rainfall / Math.max(s.density, 0.01);
       R.length.value = s.length;
       R.width.value = s.width;
