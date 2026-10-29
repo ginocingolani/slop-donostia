@@ -237,6 +237,7 @@ class ShelterMap {
     const half = SHELTER / 2;
     if (Math.abs(cam.x - (this.origin.x + half)) < SHELTER_SLACK && Math.abs(cam.z - (this.origin.y + half)) < SHELTER_SLACK &&
       Math.abs(level - this.level) < 0.05) return;
+    const t0 = performance.now();
     this.level = level;
     const ox = Math.round(cam.x) - half, oz = Math.round(cam.z) - half;
     this.origin.set(ox, oz);
@@ -267,6 +268,7 @@ class ShelterMap {
       }
     }
     this.texture.needsUpdate = true;
+    this.ms = performance.now() - t0; // (the last refill's CPU time, for state())
   }
 }
 
@@ -628,6 +630,7 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     snap(wet = false) { s.snap = wet ? 'wet' : true; return true; },
     setWetness(w) { wetOverride = w; s.wet = w; return w; },
     state: () => ({ on: s.on, wet: s.wet, density: s.density, drops: rain.visible ? rain.geometry.instanceCount : 0, snow: s.snow,
+      shelterMs: shelter.ms,
       wind: { x: W.uWindDir.value.x, z: W.uWindDir.value.y, sway: W.uWindSway.value, lean: W.uWindLean.value }, flash: s.flash })
   };
   const update = group.userData.update;
