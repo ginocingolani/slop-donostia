@@ -7,8 +7,9 @@ dated lintels); nothing here is traced from any font or image: the shapes are nu
 """
 import math
 
-from geometry import (Contour, Serif, add, bar, diag, diag_through, diff, edge_x, edge_y, hobby, inter, length,
-                      line_cubic, mirror_x, mul, polygon, rect, ring, rotate180, shift, stem, stroke, sub, union, unit)
+from geometry import (Contour, Serif, add, bar, curved_serif, diag, diag_through, diff, edge_x, edge_y, hobby, inter,
+                      length, line_cubic, mirror_x, mul, oval, polygon, rect, ring, rotate180, shift, stem, stroke, sub,
+                      union, unit)
 
 CAP = 720
 OVERSHOOT = 13
@@ -16,10 +17,13 @@ ACCENT_GAP = 54  # between the cap line and the bottom of a capital accent
 
 
 class Master:
-    """The design parameters of one master. t = 0 is HUD (wght 600), t = 1 is Black (wght 900)."""
+    """The design parameters of one master. t = 0 is HUD (wght 600), t = 1 is Black (wght 900); c = 0 is the straight
+    cut (CURV 0), c = 1 the curved one (CURV 100). Weight-dependent numbers come from v(); the curvature reaches the
+    drawing through geometry.curvature() (stems, diagonals, wedge ends) and through m.c in the glyphs that bend."""
 
-    def __init__(self, name, t, wght):
-        self.name, self.t, self.wght = name, t, wght
+    def __init__(self, name, t, wght, c=0.0):
+        self.name, self.t, self.wght, self.c = name, t, wght, c
+        self.curv = round(c * 100)
         v = self.v
         self.C = CAP
         self.o = OVERSHOOT
@@ -42,12 +46,18 @@ class Master:
 
 
 class G:
-    """A drawn glyph: outline (skia path), body width w, left/right side bearings (None = auto-spaced), anchors"""
+    """A drawn glyph: outline (skia path), body width w, left/right side bearings (None = auto-spaced), and the x of
+    its anchors: top (accents), bottom (cedilla, comma below), ogonek (the hook at the lower right), caron (Ľ's
+    apostrophe caron beside the stem)"""
 
-    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None):
+    def __init__(self, path, w, lsb=None, rsb=None, top=None, bottom=None, adv=None, ogonek=None, caron=None,
+                 top_y=None):
         self.path, self.w, self.lsb, self.rsb = path, w, lsb, rsb
+        self.top_y = top_y   # the top anchor's height, if not the cap line (the short dotted i)
         self.top = w / 2 if top is None else top
         self.bottom = w / 2 if bottom is None else bottom
+        self.ogonek = w * 0.78 if ogonek is None else ogonek
+        self.caron = w * 0.6 if caron is None else caron
         self.adv = adv  # fixed advance (dashes, space)
 
 
@@ -98,6 +108,23 @@ def dot_size(m):
     return m.v(66, 84), m.v(76, 96)
 
 
+def bow(m, mid):
+    """diag() bend for a stroke whose middle moves sideways by `mid` units at CURV 100 (nothing at CURV 0)"""
+    d = mid / 0.75 * m.c
+    return (d, d)
+
+
+def s_bend(m, amp):
+    """diag() bend for a gentle S: the stroke's thirds move by -/+ about amp units at CURV 100"""
+    d = amp / 0.288 * m.c
+    return (-d, d)
+
+
+def arm(m, root, amount):
+    """bar() bend: the arm's free end moves by `amount` units at CURV 100 (positive up), growing from x = root"""
+    return (root, 0.0, amount * m.c) if m.c else None
+
+
 def bowl(m, x0, y0, y1, xr, side=None, top=None, k=0.60, kin=0.58):
     """A D-shaped bowl attached to a stem whose right edge is x0: outer from y0 to y1 reaching xr, minus its counter.
     Returns (outer, counter)."""
@@ -143,10 +170,10 @@ def H(m):
     ]), W, m.sp, m.sp)
 
 
-@glyph('I', 0x49, 0x69)
+@glyph('I', 0x49)
 def I(m):
     s = m.stem
-    return G(stem(0, s, 0, m.C, m.serif, flare_l=m.flare, flare_r=m.flare), s, m.sp, m.sp)
+    return G(stem(0, s, 0, m.C, m.serif, flare_l=m.flare, flare_r=m.flare), s, m.sp, m.sp, ogonek=s * 0.66)
 
 
 @glyph('E', 0x45, 0x65)
@@ -157,10 +184,11 @@ def E(m):
     hm = h * 0.94
     return G(union([
         stem(0, s, 0, C, m.serif, br=False, tr=False, flare_l=m.flare),
-        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen)),
-        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8)),
-        bar(s / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen)),
-    ]), W, m.sp, None, top=W * 0.48)
+        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen), bend=arm(m, s / 2, -m.v(10, 12))),
+        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8),
+            bend=arm(m, s / 2, m.v(4, 5))),
+        bar(s / 2, W + m.v(8, 10), 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
+    ]), W, m.sp, None, top=W * 0.48, ogonek=W * 0.82)
 
 
 @glyph('F', 0x46, 0x66)
@@ -171,8 +199,9 @@ def F(m):
     hm = h * 0.94
     return G(union([
         stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare, flare_r=m.flare),
-        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen)),
-        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8)),
+        bar(s / 2, W, C - h, C, right=(0, m.wdrop, m.wlen), bend=arm(m, s / 2, -m.v(10, 12))),
+        bar(s / 2, W * 0.86, ym - hm / 2, ym + hm / 2, right=(m.wdrop * 0.55, m.wdrop * 0.55, m.wlen * 0.8),
+            bend=arm(m, s / 2, m.v(4, 5))),
     ]), W, m.sp, None)
 
 
@@ -182,8 +211,8 @@ def L(m):
     W = m.v(446, 506)
     return G(union([
         stem(0, s, 0, C, m.serif, br=False, flare_l=m.flare, flare_r=m.flare),
-        bar(s / 2, W, 0, h, right=(m.wdrop, 0, m.wlen)),
-    ]), W, m.sp, None, top=s / 2)
+        bar(s / 2, W, 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, s / 2, m.v(10, 12))),
+    ]), W, m.sp, None, top=s / 2, caron=s + m.v(62, 58))
 
 
 @glyph('T', 0x54, 0x74)
@@ -193,7 +222,8 @@ def T(m):
     x0 = W / 2 - s / 2
     return G(union([
         stem(x0, x0 + s, 0, C, m.serif, tl=False, tr=False, flare_l=m.flare, flare_r=m.flare),
-        bar(0, W, C - h, C, left=(0, m.wdrop, m.wlen), right=(0, m.wdrop, m.wlen)),
+        bar(0, W, C - h, C, left=(0, m.wdrop, m.wlen), right=(0, m.wdrop, m.wlen),
+            bend=(W / 2, -m.v(12, 14) * m.c, -m.v(12, 14) * m.c) if m.c else None),
     ]), W, None, None)
 
 
@@ -203,8 +233,9 @@ def Z(m):
     W = m.v(548, 608)
     hw = m.thick / math.sin(math.atan2(C - 2 * h, W - m.v(150, 200)))
     return G(union([
-        bar(m.v(14, 16), W - m.v(10, 12), C - h, C, left=(0, m.wdrop, m.wlen)),
-        bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen)),
+        bar(m.v(14, 16), W - m.v(10, 12), C - h, C, left=(0, m.wdrop, m.wlen),
+            bend=(W - m.v(10, 12), -m.v(8, 10) * m.c, 0.0) if m.c else None),
+        bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen), bend=arm(m, 0, m.v(8, 10))),
         polygon([(0, 0), (hw, 0), (W - m.v(10, 12), C), (W - m.v(10, 12) - hw, C)]),
     ]), W, None, None)
 
@@ -255,12 +286,12 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 
     yi_t, yi_b = inner_top(xt), inner_bot(xb)
     if beak_top:
-        bl, bw = m.v(50, 54), m.v(46, 52)
+        bl, bw = m.v(50, 40), m.v(46, 50)
         yi2 = inner_top(xt - bw)
         parts.append(polygon([(xt + 30, yi_t + 50), (xt + 30, yi_t - bl), (xt, yi_t - bl), (xt - bw, yi2 + 5),
                               (xt - bw, yi2 + 50)]))
     if beak_bottom:
-        bl, bw = m.v(28, 30), m.v(36, 42)
+        bl, bw = m.v(28, 20), m.v(36, 40)
         yi2 = inner_bot(xb - bw)
         parts.append(polygon([(xb + 30, yi_b - 50), (xb - bw, yi2 - 50), (xb - bw, yi2 - 5), (xb, yi_b + bl),
                               (xb + 30, yi_b + bl)]))
@@ -273,7 +304,8 @@ def c_shape(m, W, beak_top=True, beak_bottom=True, xt=None, xb=None):
 @glyph('C', 0x43, 0x63)
 def C_(m):
     W = m.v(646, 726)
-    return G(c_shape(m, W, xt=W * m.v(0.735, 0.67), xb=W * m.v(0.770, 0.705)), W, None, None)
+    # the Black's terminals are cut further back than the HUD's, so its heavier strokes keep the aperture open
+    return G(c_shape(m, W, xt=W * m.v(0.735, 0.645), xb=W * m.v(0.770, 0.685)), W, None, None)
 
 
 @glyph('G', 0x47, 0x67)
@@ -321,69 +353,202 @@ def P(m):
     return G(diff(shape, c1), W, m.sp, None, top=W * 0.44)
 
 
-def r_leg(m, xj, yj, xe, name):
+def r_leg(m, xj, yj, xe, name, turn=None):
     """The long leg of R (and the leg of K): leaves the junction heading down and right, bottoms out on the baseline,
-    then flicks up beyond the bowl. xj, yj: start; xe: x of the flick's end"""
+    then flicks up beyond the bowl. xj, yj: start; xe: x of the flick's end. turn: for K's longer leg, the leg runs
+    as a straight diagonal until `turn` units above its low point and only then rounds into R's flick"""
     a, b = m.v(60, 92), m.v(48, 70)
+    k = m.c                          # curvature: a rounder leg, a longer and higher flick
     yb = b - m.o * 0.6               # spine low point: the stroke's underside just under the baseline
-    xb = xe - m.v(118, 132)
-    seg1 = hobby((xj, yj), (0.52, -1), (xb, yb), (1, 0), tension=1.05)
-    seg2 = hobby((xb, yb), (1, 0), (xe, yb + m.v(40, 46)), (0.82, 0.58), tension=1.0)
-    return stroke([seg1, seg2], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name)
+    xb = xe - m.v(118, 132) - 26 * k
+    flick = hobby((xb, yb), (1, 0), (xe + 6 * k, yb + m.v(40, 46) + 30 * k), (0.82 - 0.22 * k, 0.58 + 0.22 * k),
+                  tension=1.0 - 0.1 * k)
+    if turn is not None:
+        # a straight diagonal from the start, tangent to a circle of radius R that sets the leg down on the baseline
+        # at the low point, then the flick
+        R = turn * (1 + 0.35 * k)
+        cx, cy = xb, yb + R
+        dx, dy = cx - xj, cy - yj
+        dist = math.hypot(dx, dy)
+        alpha = -(math.atan2(dy, dx) - math.asin(min(R / dist, 0.99)))   # the diagonal's slope below horizontal
+        phi = -math.pi / 2 - alpha
+        T = (cx + R * math.cos(phi), cy + R * math.sin(phi))
+        d = (math.cos(alpha), -math.sin(alpha))
+        if k:   # with curvature the diagonal sags a little
+            mid = add(lerp2((xj, yj), T, 0.5), mul((-d[1], d[0]), -9 * k))
+            spine = [hobby((xj, yj), d, mid, d), hobby(mid, d, T, d)]
+        else:
+            spine = [line_cubic((xj, yj), T)]
+        spine += [arc_to(T, d, (xb, yb), (1, 0), R), flick]
+        n = len(spine)
+        return stroke(spine, a, b, knots=[(0, 1.02), (n - 2, 0.99), (n - 1, 0.96), (n, 0.74)], name=name,
+                      fine=2 if k else 1)
+    seg1 = hobby((xj, yj), (0.52 - 0.14 * k, -1), (xb, yb), (1, 0), tension=1.05 - 0.17 * k)
+    return stroke([seg1, flick], a, b, knots=[(0, 1.02), (1, 0.96), (2, 0.74)], name=name, fine=2 if k else 1)
 
 
-@glyph('R', 0x52, 0x72)
-def R(m):
+def lerp2(p, q, t):
+    return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+
+
+def arc_to(p, tp, q, tq, R):
+    """A cubic circular arc of radius R from p (heading tp) to q (heading tq)"""
+    ang = math.acos(max(-1.0, min(1.0, tp[0] * tq[0] + tp[1] * tq[1])))
+    h = 4 / 3 * math.tan(ang / 4) * R
+    return (p, add(p, mul(unit(tp), h)), sub(q, mul(unit(tq), h)), q)
+
+
+def r_glyph(m, leg='kick'):
+    """R. leg: 'kick' (the long leg flicking out past the bowl), 'short' (the same leg with a short flick, for calt
+    before A T V W Y J) or 'roman' (a straight leg on a flared foot, for ss04)"""
     s, C, h = m.stem, m.C, m.hair
     Wb = m.v(530, 590)                 # the bowl
     yb = m.v(334, 330)
     o1, c1 = bowl(m, s, yb, C, Wb, k=0.60, kin=0.58)
-    xe = Wb + m.v(98, 104)
-    leg = r_leg(m, s + (Wb - s) * 0.30, yb + h * 0.5, xe, 'R')
-    shape = union([stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare), o1, leg])
+    if leg == 'roman':
+        th = m.thick * 0.96
+        top = (s + (Wb - s) * 0.40, yb + h * 0.5)
+        foot = (Wb - m.v(4, 0), 0)
+        legp = diag(*diag_through((foot[0] - th * 0.4, 0), top, th, 0, yb + h * 0.5),
+                    {'br': m.serif.scaled(1.0), 'bl': m.serif.scaled(0.5, 0.7)}, bend=bow(m, -6))
+        rsb = None
+    else:
+        xe = Wb + (m.v(98, 104) if leg == 'kick' else m.v(26, 30))
+        legp = r_leg(m, s + (Wb - s) * 0.30, yb + h * 0.5, xe, 'R')
+        rsb = m.v(30, 22)
+    shape = union([stem(0, s, 0, C, m.serif, tr=False, flare_l=m.flare), o1, legp])
     shape = diff(shape, c1)
-    # the leg's end: cut square to the stroke, then trimmed level at the top so it reads as carved
-    return G(shape, Wb, m.sp, m.v(30, 22), top=Wb * 0.42)
+    return G(shape, Wb, m.sp, rsb, top=Wb * 0.42)
 
 
-@glyph('K', 0x4B, 0x6B)
-def K(m):
-    s, C = m.stem, m.C
-    W = m.v(566, 628)
-    xj, yj = s - m.v(8, 12), m.v(300, 296)
-    # the arm: a gentle arc from the stem up to the cap line, ending square with short serifs
-    a, b = m.v(54, 84), m.v(46, 68)
-    top_x = W - m.v(60, 70)
-    arm_dir0 = (0.86, 0.52)
-    arm = stroke([hobby((xj, yj), arm_dir0, (top_x, C + 40), (0.40, 1), tension=1.0)], a, b,
-                 knots=[(0, 0.96), (1, 1.04)], name='K arm')
-    arm = diff(arm, rect(-100, C, W + 300, C + 300))
+@glyph('R', 0x52, 0x72)
+def R(m):
+    return r_glyph(m)
+
+
+def k_frame(m):
+    """What the three Ks share: the advance-setting width W (the arm's reach at the cap line, as wide as N), the
+    crotch X where arm and leg part on the stem's right edge, and the flick's end (R's leg, at the same overhang)"""
+    s = m.stem
+    W = m.v(604, 672)
+    X = (s + m.v(6, 8), m.v(352, 348))
+    return s, W, X, W + m.v(14, 16)
+
+
+def arm_top_serifs(m, arm, W):
+    """Short flared serifs on both sides of an arm's end, cut level on the cap line (the straight cut; with curvature
+    the arm's nib swells towards its end instead, see K)"""
+    C = m.C
     sr, sl = m.serif.scaled(0.95), m.serif.scaled(0.6)
     xr, xl = edge_x(arm, C - 1, 'max'), edge_x(arm, C - 1, 'min')
     xr2, xl2 = edge_x(arm, C - sr.h, 'max'), edge_x(arm, C - sl.h, 'min')
     serif_r = polygon([(xr2 - 30, C - sr.h), (xr2, C - sr.h), (xr + sr.e, C - sr.t), (xr + sr.e, C), (xr - 30, C)])
     serif_l = polygon([(xl2 + 30, C - sl.h), (xl2, C - sl.h), (xl - sl.e, C - sl.t), (xl - sl.e, C), (xl + 30, C)])
-    leg = r_leg(m, s + m.v(30, 40), m.v(392, 388), W + m.v(54, 58), 'K')
-    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, serif_r, serif_l, leg])
-    # ink trap where the arm's upper edge meets the stem
-    ys = edge_y(inter(arm, rect(s, 0, s + 1, C)), s + 0.5, 'max')
-    shape = trap_at(shape, (s, ys), m.trap)
-    return G(shape, W, m.sp, m.v(24, 18), top=W * 0.36)
+    return [serif_r, serif_l]
+
+
+def crotch_trap(m, shape, X):
+    return trap_at(shape, X, m.trap)
+
+
+def k_short_end(m, W):
+    """Where a short K leg's flick ends (calt, before A T V W Y J)"""
+    return W - m.v(56, 62)
+
+
+@glyph('K', 0x4B, 0x6B)
+def K(m, short=False):
+    """The curved Basque K, a 20th-century convention owned as such: arm and leg part from one open crotch on the
+    stem; the arm, as heavy as the thick diagonals, leaves low and sweeps up to the cap line; the leg is R's leg,
+    with R's flick"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    if short:
+        xe = k_short_end(m, W)
+    k = m.c
+    a, b = m.v(64, 96), m.v(52, 76)          # as heavy as the thick diagonals at 45 degrees
+    top = (W - a * 0.95, C + 60)
+    start = (s * 0.42, X[1] + b * 0.55)
+    if k:   # the arm flares into the cap line by itself, like the stems' ends
+        knots = [(0, 1.02), (0.62, 0.97), (0.9, 1.0 + 0.16 * k), (1, 1.0 + 0.42 * k)]
+    else:
+        knots = [(0, 1.02), (1, 0.97)]
+    arm = stroke([hobby(start, (0.80, 0.60 + 0.04 * k), top, (0.30 - 0.06 * k, 1), tension=1.0 - 0.08 * k)],
+                 a, b, knots=knots, name='K arm', fine=5 if k else 2)
+    arm = diff(arm, rect(-100, C, W + 300, C + 300))
+    leg = r_leg(m, s * 0.42, X[1] - b * 0.35, xe, 'K', turn=m.v(104, 120))
+    parts = [stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg] + ([] if k else arm_top_serifs(m, arm, W))
+    shape = inter(union(parts), rect(-200, -200, xe + 300, C + 2))
+    return G(crotch_trap(m, shape, X), W, m.sp, m.v(24, 18), top=W * 0.36)
+
+
+def straight_stroke(pb, pt, thick, y0, y1, serifs, bend=None, clip_x=None):
+    """A straight (or bowed) diagonal of perpendicular thickness `thick` along the centreline pb-pt, cut level at y0
+    and y1, kept right of clip_x"""
+    path = diag(*diag_through(pb, pt, thick, y0, y1), serifs, bend=bend)
+    return path if clip_x is None else inter(path, rect(clip_x, -300, 3000, 1300))
+
+
+def through_edge(X, d, thick, side):
+    """A centreline point for a stroke of direction d whose `side` edge (+1 right, -1 left, horizontally) passes
+    through X"""
+    hw = thick / 2 / max(abs(unit(d)[1]), 1e-6)
+    return (X[0] - side * hw, X[1])
+
+
+@glyph('K.straight')
+def K_straight(m, short=False):
+    """K with a straight arm, its end flared level on the cap line, and R's kicked leg"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    if short:
+        xe = k_short_end(m, W)
+    th = m.thick * 0.96
+    d = (W - X[0] - m.v(40, 46), C - X[1])
+    c0 = through_edge(X, d, th, 1)
+    pt = add(c0, mul(d, (C - c0[1]) / d[1]))
+    pb = add(c0, mul(d, -1.2))
+    arm = straight_stroke(pb, pt, th, pb[1], C, {'tr': m.serif.scaled(1.15), 'tl': m.serif.scaled(0.7)},
+                          bend=bow(m, -8), clip_x=s * 0.5)
+    leg = r_leg(m, s * 0.42, X[1] - m.v(52, 76) * 0.35, xe, 'K', turn=m.v(104, 120))
+    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg])
+    return G(crotch_trap(m, shape, X), W, m.sp, m.v(24, 18), top=W * 0.36)
+
+
+@glyph('K.roman')
+def K_roman(m):
+    """The plain inscription K: a thin straight arm and a thick straight leg meeting at the stem, all three standing
+    on flared feet"""
+    s, C = m.stem, m.C
+    s_, W, X, xe = k_frame(m)
+    Wl = W + m.v(26, 44)                      # the leg's foot reaches a little past the arm
+    tha, thl = m.thin, m.thick * 0.94
+    da = (W - X[0] - m.v(44, 50), C - X[1])
+    ca = through_edge(X, da, tha, 1)
+    arm = straight_stroke(add(ca, mul(da, -1.2)), add(ca, mul(da, (C - ca[1]) / da[1])), tha,
+                          ca[1] - 1.2 * da[1], C, {'tr': m.serif, 'tl': m.serif.scaled(0.7)},
+                          bend=bow(m, -6), clip_x=s * 0.5)
+    dl = (Wl - m.v(70, 96) - X[0], -X[1])     # down to the foot
+    cl = through_edge(X, dl, thl, 1)
+    foot = add(cl, mul(dl, -cl[1] / dl[1]))
+    top_ = add(cl, mul(dl, -1.0))
+    leg = straight_stroke(foot, top_, thl, 0, top_[1], {'br': m.serif.scaled(1.05)},
+                          bend=bow(m, -7), clip_x=s * 0.5)
+    shape = union([stem(0, s, 0, C, m.serif, flare_l=m.flare), arm, leg])
+    return G(crotch_trap(m, shape, X), Wl, m.sp, None, top=W * 0.36)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # diagonals
 
 
-@glyph('A', 0x41, 0x61)
-def A(m):
-    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
-    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V"""
+def a_geometry(m):
+    """The crowned A's frame: width W, the apex's left x ax0 and width apex_w, the legs' horizontal widths l_hw and
+    r_hw. The apex width is solved so that the legs' inner edges meet just under the crown"""
     C, h = m.C, m.hair
-    W = m.v(660, 760)
+    W = m.v(660, 800)               # 0.200: the Black wider than before, so its kite counter opens
     hc = h * 0.98
     thin, thick = m.thin * 0.92, m.thick * 0.96
-    # solve the apex width so that the legs' inner edges meet just under the crown
     apex_w = m.v(170, 220)
     for _ in range(8):
         ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
@@ -394,19 +559,38 @@ def A(m):
     ax0 = W / 2 - apex_w / 2 + m.v(14, 16)
     l_hw = thin / math.sin(math.atan2(C, ax0))
     r_hw = thick / math.sin(math.atan2(C, W - (ax0 + apex_w)))
+    return W, ax0, apex_w, l_hw, r_hw
+
+
+@glyph('A', 0x41, 0x61)
+def A(m, flag='l', crowned=True):
+    """The crowned A: a flat bar over the apex, reaching further to the left, and a crossbar that dips into a V. The
+    legs' inner edges meet right under the crown, so the counter is a tall kite between the crown and the V.
+    flag='r' turns the crown's long end to the right (calt uses it after T, V, W and Y, whose arms overhang the A's
+    left)"""
+    C, h = m.C, m.hair
+    W, ax0, apex_w, l_hw, r_hw = a_geometry(m)
+    hc = h * 0.98
     left = diag((0, 0), (l_hw, 0), (ax0, C), (ax0 + l_hw, C),
-                {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)})
+                {'bl': m.serif.scaled(1.05), 'br': m.serif.scaled(0.55, 0.7)}, bend=bow(m, 9))
     right = diag((W - r_hw, 0), (W, 0), (ax0 + apex_w - r_hw, C), (ax0 + apex_w, C),
-                 {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)})
-    # the crown: a bar on the cap line, longer to the left, its ends cut as wedges
-    cl = ax0 - m.v(132, 140)
-    cr = ax0 + apex_w + m.v(20, 22)
-    wl = min(m.wlen * 0.85, ax0 * (C - hc) / C - cl - 24)
-    crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
+                 {'br': m.serif.scaled(1.05), 'bl': m.serif.scaled(0.55, 0.7)}, bend=bow(m, -9))
+    # the crown: a bar on the cap line, longer to the left (or right), its ends cut as wedges
+    if flag == 'l':
+        cl = ax0 - m.v(132, 140)
+        cr = ax0 + apex_w + m.v(20, 22)
+        wl = min(m.wlen * 0.85, ax0 * (C - hc) / C - cl - 24)
+        crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.95, wl), right=(0, m.wdrop * 0.4, m.wlen * 0.4))
+    else:
+        cl = ax0 - m.v(20, 22)
+        cr = ax0 + apex_w + m.v(132, 140)
+        x_r = W + ((ax0 + apex_w) - W) * (C - hc) / C
+        wr = min(m.wlen * 0.85, cr - x_r - 24)
+        crown = bar(cl, cr, C - hc, C, left=(0, m.wdrop * 0.4, m.wlen * 0.4), right=(0, m.wdrop * 0.95, wr))
     # the V crossbar: its upper edge leaves the legs at y_side and dips to y_mid in the middle
     hb = h * 0.88
-    y_side = m.v(364, 372)
-    y_mid = m.v(298, 304)                      # >= 0.40 cap: the counter stays open
+    y_side = m.v(364, 358)
+    y_mid = m.v(298, 292)                      # >= 0.40 cap: the counter stays open
     def lx(y):
         return l_hw + ax0 * y / C
     def rx(y):
@@ -415,7 +599,7 @@ def A(m):
     xl, xr = lx(y_side) - 40, rx(y_side) + 40
     vbar = polygon([(xl, y_side + 10), (xm, y_mid), (xr, y_side + 10), (xr, y_side + 10 - hb * 1.08),
                     (xm, y_mid - hb * 1.12), (xl, y_side + 10 - hb * 1.08)])
-    shape = union([left, right, crown, vbar])
+    shape = union([left, right, crown, vbar] if crowned else [left, right, vbar])
     # ink traps in the counter's lower corners, where the V meets the legs
     up_l = unit((ax0, C))
     up_r = unit(((ax0 + apex_w - r_hw) - (W - r_hw), C))
@@ -423,7 +607,7 @@ def A(m):
     pr = intersect_lines((rx(0), 0), up_r, (xm, y_mid), unit((xr - xm, y_side + 10 - y_mid)))
     shape = trap_at(shape, pl, m.trap)
     shape = trap_at(shape, pr, m.trap)
-    return G(shape, W, None, None, top=(lx(C * 0.5) + rx(C * 0.5)) / 2)
+    return G(shape, W, None, None, top=(lx(C * 0.5) + rx(C * 0.5)) / 2, ogonek=W - r_hw * 0.5)
 
 
 @glyph('V', 0x56, 0x76)
@@ -434,8 +618,10 @@ def V(m):
     lw = m.thick / math.sin(math.atan2(C, W / 2))
     rw = m.thin / math.sin(math.atan2(C, W / 2))
     y0 = -m.op
-    left = diag((W / 2 - lw + vt, y0), (W / 2 + vt, y0), (0, C), (lw, C), {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
-    right = diag((W / 2 - vt, y0), (W / 2 - vt + rw, y0), (W - rw, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.7)})
+    left = diag((W / 2 - lw + vt, y0), (W / 2 + vt, y0), (0, C), (lw, C), {'tl': m.serif, 'tr': m.serif.scaled(0.7)},
+                bend=bow(m, 10))
+    right = diag((W / 2 - vt, y0), (W / 2 - vt + rw, y0), (W - rw, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.7)},
+                 bend=bow(m, -10))
     return G(union([left, right]), W, None, None)
 
 
@@ -451,10 +637,14 @@ def W_(m):
     def hw(t, dx):
         return t / math.sin(math.atan2(C, abs(dx)))
     s1w, s2w, s3w, s4w = hw(thick, v1), hw(thin, t2 - v1), hw(thick, v2 - t3), hw(thin, W - v2)
-    s1 = diag((v1 - s1w + vt, y0), (v1 + vt, y0), (0, C), (s1w, C), {'tl': m.serif, 'tr': m.serif.scaled(0.6)})
-    s2 = diag((v1 - vt, y0), (v1 - vt + s2w, y0), (t2 - s2w / 2, C), (t2 + s2w / 2, C), {'tr': m.serif.scaled(0.6)})
-    s3 = diag((v2 - s3w + vt, y0), (v2 + vt, y0), (t3 - s3w / 2, C), (t3 + s3w / 2, C), {'tl': m.serif.scaled(0.6)})
-    s4 = diag((v2 - vt, y0), (v2 - vt + s4w, y0), (W - s4w, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.6)})
+    s1 = diag((v1 - s1w + vt, y0), (v1 + vt, y0), (0, C), (s1w, C), {'tl': m.serif, 'tr': m.serif.scaled(0.6)},
+              bend=bow(m, 9))
+    s2 = diag((v1 - vt, y0), (v1 - vt + s2w, y0), (t2 - s2w / 2, C), (t2 + s2w / 2, C), {'tr': m.serif.scaled(0.6)},
+              bend=bow(m, -5))
+    s3 = diag((v2 - s3w + vt, y0), (v2 + vt, y0), (t3 - s3w / 2, C), (t3 + s3w / 2, C), {'tl': m.serif.scaled(0.6)},
+              bend=bow(m, 5))
+    s4 = diag((v2 - vt, y0), (v2 - vt + s4w, y0), (W - s4w, C), (W, C), {'tr': m.serif, 'tl': m.serif.scaled(0.6)},
+              bend=bow(m, -9))
     return G(union([s1, s2, s3, s4]), W, None, None)
 
 
@@ -466,9 +656,10 @@ def X(m):
     thick_w = m.thick / math.sin(math.atan2(C, W - inset))
     thin_w = m.thin * 0.92 / math.sin(math.atan2(C, W - inset))
     down = diag((W - thick_w, 0), (W, 0), (inset / 2, C), (inset / 2 + thick_w, C),
-                {'bl': m.serif.scaled(0.8), 'br': m.serif, 'tl': m.serif, 'tr': m.serif.scaled(0.8)})
+                {'bl': m.serif.scaled(0.8), 'br': m.serif, 'tl': m.serif, 'tr': m.serif.scaled(0.8)},
+                bend=tuple(-d for d in s_bend(m, 8)))
     up = diag((0, 0), (thin_w, 0), (W - inset / 2 - thin_w, C), (W - inset / 2, C),
-              {'bl': m.serif, 'br': m.serif.scaled(0.8), 'tl': m.serif.scaled(0.8), 'tr': m.serif})
+              {'bl': m.serif, 'br': m.serif.scaled(0.8), 'tl': m.serif.scaled(0.8), 'tr': m.serif}, bend=s_bend(m, 8))
     return G(union([down, up]), W, None, None)
 
 
@@ -481,12 +672,15 @@ def Y(m):
     lw = m.thick / math.sin(math.atan2(C - yj, cx))
     rw = m.thin / math.sin(math.atan2(C - yj, cx))
     lb = diag_through((cx - s * 0.1, yj - 10), (lw / 2, C), m.thick, yj - 120, C)
-    left = diag(*lb, {'tl': m.serif, 'tr': m.serif.scaled(0.7)})
+    left = diag(*lb, {'tl': m.serif, 'tr': m.serif.scaled(0.7)}, bend=bow(m, 7))
     rb = diag_through((cx + s * 0.1, yj - 10), (W - rw / 2, C), m.thin, yj - 120, C)
-    right = diag(*rb, {'tr': m.serif, 'tl': m.serif.scaled(0.7)})
+    right = diag(*rb, {'tr': m.serif, 'tl': m.serif.scaled(0.7)}, bend=bow(m, -7))
     # the arms' outer edges run into the stem's sides: clip what would stick out below
     y_l = lb[0][1] + (lb[2][1] - lb[0][1]) * ((cx - s / 2) - lb[0][0]) / (lb[2][0] - lb[0][0])
     y_r = rb[1][1] + (rb[3][1] - rb[1][1]) * ((cx + s / 2) - rb[1][0]) / (rb[3][0] - rb[1][0])
+    if m.c:   # bowed arms: where their outer edges really cross the stem's sides
+        y_l = edge_y(left, cx - s / 2 + 0.5, 'min')
+        y_r = edge_y(right, cx + s / 2 - 0.5, 'min')
     keep = polygon([(-100, C + 100), (-100, y_l), (cx - s / 2, y_l), (cx - s / 2, -100), (cx + s / 2, -100),
                     (cx + s / 2, y_r), (W + 100, y_r), (W + 100, C + 100)])
     arms = inter(union([left, right]), keep)
@@ -550,7 +744,7 @@ def U(m):
     c.C((W / 2 - irx * ki, -o + bottom), (s, yu - iry * ki), (s, yu))
     c.L((s, C))
     tops = [stem(0, s, yu, C, m.serif, bl=False, br=False), stem(W - s, W, yu, C, m.serif, bl=False, br=False)]
-    return G(union([c.path()] + tops), W, m.sp, m.sp)
+    return G(union([c.path()] + tops), W, m.sp, m.sp, ogonek=W * 0.68)
 
 
 @glyph('J', 0x4A, 0x6A)
@@ -651,7 +845,7 @@ def two(m):
         hobby((W * 0.49, C + o - b), (1, 0), (W - a, C * 0.69), (0, -1)),
         hobby((W - a, C * 0.69), (0, -1), (a * 0.9, h * 0.6), (-0.82, -1), tension=1.05),
     ]
-    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 1.04)], name='2')
+    body = stroke(sp, a, b, knots=[(0, 0.92), (1, 1.0), (2, 1.0), (3, 1.04)], name='2', fine=2)
     body = diff(body, rect(-200, C * 0.55, a * 0.5, C + 200))
     base = bar(0, W + m.v(6, 8), 0, h, right=(m.wdrop, 0, m.wlen))
     return G(union([body, base]), W, None, None)
@@ -716,7 +910,7 @@ def five(m):
         hobby((W - a, ytop * 0.50), (0, -1), (W * 0.46, -o + b), (-1, 0)),
         hobby((W * 0.46, -o + b), (-1, 0), (a * 0.9, C * 0.21), (-0.2, 1)),
     ]
-    bowl_ = stroke(sp, a, b, knots=[(0, 0.84), (0.6, 0.96), (1, 1.0), (2, 1.02), (4, 0.92)], name='5')
+    bowl_ = stroke(sp, a, b, knots=[(0, 0.84), (0.6, 0.96), (1, 1.0), (2, 1.02), (4, 0.92)], name='5', fine=2)
     bowl_ = diff(bowl_, rect(-200, -200, a * 0.5, C * 0.45))
     shape = union([top, st, bowl_])
     shape = diff(shape, rect(-200, C * 0.45, xs, C + 200))
@@ -746,8 +940,22 @@ def six(m):
 
 @glyph('nine', 0x39)
 def nine(m):
+    """The 9 drawn as itself (0.100 turned the 6 round): a bowl a touch larger than the 6's, under the cap line, and
+    a tail that runs down its right side and turns into the same plumb-cut terminal as the 3 and the 5"""
+    C, o = m.C, m.o
     W = m.v(556, 616)
-    return G(rotate180(six_path(m, W), W / 2, m.C / 2), W, None, None)
+    a, b = m.v(60, 92), m.v(46, 68)
+    yr = m.v(258, 268)
+    cy = C - yr
+    bowl_ = ring(W / 2, cy, W / 2, yr + o, m.rside * 0.94, m.rtop * 0.98, k_out=0.58, k_in=0.56)
+    sp = [
+        hobby((W - a, cy), (0, -1), (W * 0.62, C * 0.14), (-0.55, -1), tension=1.0),
+        hobby((W * 0.62, C * 0.14), (-0.55, -1), (W * 0.40, -o + b), (-1, -0.05)),
+        hobby((W * 0.40, -o + b), (-1, -0.05), (a * 0.9, C * 0.20), (-0.25, 1)),
+    ]
+    tail = stroke(sp, a, b, knots=[(0, 1.02), (1, 1.0), (2, 0.96), (3, 0.9)], name='9', fine=2)
+    tail = diff(tail, rect(-200, -200, a * 0.5, C * 0.45))
+    return G(union([bowl_, tail]), W, None, None)
 
 
 @glyph('seven', 0x37)
@@ -766,7 +974,7 @@ def seven(m):
         hobby(p1, (-0.62, -1), p2, (0, -1), tension=1.0),
         line_cubic(p2, (xf, -40)),
     ]
-    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 1.0)], name='7')
+    neck = stroke(sp, a, b, knots=[(0, 1.0), (1, 1.0), (3, 1.0)], name='7', fine=2)
     neck = diff(neck, rect(-200, -300, W + 200, 0))
     neck = diff(neck, rect(-200, C, W + 200, C + 300))
     foot = stem(xf - a, xf + a, 0, m.v(130, 140), m.serif, tl=False, tr=False)
@@ -1004,8 +1212,16 @@ def ampersand(m):
     ]
     sp = [hobby(p, tp, q, tq) for (p, tp), (q, tq) in zip(pts, pts[1:])]
     body = stroke(sp, a, b, knots=[(0, 0.88), (1, 1.0), (2, 1.02), (3, 0.98), (4, 0.84), (5, 0.80), (6, 0.84),
-                                   (7, 1.0), (8, 0.98), (9, 0.80)], name='&')
+                                   (7, 1.0), (8, 0.98), (9, 0.80)], name='&', fine=3)
+    # the arm's end: cut level at its top, with a short spur to the right like the serifs' tips
     body = diff(body, rect(W * 0.70, C * 0.52, W + 200, C * 0.66))
+    xe = edge_x(body, C * 0.52 - 1, 'max')
+    xs = edge_x(body, C * 0.52 - 1, 'min') if xe else None
+    if xe:
+        e = m.serif.e * 0.9
+        spur = polygon([(xs + 10, C * 0.52), (xe + e, C * 0.52), (xe + e, C * 0.52 - m.serif.t),
+                        (xe - 4, C * 0.52 - m.serif.h * 0.9), (xs + 10, C * 0.52 - m.serif.h * 0.9)])
+        body = union([body, spur])
     return G(body, W, None, m.v(24, 18))
 
 
@@ -1015,76 +1231,99 @@ def space(m):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# marks (unencoded; used by the accented capitals)
+# marks: see marks.py
 
 
 def accent_base(m):
     return m.C + ACCENT_GAP
 
 
-@glyph('acutecomb.case')
-def acute(m):
-    y0 = accent_base(m)
-    hgt = m.v(144, 150)
-    dxs = m.v(118, 128)
-    wb, wt = m.v(40, 52), m.v(96, 126)
-    p = polygon([(-dxs / 2 - wb / 2, y0), (-dxs / 2 + wb / 2, y0), (dxs / 2 + wt / 2, y0 + hgt), (dxs / 2 - wt / 2, y0 + hgt)])
-    return G(p, 0, 0, 0)
+# ---------------------------------------------------------------------------------------------------------------------
+# the dotted i: the minuscule i of the Iparralde shop signs (PHARMACiE, PALAiS, IBAiA), drawn among the capitals.
+# Four stems (short with serifs, the cap-height stem of I, and both without serifs) and three dots (the lozenge of
+# the interpunct, a round dot, a chisel-cut wedge). The short stem leaves room for the dot inside the cap height; the
+# tall one carries a smaller dot above the cap line, where the accents sit.
+
+I_STEMS = ['short', 'tall', 'shortplain', 'tallplain']
+I_DOTS = ['lozenge', 'round', 'wedge']
 
 
-@glyph('gravecomb.case')
-def grave(m):
-    return G(mirror_x(acute(m).path, 0), 0, 0, 0)
+def idot_size(m, tall):
+    """half width, half height of the lozenge dot: the interpunct's proportions on the short i, the dieresis's on
+    the tall one (it sits in the accent zone)"""
+    return (m.v(54, 68), m.v(62, 78)) if tall else (m.v(60, 76), m.v(80, 98))
 
 
-@glyph('dieresiscomb.case')
-def dieresis(m):
-    y0 = accent_base(m)
-    dx, dy = m.v(54, 68), m.v(62, 78)
-    sep = m.v(104, 120)
-    return G(union([lozenge(-sep, y0 + dy, dx, dy), lozenge(sep, y0 + dy, dx, dy)]), 0, 0, 0)
+def short_i_top(m):
+    """The short stem's top: under the dot, which reaches the cap line"""
+    dx, dy = idot_size(m, False)
+    return m.C - 2 * dy - m.v(58, 54)
 
 
-@glyph('tildecomb.case')
-def tilde(m):
-    """A flat, compact tilde, heavy enough to survive at 12 px on a dark panel"""
-    y0 = accent_base(m)
-    a, b = m.v(44, 54), m.v(42, 52)
-    w = m.v(330, 366)
-    amp = m.v(46, 46)
-    x0 = -w / 2 + a
-    sp = [
-        hobby((x0, y0 + b + 2), (0.55, 1), (-w * 0.17, y0 + b + amp), (1, 0)),
-        hobby((-w * 0.17, y0 + b + amp), (1, 0), (w * 0.17, y0 + b), (1, 0)),
-        hobby((w * 0.17, y0 + b), (1, 0), (-x0, y0 + b + amp - 2), (0.55, 1)),
-    ]
-    return G(stroke(sp, a, b, knots=[(0, 0.9), (1, 1.0), (2, 1.0), (3, 0.9)], name='tilde'), 0, 0, 0)
+def i_stem(m, kind):
+    s = m.stem
+    top = m.C if kind.startswith('tall') else short_i_top(m)
+    if kind.endswith('plain'):
+        return stem(0, s, 0, top, m.serif, bl=False, br=False, tl=False, tr=False, flare_l=m.flare, flare_r=m.flare)
+    return stem(0, s, 0, top, m.serif, flare_l=m.flare, flare_r=m.flare)
 
 
-@glyph('cedillacomb')
-def cedilla(m):
-    a, b = m.v(32, 40), m.v(28, 36)
-    r = m.v(68, 76)
-    sp = [
-        hobby((-6, 34), (0.12, -1), (r, -96), (0.05, -1)),
-        hobby((r, -96), (0.05, -1), (-m.v(62, 66), -176 + b), (-1, -0.08)),
-    ]
-    return G(stroke(sp, a, b, knots=[(0, 1.0), (1, 1.04), (2, 0.86)], name='cedilla'), 0, 0, 0)
+def i_dot(m, kind, cx, tall):
+    dx, dy = idot_size(m, tall)
+    bottom = m.C + m.v(50, 48) if tall else short_i_top(m) + m.v(58, 54)
+    if kind == 'lozenge':
+        return lozenge(cx, bottom + dy, dx, dy)
+    if kind == 'round':
+        r = (dx + dy) * 0.56
+        return oval(cx, bottom + r - m.o * 0.5, r, r)
+    # the chisel-cut wedge: flat on top, cut to a point below
+    w, h = dx * 1.24, dy * 1.80
+    return polygon([(cx, bottom - m.op), (cx + w, bottom - m.op + h), (cx - w, bottom - m.op + h)])
 
 
-# accented capitals: base + mark (name, unicode, base, mark, which anchor)
+def make_i(stem_kind, dot_kind):
+    def fn(m):
+        s = m.stem
+        return G(union([i_stem(m, stem_kind), i_dot(m, dot_kind, s / 2, stem_kind.startswith('tall'))]),
+                 s, m.sp, m.sp)
+    return fn
+
+
+def make_dotless(stem_kind):
+    def fn(m):
+        top_y = m.C + short_i_accent_shift(m) if stem_kind.startswith('short') else None
+        return G(i_stem(m, stem_kind), m.stem, m.sp, m.sp, top_y=top_y)
+    return fn
+
+
+for _st in I_STEMS:
+    for _dt in I_DOTS:
+        GLYPHS[f'i.{_st}.{_dt}'] = ([], make_i(_st, _dt))
+for _st in ('short', 'shortplain', 'tallplain'):
+    GLYPHS[f'dotlessi.{_st}'] = ([], make_dotless(_st))
+
+
+def short_i_accent_shift(m):
+    """How far an accent drops to sit on the short i where its dot is: its bottom at the dot's bottom"""
+    return short_i_top(m) + m.v(58, 54) - accent_base(m)
+
+
+# composites: (name, unicodes, base, mark or None, placement). Placement None puts the mark on the base's anchor for
+# its class (top; bottom for the cedilla and comma below; ogonek; caron for Ľ); 'short' lowers it onto the short
+# dotted i; 'spacing' makes a spacing accent (no base). latin.py adds the accented letters and marks.py the spacing
+# accents. Lowercase codepoints share the capitals' glyphs, except the i family, which has its own glyphs so that the
+# dotted-i features can tell i from I.
 COMPOSITES = [
-    ('Aacute', 0xC1, 'A', 'acutecomb.case'), ('Agrave', 0xC0, 'A', 'gravecomb.case'),
-    ('Eacute', 0xC9, 'E', 'acutecomb.case'), ('Egrave', 0xC8, 'E', 'gravecomb.case'),
-    ('Iacute', 0xCD, 'I', 'acutecomb.case'),
-    ('Oacute', 0xD3, 'O', 'acutecomb.case'), ('Ograve', 0xD2, 'O', 'gravecomb.case'),
-    ('Uacute', 0xDA, 'U', 'acutecomb.case'), ('Udieresis', 0xDC, 'U', 'dieresiscomb.case'),
-    ('Ntilde', 0xD1, 'N', 'tildecomb.case'),
-    ('Ccedilla', 0xC7, 'C', 'cedillacomb'),
+    ('i', [0x69], 'I', None, None),
+    ('iacute', [0xED], 'I', 'acutecomb', None), ('igrave', [0xEC], 'I', 'gravecomb', None),
+    ('idieresis', [0xEF], 'I', 'dieresiscomb', None),
 ]
-LOWER = {'Aacute': 0xE1, 'Agrave': 0xE0, 'Eacute': 0xE9, 'Egrave': 0xE8, 'Iacute': 0xED, 'Oacute': 0xF3,
-         'Ograve': 0xF2, 'Uacute': 0xFA, 'Udieresis': 0xFC, 'Ntilde': 0xF1, 'Ccedilla': 0xE7}
-
+I_ACCENTS = [('acute', 'acutecomb'), ('grave', 'gravecomb'), ('dieresis', 'dieresiscomb'),
+             ('circumflex', 'circumflexcomb')]
+for _acc, _mark in I_ACCENTS:
+    COMPOSITES.append((f'i{_acc}.short', [], 'dotlessi.short', _mark, 'short'))
+    COMPOSITES.append((f'i{_acc}.shortplain', [], 'dotlessi.shortplain', _mark, 'short'))
+    COMPOSITES.append((f'i{_acc}.tallplain', [], 'dotlessi.tallplain', _mark, None))
 
 
 def trap_at(shape, near, depth, mouth=0.5):

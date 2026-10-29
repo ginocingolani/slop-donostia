@@ -15,12 +15,15 @@ Basque character rides on a few default letters: the crowned A (a flat bar over 
 a V), the long-legged R, the curved K, the wedge-armed E and F, the spurred G, the open 4, the flat-topped 5, the
 swan-necked 7 and the lozenge interpunct.
 
-It is a capitals face: lowercase codepoints map to the same capitals. It has one variable axis, weight, from 600
-(SemiBold, the master tuned for light text on a dark panel at 12-20 px, with ink traps) to 900 (Black). Static
-instances: SemiBold, Bold, ExtraBold, Black.
+It is a capitals face: lowercase codepoints map to the same capitals. It has two variable axes: weight (wght), from
+600 (SemiBold, the master tuned for light text on a dark panel at 12-20 px, with ink traps) to 900 (Black), and
+curvature (CURV), from 0 (straight, the cut of 0.100) to 100 (stroke ends that flare, bracketed wedges, bowed
+diagonals). Static instances: SemiBold, Bold, ExtraBold, Black, at CURV 0. The inscription forms (the dotted i, the
+small o, the minuscules mixed among capitals, the nexus letters, Roman forms, plain figures and the curiosities of
+the stones) are OpenType features.
 
-The letters are drawn in code (source/glyphs.py, source/geometry.py) and built with build.py, which is
-deterministic. The sources of each identity form are listed in SOURCES.md. No existing font was traced or copied.
+The letters are drawn in code (source/*.py) and built with build.py, which is deterministic. The sources of each
+identity form are listed in SOURCES.md. No existing font was traced or copied.
 
 Ateburu is a contemporary interpretation of documented inscriptions, not "the authentic Basque letter": the idea of
 one national Basque letter is a 20th-century construction (see README.md).
@@ -31,6 +34,52 @@ The name means "door lintel" in Basque (ate + buru). It is a working name.
 ChangeLog
 ---------
 
+2026-10-28 (The Ateburu Project Authors) Ateburu Version 0.200
+- Curvature axis, CURV 0-100 (STAT: 0 Straight, 50 Carved, 100 Curved), from two more masters, HUD Curved and Black
+  Curved: stems flare over their last third, wedge ends curve into their arms, T's arms droop and E F L Z bend a
+  touch, A V W Y legs bow, X bends into an S, R and K legs run rounder into a longer flick. The variable font is now
+  variable/Ateburu[CURV,wght].ttf (was Ateburu[wght].ttf); the statics stay at CURV 0.
+- K redrawn: one curved Basque K with an open crotch, R's leg and R's flick. Two alternates: a straight-armed K
+  (ss08, cv03 1) and the plain inscription K (ss04, cv03 2).
+- Glyph set: all of GF Latin Core (accented capitals for the Western and Central European languages, Æ Ø Þ Ð Đ Ħ Ł
+  Ŀ ẞ, combining accents, brackets, braces, @ # % * § ¶ © ® ™, currency, maths signs, guillemets, low quotes, the
+  ellipsis and the bullet), Ꝑ (U+A750, U+A751), and ◌ (U+25CC) as a mark base. 350 glyphs.
+- OpenType: mark, mkmk and ccmp for combining accents (stacking; a dotted i drops its dot under an accent); locl
+  for Catalan (L·L to Ŀ L); calt (the A's crown turned right after T V W Y; shorter R and K legs before A T V W Y
+  J); dlig nexus letters TX TZ TS TA TE TR NE ND ME DE LA AN MA; ss01 dotted i (with cv01 stem and cv02 dot);
+  ss02 small o after L T K R; ss03 inscription unicase (e n m d t z r h q b); ss04 Roman A, R, K; ss05 plain 4 5 7;
+  ss06 curiosities (8 for G, reversed N S D E, barred I, V for U); ss08 straight-armed K; tnum and pnum.
+- 9 drawn on its own (no longer a turned 6); a wider Black A, so its counter stays open; a finer &; the Black C's
+  aperture opened.
+- Statics autohinted with ttfautohint; the variable font keeps no hints but has smart dropout control; the HUD
+  subset is unhinted and now keeps to the letters and punctuation of place names (7.5 KB).
+- Build: the masters are aligned run by run (dynamic programming over runs of segments on a common arc length), and
+  the build fails on overlapping or wrongly turning contours anywhere on a wght x CURV grid, not only at the masters.
+  Family-wide Windows metrics (944 / 296), one underline thickness, fsSelection REGULAR wherever nameID 2 is
+  Regular, advances rounded once (so the maths signs share one width).
+- The app's cuts, as Slop Donostia's owner chose them on the 0.200 playground (APP_SUBSETS in build.py): the HUD
+  (Ateburu-HUD.woff2) is the SemiBold at CURV 50 and the titles (Ateburu-Title.woff2, new) the Bold at CURV 80, both
+  with the dotted i baked in as a required feature (rclt): the short serifed stem with the round dot. The curved
+  Basque K stays the default; no other feature is on.
+- No case feature: the punctuation already sits on the capitals.
+
+Known, left as they are in 0.200 (fontbakery check-googlefonts 0.12.10):
+- No Regular at wght 400: the weight axis is 600-900 by design (the brief's 500-900 is not drawn).
+- Version below 1.000.
+- alt_caron: ď and ť (U+010F, U+0165) are drawn as Ď and Ť with the normal caron, as every lowercase codepoint
+  shows its capital in this unicase face.
+- Contour counts that differ from lowercase designs (the lowercase codepoints show capitals); the ink traps of
+  K.straight and K.roman, reported as jaggy segments; on-curve points a unit or two off the baseline or cap line on
+  curved terminals; a stem edge in ẞ 2 units off vertical.
+- No avar table; vendor ID 'NONE'; no 'meta' table; the checks that need a METADATA.pb or the Google Fonts API.
+- Soft outline notes in build-report.json: kinks under 9 degrees where curves meet at rounded points, 1-2 unit stubs
+  on the curved masters' serif tips.
+
+Planned:
+- Arrows and ± for HUD use; the Latin-1 signs outside GF Latin Core (¤ ¦ ¬ µ, superiors, fractions).
+- ss07 separators (U+2E31, ⁘, ⁙, a four-pointed star); Arbizu-style cycling of A, R and E variants as its own ss.
+- The AR nexus (left out: the A's slanted leg makes no convincing R stem yet), HE, AL, MB.
+
 2026-10-27 (The Ateburu Project Authors) Ateburu Version 0.100
 - First cut, for review. Glyph set: A-Z (lowercase mapped to capitals), OE, 0-9, A E I O U acute, U dieresis,
   N tilde, C cedilla, A E O grave, the lozenge middle dot, . , : ; ! ? inverted ! ?, ' ’ ‘ " “ ”, hyphen, en and
@@ -39,15 +88,6 @@ ChangeLog
   Donostia HUD.
 - Spacing by an optical model and 785 kerning pairs, including A-T, T-A, L-T, R-A, R-T, Y-A, A-V, K-O and the
   Basque digraphs TX, TZ and TS.
-
-Planned for 0.200:
-- The rest of Google Fonts' GF Latin Core set (A circumflex and the other French accents, Catalan L-dot, guillemets,
-  brackets, @ # % * and the rest), case-sensitive punctuation, tabular figures.
-- OpenType: mark/mkmk/ccmp for combining accents; locl (CAT) for l·l; calt for the A's flag direction next to T,
-  V, W, Y and shorter R and K legs before A, T, V, W, Y; dlig for the nexus letters (TX, TZ, TS, TA, MA, AN, ME,
-  NE, ND, TE, TR, DE, LA, AR); ss01 dotted i; ss02 small o after L, T, K, R; ss03 inscription unicase; ss04 Roman
-  A, R, K; ss05 plain figures; ss06 curiosities (8 for G, reversed N and S, barred I).
-- TrueType hinting (ttfautohint) for Windows at small sizes.
 
 
 Acknowledgements

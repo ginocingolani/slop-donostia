@@ -6,10 +6,26 @@ from the master's parameters (see glyphs.py). Strokes meet one another only at t
 tangents, so the booleans give clean corners; within one primitive (a serifed stem, a bracketed diagonal) the joins are
 drawn exactly and stay smooth.
 """
+import contextlib
 import math
 
 import pathops
 from fontTools.cu2qu import curves_to_quadratic
+
+# The curvature (CURV axis, 0..1) the primitives below draw at: set by build.py around each master's drawing. At 0
+# every primitive draws exactly as in the straight cut; above 0 the stems flare towards their ends, serif brackets
+# and wedge ends curve into their strokes, and diagonals may bow.
+CURV = 0.0
+
+
+@contextlib.contextmanager
+def curvature(c):
+    global CURV
+    old, CURV = CURV, c
+    try:
+        yield
+    finally:
+        CURV = old
 
 # ---------------------------------------------------------------------------------------------------------------------
 # vectors and Béziers
@@ -277,11 +293,31 @@ def _bracket(tip, edge_pt, edge_dir_away, toward, s):
     return (tip, c1, c2, edge_pt)
 
 
+def curved_serif(s, room, c=None):
+    """The serif s at curvature c (default: CURV): its bracket climbs further up the stroke (up to 2.6 times, never
+    more than a third of the stroke's length `room`), leaves the tip along its end face (at c = 1 the end face runs
+    smoothly into the flare) and runs into the stroke more gently, so the stroke flares over its last third instead of
+    standing on a bracketed foot; the reach grows a little and the end face shrinks. At c = 0, s itself."""
+    c = CURV if c is None else c
+    if not c:
+        return s
+    h = s.h + (min(s.h * 2.6, max(s.h, room * 0.33)) - s.h) * c
+    return Serif(s.e * (1 + 0.15 * c), s.t * (1 - 0.45 * c), h,
+                 s.a1 * (1 - c), s.a2 + (0.36 - s.a2) * c, s.a3 + (0.58 - s.a3) * c)
+
+
 def stem(x0, x1, y0, y1, serif=None, bl=True, br=True, tl=True, tr=True, flare_l=0.0, flare_r=0.0, sb=None, st=None):
     """A vertical stem from x0 to x1 and y0 to y1 with bracketed flared serifs at the chosen corners and an optional
-    waist (flare) on either side. sb/st override the serif at the bottom/top."""
+    waist (flare) on either side. sb/st override the serif at the bottom/top. With curvature (CURV > 0) the brackets
+    lengthen into flared ends and the waist straightens out: the stem flares towards both ends, never pinches."""
     sb = sb or serif
     st = st or serif
+    if CURV:
+        room = y1 - y0
+        sb = curved_serif(sb, room) if sb else sb
+        st = curved_serif(st, room) if st else st
+        flare_l *= 1 - CURV
+        flare_r *= 1 - CURV
     ym = (y0 + y1) / 2
     c = Contour((x0 - (sb.e if bl else 0), y0))
     c.L((x1 + (sb.e if br else 0), y0))
@@ -326,11 +362,30 @@ def stem(x0, x1, y0, y1, serif=None, bl=True, br=True, tl=True, tr=True, flare_l
     return c.path()
 
 
-def diag(b0, b1, t0, t1, serifs=None):
+def _sub_cubic(cub, s0, s1):
+    """The piece of a cubic between parameters s0 and s1 (s1 < s0 gives it reversed)"""
+    if s1 < s0:
+        q = _sub_cubic(cub, s1, s0)
+        return (q[3], q[2], q[1], q[0])
+    if s1 < 1:
+        cub = split(cub, s1)[0]
+    if s0 > 0:
+        cub = split(cub, s0 / s1)[1]
+    return cub
+
+
+def diag(b0, b1, t0, t1, serifs=None, bend=None):
     """A diagonal stroke between a bottom edge (x b0..b1 at y = b0[1]) and a top edge (t0..t1 at y = t0[1]).
-    serifs: dict with any of 'bl', 'br', 'tl', 'tr' -> Serif (bracketed into the left/right edge at that end)"""
+    serifs: dict with any of 'bl', 'br', 'tl', 'tr' -> Serif (bracketed into the left/right edge at that end).
+    bend = (d1, d2): both edges become cubics whose control points at a third and two thirds of the height move
+    sideways by d1 and d2 (d1 = d2 bows the stroke, d1 = -d2 bends it into a gentle S); the stroke keeps its width.
+    With curvature the serifs' brackets lengthen as in stem()."""
     serifs = serifs or {}
     y0, y1 = b0[1], t0[1]
+    if CURV:
+        serifs = {k: curved_serif(v, y1 - y0) for k, v in serifs.items()}
+    if bend and (bend[0] or bend[1]):
+        return _bent_diag(b0, b1, t0, t1, serifs, bend)
     left_dir = unit(sub(t0, b0))   # up the left edge
     right_dir = unit(sub(t1, b1))  # up the right edge
 
@@ -374,6 +429,60 @@ def diag(b0, b1, t0, t1, serifs=None):
     return c.path()
 
 
+def _bent_diag(b0, b1, t0, t1, serifs, bend):
+    """diag() with cubic edges (see there)"""
+    y0, y1 = b0[1], t0[1]
+    H = y1 - y0
+    d1, d2 = bend
+
+    def edge(p, q):
+        dx = q[0] - p[0]
+        return (p, (p[0] + dx / 3 + d1, p[1] + H / 3), (p[0] + 2 * dx / 3 + d2, p[1] + 2 * H / 3), q)
+
+    le, re = edge(b0, t0), edge(b1, t1)
+
+    def at(e, h):
+        return bez(e, h / H)
+
+    def up(e, h):
+        return unit(bez_d(e, h / H))
+
+    def run(c, e, h0, h1):
+        """follow edge e from height h0 to h1 (the contour is at e(h0))"""
+        c.cubic(_sub_cubic(e, h0 / H, h1 / H))
+
+    sbl, sbr, stl, s_tr = (serifs.get(k) for k in ('bl', 'br', 'tl', 'tr'))
+    c = Contour((b0[0] - sbl.e, y0) if sbl else b0)
+    c.L((b1[0] + sbr.e, y0) if sbr else b1)
+    h = 0.0
+    if sbr:
+        tip = (b1[0] + sbr.e, y0 + sbr.t)
+        c.L(tip)
+        c.cubic(_bracket(tip, at(re, sbr.h), up(re, sbr.h), (-1, 0), sbr))
+        h = sbr.h
+    h_top = H - s_tr.h if s_tr else H
+    run(c, re, h, h_top)
+    if s_tr:
+        tip = (t1[0] + s_tr.e, y1 - s_tr.t)
+        b = _bracket(tip, at(re, h_top), mul(up(re, h_top), -1), (-1, 0), s_tr)
+        c.cubic((b[3], b[2], b[1], b[0]))
+        c.L((t1[0] + s_tr.e, y1))
+    c.L((t0[0] - stl.e, y1) if stl else t0)
+    h = H
+    if stl:
+        tip = (t0[0] - stl.e, y1 - stl.t)
+        c.L(tip)
+        h = H - stl.h
+        c.cubic(_bracket(tip, at(le, h), mul(up(le, h), -1), (1, 0), stl))
+    h_bot = sbl.h if sbl else 0.0
+    run(c, le, h, h_bot)
+    if sbl:
+        tip = (b0[0] - sbl.e, y0 + sbl.t)
+        b = _bracket(tip, at(le, h_bot), up(le, h_bot), (1, 0), sbl)
+        c.cubic((b[3], b[2], b[1], b[0]))
+    return c.path()
+
+
 def diag_through(pb, pt, thick, y0, y1):
     """Edges of a diagonal whose centreline runs from pb (bottom) to pt (top), with the given perpendicular thickness,
     cut by the horizontals y0 and y1. Returns (b0, b1, t0, t1) for diag()"""
@@ -385,29 +494,130 @@ def diag_through(pb, pt, thick, y0, y1):
     return (xb - hw, y0), (xb + hw, y0), (xt - hw, y1), (xt + hw, y1)
 
 
-def bar(x0, x1, y0, y1, left=None, right=None):
+def bar(x0, x1, y0, y1, left=None, right=None, bend=None):
     """A horizontal bar with optional wedge ends: left/right = (up, down, length): at that end the bar's top edge rises
-    by `up` and its bottom edge drops by `down` over the last `length` units, cut square"""
-    c = Contour((x0, y0))
+    by `up` and its bottom edge drops by `down` over the last `length` units, cut square.
+    With curvature (CURV > 0) each wedge's slanted edge curves into the bar like a bracket (it leaves the bar's edge
+    tangentially and reaches the end steeply), over a slightly longer run. bend = (xr, dl, dr): the bar bends as a
+    parabola from x = xr, its left end moving up by dl and its right end by dr (negative: down)."""
+    if not CURV and not bend:
+        c = Contour((x0, y0))
+        if left:
+            up, down, ln = left
+            c = Contour((x0, y0 - down))
+            c.L((x0 + ln, y0))
+        if right:
+            up, down, ln = right
+            c.L((x1 - ln, y0))
+            c.L((x1, y0 - down))
+            c.L((x1, y1 + up))
+            c.L((x1 - ln, y1))
+        else:
+            c.L((x1, y0))
+            c.L((x1, y1))
+        if left:
+            up, down, ln = left
+            c.L((x0 + ln, y1))
+            c.L((x0, y1 + up))
+        else:
+            c.L((x0, y1))
+        return c.path()
+    return _curved_bar(x0, x1, y0, y1, left, right, bend)
+
+
+def _wedge_edge(p, q, along, k):
+    """The slanted edge of a wedge from p (on the bar's edge) to q (the end), as a cubic: straight at k = 0, at k = 1 a
+    bracket that leaves p along the bar (direction `along`) and arrives at q vertically"""
+    t1, t2 = lerp(p, q, 1 / 3), lerp(p, q, 2 / 3)
+    run = abs(q[0] - p[0])
+    f1 = add(p, mul(along, run * 0.62))
+    f2 = (q[0], q[1] + (p[1] - q[1]) * 0.50)
+    return (p, lerp(t1, f1, k), lerp(t2, f2, k), q)
+
+
+def _curved_bar(x0, x1, y0, y1, left, right, bend):
+    k = CURV
+    grow = 1 + 0.20 * k
+
+    def wedge(p, q, along, rev):
+        """the wedge edge from p (on the bar's edge) to q (at the end), or from q to p if rev"""
+        if k and abs(p[1] - q[1]) > 1e-6:
+            cub = _wedge_edge(p, q, along, k)
+            return ('C',) + (cub[::-1] if rev else cub)
+        return ('L', q, p) if rev else ('L', p, q)
+
+    # the outline as pieces in the bar's flat frame, ('L', p, q) or ('C', p, c1, c2, q), from the bottom left corner
+    pieces = []
     if left:
-        up, down, ln = left
-        c = Contour((x0, y0 - down))
-        c.L((x0 + ln, y0))
+        upl, downl, lnl = left
+        lnl *= grow
+        start = (x0, y0 - downl)
+        pieces.append(wedge((x0 + lnl, y0), start, (-1, 0), True))
+        a = (x0 + lnl, y0)
+    else:
+        start = a = (x0, y0)
     if right:
-        up, down, ln = right
-        c.L((x1 - ln, y0))
-        c.L((x1, y0 - down))
-        c.L((x1, y1 + up))
-        c.L((x1 - ln, y1))
+        upr, downr, lnr = right
+        lnr *= grow
+        pieces.append(('L', a, (x1 - lnr, y0)))
+        pieces.append(wedge((x1 - lnr, y0), (x1, y0 - downr), (1, 0), False))
+        pieces.append(('L', (x1, y0 - downr), (x1, y1 + upr)))
+        pieces.append(wedge((x1 - lnr, y1), (x1, y1 + upr), (1, 0), True))
+        b = (x1 - lnr, y1)
     else:
-        c.L((x1, y0))
-        c.L((x1, y1))
+        pieces += [('L', a, (x1, y0)), ('L', (x1, y0), (x1, y1))]
+        b = (x1, y1)
     if left:
-        up, down, ln = left
-        c.L((x0 + ln, y1))
-        c.L((x0, y1 + up))
+        pieces.append(('L', b, (x0 + lnl, y1)))
+        pieces.append(wedge((x0 + lnl, y1), (x0, y1 + upl), (-1, 0), False))
+        pieces.append(('L', (x0, y1 + upl), start))
     else:
-        c.L((x0, y1))
+        pieces.append(('L', b, (x0, y1)))
+        pieces.append(('L', (x0, y1), start))
+
+    def disp(x):
+        if not bend:
+            return 0.0
+        xr, dl, dr = bend
+        if x >= xr:
+            return dr * ((x - xr) / max(x1 - xr, 1e-6)) ** 2
+        return dl * ((xr - x) / max(xr - x0, 1e-6)) ** 2
+
+    def slope(x, toward):
+        """the displacement's derivative at x, on the side of x where `toward` lies"""
+        xr, dl, dr = bend
+        if x > xr or (x == xr and toward > x):
+            return 2 * dr * (x - xr) / max(x1 - xr, 1e-6) ** 2
+        return -2 * dl * (xr - x) / max(xr - x0, 1e-6) ** 2
+
+    def mv(p):
+        return (p[0], p[1] + disp(p[0]))
+
+    def mv_ctrl(cp, end):
+        """a control point moves with the tangent of the displacement at its curve's end, so the curve stays tangent
+        to the bent edges it meets"""
+        if not bend:
+            return cp
+        return (cp[0], cp[1] + disp(end[0]) + slope(end[0], cp[0]) * (cp[0] - end[0]))
+
+    c = Contour(mv(start))
+    for pc in pieces:
+        if pc[0] == 'C':
+            c.C(mv_ctrl(pc[2], pc[1]), mv_ctrl(pc[3], pc[4]), mv(pc[4]))
+            continue
+        p, q = pc[1], pc[2]
+        if not bend or abs(q[0] - p[0]) < 1e-6:
+            c.L(mv(q))
+            continue
+        xr = bend[0]
+        cuts = [p, q]
+        if (p[0] - xr) * (q[0] - xr) < 0:     # the parabola is in two pieces: split the edge at xr
+            cuts = [p, lerp(p, q, (xr - p[0]) / (q[0] - p[0])), q]
+        for a_, b_ in zip(cuts, cuts[1:]):
+            # a straight edge under a parabolic displacement is exactly a quadratic Bezier
+            pa, pb = mv(a_), mv(b_)
+            ctrl = ((a_[0] + b_[0]) / 2, pa[1] + ((b_[1] - a_[1]) + slope(a_[0], b_[0]) * (b_[0] - a_[0])) / 2)
+            c.C(lerp(pa, ctrl, 2 / 3), lerp(pb, ctrl, 2 / 3), pb)
     return c.path()
 
 
@@ -487,10 +697,22 @@ def _scale_at(knots, u):
 STROKE_ERRORS = []
 
 
-def stroke(spine, a, b, knots=None, n=32, name=''):
+def _subdivide(seg, k):
+    out, rest = [], seg
+    for j in range(k - 1):
+        a, rest = split(rest, 1 / (k - j))
+        out.append(a)
+    return out + [rest]
+
+
+def stroke(spine, a, b, knots=None, n=32, name='', fine=1):
     """Expand a spine (contiguous cubics) with an elliptical nib of semi-axes a (horizontal) and b (vertical): the
     stroke is a = half the width of a vertical stroke, b = half the thickness of a horizontal one. knots: optional
-    [(u, scale)] over u in [0, len(spine)] to swell or taper the nib along the stroke. Flat ends."""
+    [(u, scale)] over u in [0, len(spine)] to swell or taper the nib along the stroke. Flat ends. fine: fit each spine
+    segment's offsets in that many pieces (for long, strongly curved strokes whose single-cubic fit drifts)."""
+    if fine > 1:
+        spine = [piece for seg in spine for piece in _subdivide(seg, fine)]
+        knots = [(u * fine, sc) for u, sc in knots] if knots else knots
     left, right = [], []
     worst = 0.0
     for i, seg in enumerate(spine):
@@ -716,69 +938,197 @@ def _as_cubic(seg):
     return seg if t == 'C' else ('C', line_cubic(pts[0], pts[1]))
 
 
-def _align_pair(a, b, na, nb):
-    """Align two cyclic segment lists from two masters. Every segment of the shorter list maps to a run of one or more
-    consecutive segments of the longer one (dynamic programming over all start rotations, cost = distance of the
-    normalised run ends); the shorter list's segments are split to match, and where the two masters disagree on a
-    segment's type the straight one becomes a (straight) cubic. Returns the two lists, now structurally identical."""
-    swap = len(a) > len(b)
-    if swap:
-        a, b, na, nb = b, a, nb, na
+def _fractions(lengths):
+    tot = sum(lengths) or 1.0
+    out, acc = [], 0.0
+    for l_ in lengths[:-1]:
+        acc += l_
+        out.append(acc / tot)
+    return out
+
+
+def _norm_point(t, npts, f):
+    """The point at parameter f of a segment given by its normalised points"""
+    if t == 'L':
+        (x0, y0), (x1, y1) = npts
+        return (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f)
+    return bez(npts, f)
+
+
+def _run_cuts(fa, fb, tol=0.03):
+    """Where to cut two runs that match as a whole, given the arc-length fractions of their inner vertices: a vertex
+    of one run within `tol` of a vertex of the other is cut against it; any other vertex is cut against the point at
+    its fraction of the other run. Returns the cuts as (fraction in a, fraction in b) pairs, ascending."""
+    ev = sorted([(f, 0) for f in fa] + [(f, 1) for f in fb])
+    cuts = []
+    i = 0
+    while i < len(ev):
+        f, side = ev[i]
+        if i + 1 < len(ev) and ev[i + 1][1] != side and ev[i + 1][0] - f < tol:
+            g = ev[i + 1][0]
+            cuts.append((f, g) if side == 0 else (g, f))
+            i += 2
+        else:
+            cuts.append((f, f))
+            i += 1
+    return cuts
+
+
+def _cut_tol(ta, tb):
+    """How close (as a share of the runs' lengths) two vertices of matched runs must be to be cut against each other:
+    about 25 units, within 3-20 %"""
+    return max(0.03, min(0.2, 25.0 / max(1.0, min(ta, tb))))
+
+
+def _split_run(run, lens, cuts):
+    """Split a run of segments at arc-length fractions `cuts` of the whole run; a cut on one of the run's own vertices
+    leaves it as it is. Returns the pieces and, per segment, the parameter fractions it was split at."""
+    tot = sum(lens) or 1.0
+    pieces, per_seg = [], []
+    acc = 0.0
+    for sg, l_ in zip(run, lens):
+        lo, hi = acc / tot, (acc + l_) / tot
+        fr = [(c - lo) / (hi - lo) for c in cuts if lo + 1e-6 < c < hi - 1e-6] if hi > lo else []
+        fr = [f for f in fr if 1e-4 < f < 1 - 1e-4]
+        per_seg.append(fr)
+        pieces += _seg_split(sg[0], sg[1], fr) if fr else [sg]
+        acc += l_
+    return pieces, per_seg
+
+
+def _align_pair(a, b, na, nb, maxrun=3):
+    """Align two cyclic segment lists from two masters (a stays as it is, b is rotated): dynamic programming over a
+    few start rotations of b, where a run of one to `maxrun` consecutive segments of a matches a run of one to
+    `maxrun` of b. Both runs are laid on a common arc length: a match costs the (normalised) distances between the
+    runs' ends, plus, for every inner vertex of either run, twice its distance to the point at the same share of the
+    other run's length, plus a little per extra segment and per type change. Matched runs are then cut at the union
+    of their vertices (a vertex close to one of the other run's is cut against it), and where the two masters
+    disagree on a piece's type the straight one becomes a (straight) cubic. Returns the two lists, now structurally
+    identical, and the operations done to `a` (see _apply_ops), so that lists already aligned with `a` can follow
+    it."""
     n, m = len(a), len(b)
-    A0 = [na(s[1][0]) for s in a]
-    A1 = [na(s[1][-1]) for s in a]
+    NA = [(t, [na(q) for q in pts]) for t, pts in a]
+    NB = [(t, [nb(q) for q in pts]) for t, pts in b]
+    LA = [_seg_length(*sg) for sg in a]
+    LB = [_seg_length(*sg) for sg in b]
     INF = float('inf')
+
+    def dist(p_, q_):
+        return math.hypot(p_[0] - q_[0], p_[1] - q_[1])
+
+    def at(run, lens, f):
+        """point at arc-length fraction f of a run of normalised segments"""
+        tot = sum(lens) or 1.0
+        acc = 0.0
+        for (t, pts), l_ in zip(run, lens):
+            if (acc + l_) / tot >= f or (t, pts) == run[-1]:
+                u = 0.0 if l_ == 0 else min(max((f * tot - acc) / l_, 0.0), 1.0)
+                return _norm_point(t, pts, u)
+            acc += l_
+        return run[-1][1][-1]
+
+    def run_cost(ra, la, rb, lb):
+        cost = dist(ra[0][1][0], rb[0][1][0]) + dist(ra[-1][1][-1], rb[-1][1][-1])
+        for run, lens, other, olens in ((ra, la, rb, lb), (rb, lb, ra, la)):
+            if len(run) > 1:
+                tot = sum(lens) or 1.0
+                acc = 0.0
+                for (_, pts), l_ in zip(run[:-1], lens[:-1]):
+                    acc += l_
+                    cost += 2 * dist(pts[-1], at(other, olens, acc / tot))
+        # cutting a long segment a few units from one of its ends makes a sliver that turns into a kink once rounded
+        ta, tb = sum(la) or 1.0, sum(lb) or 1.0
+        cuts = _run_cuts(_fractions(la) if len(la) > 1 else [], _fractions(lb) if len(lb) > 1 else [], _cut_tol(ta, tb))
+        for tot, side in ((ta, 0), (tb, 1)):
+            pos = [0.0] + [c[side] for c in cuts] + [1.0]
+            cost += 0.01 * sum(1 for u, v in zip(pos, pos[1:]) if (v - u) * tot < 12)
+        return cost + 0.002 * (len(ra) + len(rb) - 2)
+
+    order = sorted(range(m), key=lambda r: (dist(NB[r][1][0], NA[0][1][0]), r))
+    cands = order[:max(6, m // 4)]
     best = (INF, None, None)
-    for r in range(m):
-        bb = b[r:] + b[:r]
-        B0 = [nb(s[1][0]) for s in bb]
-        B1 = [nb(s[1][-1]) for s in bb]
+    for r in cands:
+        idx = [(r + j) % m for j in range(m)]
+        RB = [NB[q] for q in idx]
+        RL = [LB[q] for q in idx]
         dp = [[INF] * (m + 1) for _ in range(n + 1)]
-        back = [[0] * (m + 1) for _ in range(n + 1)]
+        back = [[None] * (m + 1) for _ in range(n + 1)]
         dp[0][0] = 0.0
-        for i in range(1, n + 1):
-            for j in range(i, m - (n - i) + 1):
-                for k in range(i - 1, j):
-                    if dp[i - 1][k] == INF:
-                        continue
-                    cost = dp[i - 1][k] + length(sub(A0[i - 1], B0[k])) + length(sub(A1[i - 1], B1[j - 1]))
-                    if a[i - 1][0] != bb[k][0] or j - k > 1:
-                        cost += 0.002 * (j - k)
-                    if cost < dp[i][j]:
-                        dp[i][j] = cost
-                        back[i][j] = k
+        for i in range(n):
+            for j in range(m):
+                base = dp[i][j]
+                if base == INF:
+                    continue
+                for ka in range(1, maxrun + 1):
+                    if i + ka > n:
+                        break
+                    ra, la = NA[i:i + ka], LA[i:i + ka]
+                    for kb in range(1, maxrun + 1):
+                        if j + kb > m:
+                            break
+                        if ka == 1 and kb == 1:
+                            cost = dist(ra[0][1][0], RB[j][1][0]) + dist(ra[0][1][-1], RB[j][1][-1])
+                            if ra[0][0] != RB[j][0]:
+                                cost += 0.002
+                        else:
+                            cost = run_cost(ra, la, RB[j:j + kb], RL[j:j + kb])
+                        cost += base
+                        if cost < dp[i + ka][j + kb]:
+                            dp[i + ka][j + kb] = cost
+                            back[i + ka][j + kb] = (i, j)
         if dp[n][m] < best[0]:
             best = (dp[n][m], r, back)
     _, r, back = best
     if r is None:
         raise CompatError('alignment failed')
     bb = b[r:] + b[:r]
-    runs = []
-    j = m
-    for i in range(n, 0, -1):
-        k = back[i][j]
-        runs.append((k, j))
-        j = k
-    runs.reverse()
-    a_out, b_out = [], []
-    for (k, j), seg in zip(runs, a):
-        run = bb[k:j]
-        if len(run) == 1:
-            pieces = [seg]
+    LBB = LB[r:] + LB[:r]
+    pairs = []
+    i, j = n, m
+    while (i, j) != (0, 0):
+        pi, pj = back[i][j]
+        pairs.append((pi, i, pj, j))
+        i, j = pi, pj
+    pairs.reverse()
+    a_out, b_out, conv = [], [], []
+    splits = [[] for _ in a]
+    for i0, i1, j0, j1 in pairs:
+        ra, rb = a[i0:i1], bb[j0:j1]
+        if len(ra) == 1 and len(rb) == 1:
+            pa, pb = ra, rb
         else:
-            ls = [_seg_length(*s) for s in run]
-            tot = sum(ls) or 1.0
-            fr, acc = [], 0.0
-            for l_ in ls[:-1]:
-                acc += l_
-                fr.append(acc / tot)
-            pieces = _seg_split(seg[0], seg[1], fr)
-        for p, q in zip(pieces, run):
-            if p[0] != q[0]:
-                p, q = _as_cubic(p), _as_cubic(q)
-            a_out.append(p)
-            b_out.append(q)
-    return (b_out, a_out) if swap else (a_out, b_out)
+            la, lb = LA[i0:i1], LBB[j0:j1]
+            fa = _fractions(la) if len(ra) > 1 else []
+            fb = _fractions(lb) if len(rb) > 1 else []
+            cuts = _run_cuts(fa, fb, _cut_tol(sum(la), sum(lb)))
+            pa, per_a = _split_run(ra, la, [c for c, _ in cuts])
+            pb, _ = _split_run(rb, lb, [c for _, c in cuts])
+            for k, fr in enumerate(per_a):
+                splits[i0 + k] = fr
+            if len(pa) != len(pb):
+                raise CompatError('alignment produced runs of different lengths')
+        for p_, q_ in zip(pa, pb):
+            differ = p_[0] != q_[0]
+            if differ:
+                p_, q_ = _as_cubic(p_), _as_cubic(q_)
+            a_out.append(p_)
+            b_out.append(q_)
+            conv.append(differ)
+    return a_out, b_out, ('split', splits, conv)
+
+
+def _apply_ops(segs, ops):
+    """Do to a segment list what _align_pair did to its reference (the list must match the reference's structure)"""
+    kind, x, conv = ops
+    if kind == 'rot':
+        segs = segs[x:] + segs[:x]
+    else:
+        out = []
+        for seg, fr in zip(segs, x):
+            out += _seg_split(seg[0], seg[1], fr) if fr else [seg]
+        segs = out
+    return [_as_cubic(sg) if c else sg for sg, c in zip(segs, conv)]
+
 
 class CompatError(Exception):
     pass
@@ -872,19 +1222,18 @@ def _compatible(name, masters, max_err):
 
     order = sorted(range(n), key=lambda i: cbox(ref[i]))
     ref = [ref[i] for i in order]
-    aligned = [ref]
-    if len(masters) != 2:
-        raise CompatError(f'{name}: the aligner handles two masters')
-    pool = list(masters[1])
-    mine, newref = [], []
-    for c in ref:
-        cc = norm(0, _centroid(c))
-        best = min(pool, key=lambda d: length(sub(norm(1, _centroid(d)), cc)))
-        pool.remove(best)
-        a2, b2 = _align_pair(c, best, lambda p: norm(0, p), lambda p: norm(1, p))
-        newref.append(a2)
-        mine.append(b2)
-    aligned = [newref, mine]
+    # every other master is aligned with the reference in turn; when that splits or rotates the reference, the masters
+    # aligned before follow it, so all of them stay structurally identical
+    per_contour = [[c] for c in ref]
+    for k in range(1, len(masters)):
+        pool = list(masters[k])
+        for ci, c in enumerate(ref):
+            cc = norm(0, _centroid(c))
+            best = min(pool, key=lambda d, k=k: length(sub(norm(k, _centroid(d)), cc)))
+            pool.remove(best)
+            a2, b2, ops = _align_pair(per_contour[ci][0], best, lambda p: norm(0, p), lambda p, k=k: norm(k, p))
+            per_contour[ci] = [a2] + [_apply_ops(x, ops) for x in per_contour[ci][1:]] + [b2]
+    aligned = [[per_contour[ci][k] for ci in range(n)] for k in range(len(masters))]
 
     # start every contour at its lowest-then-leftmost on-curve point (same index in every master)
     for ci in range(n):
@@ -998,20 +1347,29 @@ def _compatible(name, masters, max_err):
 
 class Outline:
     """One glyph's compatible outlines: per master, contours of exact (float) TrueType points [(on, (x, y))], and per
-    contour the indices of its smooth on-curve points. at(t) interpolates between the first and last master and
-    rounds to integers keeping smooth points smooth."""
+    contour the indices of its smooth on-curve points. at(scalars) interpolates the masters with the given weights (one
+    per master, from the designspace's variation model) and rounds to integers keeping smooth points smooth."""
 
     def __init__(self, masters, smooth):
         self.masters, self.smooth = masters, smooth
 
-    def exact(self, t):
-        a, b = self.masters[0], self.masters[-1]
-        return [[(on, (p[0] + (q[1][0] - p[0]) * t, p[1] + (q[1][1] - p[1]) * t)) for (on, p), q in zip(ca, cb)]
-                for ca, cb in zip(a, b)]
-
-    def at(self, t):
+    def exact(self, scalars):
+        """The first master plus the weighted differences of the others (scalars sum to 1): on one axis this is
+        exactly p0 + t (p1 - p0), so the straight cut rounds as it always has"""
         out = []
-        for c, smooth in zip(self.exact(t), self.smooth):
+        for cs in zip(*self.masters):
+            pts = []
+            for ps in zip(*cs):
+                x0, y0 = ps[0][1]
+                x = x0 + sum(w * (p[1][0] - x0) for w, p in zip(scalars[1:], ps[1:]) if w)
+                y = y0 + sum(w * (p[1][1] - y0) for w, p in zip(scalars[1:], ps[1:]) if w)
+                pts.append((ps[0][0], (x, y)))
+            out.append(pts)
+        return out
+
+    def at(self, scalars):
+        out = []
+        for c, smooth in zip(self.exact(scalars), self.smooth):
             pts = [(on, (int(round(p[0])), int(round(p[1])))) for on, p in c]
             out.append(_keep_smooth(c, pts, smooth))
         return out

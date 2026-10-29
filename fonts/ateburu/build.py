@@ -2,27 +2,32 @@
 """fonts/ateburu/build.py
 
 Builds Ateburu, an original display face in the Basque lettering tradition (letra vasca), from its source: the
-letters are drawn in code in source/glyphs.py with the toolkit in source/geometry.py. Two masters, HUD (wght 600, for
-light-on-dark place names at 12-20 px) and Black (wght 900), are built from the same drawing functions with different
-parameters, made interpolation-compatible, spaced and kerned, and written as:
+letters are drawn in code in source/glyphs.py (and the modules it imports) with the toolkit in source/geometry.py.
+Four masters, HUD (wght 600, for light-on-dark place names at 12-20 px) and Black (wght 900), each drawn straight
+(CURV 0) and curved (CURV 100), are built from the same drawing functions with different parameters, made
+interpolation-compatible, spaced and kerned, and written as:
 
-    source/masters/Ateburu-HUD.ttf, source/masters/Ateburu-Black.ttf   the two masters
-    source/Ateburu.designspace                                         wght 600-900, four named instances
-    variable/Ateburu[wght].ttf                                         the variable font
-    static/Ateburu-{SemiBold,Bold,ExtraBold,Black}.ttf                 static instances
+    source/masters/Ateburu-{HUD,Black,HUDCurved,BlackCurved}.ttf      the four masters
+    source/Ateburu.designspace                                         wght 600-900 x CURV 0-100, named instances
+    variable/Ateburu[CURV,wght].ttf                                    the variable font
+    static/Ateburu-{SemiBold,Bold,ExtraBold,Black}.ttf                 static instances (CURV 0), autohinted
     webfonts/Ateburu-Variable.woff2                                    the variable font for the web
-    webfonts/Ateburu-HUD.woff2                                         the SemiBold (HUD) instance, subset, for the app
+    webfonts/Ateburu-HUD.woff2                                         the SemiBold (HUD) instance, subset, unhinted,
+                                                                       for the app
 
 All outputs are committed, so the app needs nothing from here. To rebuild:
 
-    python3 -m venv .venv && .venv/bin/pip install fonttools==4.55.3 skia-pathops==0.8.0.post2 brotli==1.1.0
+    python3 -m venv .venv && .venv/bin/pip install fonttools==4.55.3 skia-pathops==0.8.0.post2 brotli==1.1.0 \
+        ttfautohint-py==0.6.1
     .venv/bin/python fonts/ateburu/build.py
 
 The build is deterministic: the same source gives the same bytes (fixed timestamps, no randomness). It fails if a
-glyph's masters are incompatible or an outline has the wrong direction or overlapping contours.
+glyph's masters are incompatible or an outline has the wrong direction or overlapping contours, at the masters, the
+statics or any point of a wght x CURV grid between them.
 
 SIL Open Font License 1.1, no Reserved Font Name: see OFL.txt. Copyright 2026 The Ateburu Project Authors.
 """
+import io
 import json
 import os
 import sys
@@ -39,29 +44,71 @@ from fontTools.misc.timeTools import timestampFromString  # noqa: E402
 from fontTools.otlLib.builder import buildStatTable  # noqa: E402
 from fontTools.pens.ttGlyphPen import TTGlyphPen  # noqa: E402
 from fontTools.ttLib import TTFont, newTable  # noqa: E402
+from fontTools.ttLib.tables import ttProgram  # noqa: E402
 from fontTools.varLib import build as varlib_build  # noqa: E402
+from fontTools.varLib.models import VariationModel  # noqa: E402
 
+import features as F  # noqa: E402
 import geometry  # noqa: E402
 import glyphs as G  # noqa: E402
+import marks as MK  # noqa: E402  (registers the marks and spacing accents)
+import latin  # noqa: E402,F401  (registers the extended Latin letters and the accented composites)
+import symbols  # noqa: E402,F401  (registers the symbols and the rest of the punctuation)
+import alternates as ALT  # noqa: E402  (registers the alternates the features reach)
+import nexus as NX  # noqa: E402  (registers the nexus letters)
+import unicase as UC  # noqa: E402  (registers the inscription unicase forms)
 import qa  # noqa: E402
 
 FAMILY = 'Ateburu'  # the working name: rename here (and in the file names below) if the family is renamed
-VERSION = '0.100'
+VERSION = '0.200'
 COPYRIGHT = 'Copyright 2026 The Ateburu Project Authors (https://github.com/ginocingolani/slop-donostia)'
 LICENSE = ('This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available '
            'with a FAQ at: https://openfontlicense.org')
 LICENSE_URL = 'https://openfontlicense.org'
 VENDOR = 'NONE'
-TIMESTAMP = timestampFromString('Tue Oct 27 00:00:00 2026')
+TIMESTAMP = timestampFromString('Wed Oct 28 00:00:00 2026')
 
 UPM = 1000
+WIN = None          # (usWinAscent, usWinDescent) for the whole family, set by main() once the masters are built
 ASCENT, DESCENT = 930, -230   # typo = hhea; line gap 0: "normal" line height 1.16, caps centred in the line
-MASTERS = [G.Master('HUD', 0.0, 600), G.Master('Black', 1.0, 900)]
+# Two axes: weight (600-900) and curvature (CURV 0-100: 0 is the straight-stemmed cut, 100 the curviest that still
+# reads). One master at each corner of the designspace; t and c are the normalised positions on the two axes.
+MASTERS = [G.Master('HUD', 0.0, 600, 0.0), G.Master('Black', 1.0, 900, 0.0),
+           G.Master('HUD Curved', 0.0, 600, 1.0), G.Master('Black Curved', 1.0, 900, 1.0)]
+WGHT = (600, 900)
+CURV = (0, 100)
 INSTANCES = [('SemiBold', 600), ('Bold', 700), ('ExtraBold', 800), ('Black', 900)]
+# The app's two subsets, as its owner chose them on 0.200's playground (see FONTLOG): the HUD's place names
+# (webfonts/Ateburu-HUD.woff2, 11-17 px) and its titles (webfonts/Ateburu-Title.woff2: the loading screen, the brand,
+# the full map's heading), each a static cut at its weight and curvature (CURV 0-100). `dotted_i` (stem, dot from
+# glyphs.I_STEMS and I_DOTS) bakes the dotted i (ss01, with that stem and dot) in as a required contextual feature
+# (rclt), so it applies with no CSS, through the HUD's letter-spacing (which turns calt off) and in the minimap's canvas
+# text; None leaves the i a capital.
+APP_SUBSETS = [
+    {'name': 'HUD', 'style': 'SemiBold', 'weight': 600, 'curv': 50, 'dotted_i': ('short', 'round')},
+    {'name': 'Title', 'style': 'Bold', 'weight': 700, 'curv': 80, 'dotted_i': ('short', 'round')},
+]
+# What the HUD sets in Ateburu: place names only, in Basque, Spanish, Catalan, Galician, Portuguese and French. Their
+# letters and the punctuation names take; anything else falls back to the next font in the CSS stack.
+HUD_UNICODES = sorted(ord(ch) for ch in set(
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    'ÀÁÂÃÄÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝàáâãäçèéêëìíîïñòóôõöùúûüýÿŸÆæŒœĿŀ'
+    '  !"&\'(),-./:;?¡¿·–—‘’‚“”„«»‹›…•€'))
+MODEL =VariationModel([{'wght': m.t, 'CURV': m.c} for m in MASTERS], axisOrder=['wght', 'CURV'])
+
+
+def scalars(t, c=0.0):
+    """Each master's weight at normalised location (t on wght, c on CURV), as the variable font interpolates"""
+    return MODEL.getMasterScalars({'wght': t, 'CURV': c})
+
+
+def mix(values, sc):
+    return sum(w * v for w, v in zip(sc, values) if w)
+
 
 OUT_MASTERS = os.path.join(HERE, 'source', 'masters')
 OUT_DS = os.path.join(HERE, 'source', f'{FAMILY}.designspace')
-OUT_VF = os.path.join(HERE, 'variable', f'{FAMILY}[wght].ttf')
+OUT_VF = os.path.join(HERE, 'variable', f'{FAMILY}[CURV,wght].ttf')
 OUT_STATIC = os.path.join(HERE, 'static')
 OUT_WEB = os.path.join(HERE, 'webfonts')
 REPORT = os.path.join(HERE, 'source', 'build-report.json')
@@ -74,12 +121,16 @@ REPORT = os.path.join(HERE, 'source', 'build-report.json')
 def draw_all():
     drawn = {}   # name -> [G per master]
     for name, (unis, fn) in G.GLYPHS.items():
-        drawn[name] = [fn(m) for m in MASTERS]
+        gs = []
+        for m in MASTERS:
+            with geometry.curvature(m.c):
+                gs.append(fn(m))
+        drawn[name] = gs
     return drawn
 
 
 def outlines(drawn):
-    """name -> geometry.Outline (compatible exact outlines of both masters), None for empty glyphs"""
+    """name -> geometry.Outline (compatible exact outlines of all masters), None for empty glyphs"""
     out, errors = {}, []
     for name, gs in drawn.items():
         if gs[0].path is None:
@@ -222,16 +273,42 @@ def pair_white(left_prof, right_prof, depth2):
     return closest + total / len(ZONE), closest
 
 
-KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one'}
-KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
+KERN_LEFT_OPEN = set('AFKLPRTVWXYZ') | {'quoteright', 'quotedblright', 'seven', 'four', 'one', 'K.straight', 'K.roman',
+                                        'Lslash', 'Ldot', 'Thorn', 'A.r', 'A.roman', 'R.short', 'R.roman', 'K.short',
+                                        'K.straight.short', 'four.ss05', 'seven.ss05'}
+KERN_RIGHT_OPEN = set('AJTVWXYZ') | {'A.r', 'A.roman', 'period', 'comma', 'colon', 'semicolon', 'periodcentered', 'quoteright',
                                      'quotedblright', 'quoteleft', 'quotedblleft', 'hyphen', 'exclam', 'question',
                                      'parenright', 'four', 'seven'}
 REQUIRED_PAIRS = [('A', 'T'), ('T', 'A'), ('L', 'T'), ('R', 'A'), ('R', 'T'), ('Y', 'A'), ('A', 'V'), ('K', 'O'),
                   ('T', 'X'), ('T', 'Z'), ('T', 'S')]
-CLASSES = {
-    'A': ['A', 'Aacute', 'Agrave'], 'E': ['E', 'Eacute', 'Egrave'], 'I': ['I', 'Iacute'],
-    'O': ['O', 'Oacute', 'Ograve'], 'U': ['U', 'Uacute', 'Udieresis'], 'N': ['N', 'Ntilde'], 'C': ['C', 'Ccedilla'],
-}
+def kern_classes():
+    """Every kerned glyph's class: itself and the composites built on it (accented letters kern as their base; the
+    accented short i as the dotted one; Đ as Ð)"""
+    classes = {}
+    for name, unis, base, mark, place in G.COMPOSITES:
+        if base is None or place == 'tab':
+            continue
+        key = base
+        for stem_ in ('short', 'shortplain', 'tallplain'):
+            if base == f'dotlessi.{stem_}':
+                key = f'i.{stem_}.lozenge'
+        classes.setdefault(key, [key]).append(name)
+    classes.setdefault('Eth', ['Eth']).append('Dcroat')
+    return classes
+
+
+CLASSES = kern_classes()
+LATIN_EXTRA = ['AE', 'OE', 'Oslash', 'Thorn', 'Eth', 'Hbar', 'Lslash', 'Ldot', 'Germandbls']
+# alternates kerned like the rest (the dotted i's, the Ks)
+KERN_ALTERNATES = (['K.straight', 'K.roman', 'A.r', 'A.roman', 'R.short', 'R.roman', 'K.short', 'K.straight.short',
+                    'o.small', 'four.ss05', 'seven.ss05', 'five.ss05'] +
+                   [f'i.{st}.{dt}' for st in G.I_STEMS for dt in G.I_DOTS] + [n for n, _ in NX.NEXUS] +
+                   [c + '.unc' for c in UC.UNICASE])
+KERN_LEFT_OPEN |= {'r.unc', 't.unc', 'z.unc'}
+KERN_RIGHT_OPEN |= {'z.unc', 'd.unc'}
+# a nexus kerns on its left like its first letter and on its right like its last
+KERN_LEFT_OPEN |= {n for n, letters in NX.NEXUS if letters[-1] in KERN_LEFT_OPEN}
+KERN_RIGHT_OPEN |= {n for n, letters in NX.NEXUS if letters[0] in KERN_RIGHT_OPEN}
 
 
 def kerning(drawn, tt, sb):
@@ -241,7 +318,7 @@ def kerning(drawn, tt, sb):
     letters = [c for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
     extra = ['period', 'comma', 'colon', 'semicolon', 'periodcentered', 'hyphen', 'quoteright', 'quotedblright',
              'quoteleft', 'quotedblleft', 'exclam', 'question', 'parenright', 'one', 'four', 'seven', 'zero']
-    names = letters + extra
+    names = letters + LATIN_EXTRA + extra + KERN_ALTERNATES
     per_master = []
     for mi, m in enumerate(MASTERS):
         D2 = 2 * depth_of(m)
@@ -319,41 +396,64 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
-def build_font(t, weight, names, drawn, outl, sb, kern):
-    """A complete TrueType font at interpolation position t (0 = HUD master, 1 = Black master): outlines interpolated
-    exactly and rounded once, side bearings, anchors and kerning interpolated"""
+def build_font(loc, weight, names, drawn, outl, sb, kern):
+    """A complete TrueType font at normalised location loc = (t, c) (t: 0 = 600, 1 = 900; c: 0 = CURV 0, 1 = CURV
+    100): outlines interpolated exactly and rounded once, side bearings, anchors and kerning interpolated, all with
+    the variable font's own model"""
+    t, c = loc
+    sc = scalars(t, c)
     order = glyph_order()
     glyf, hmtx, cmap, anchors = {}, {}, {}, {}
     nd = notdef_outline()
-    glyf['.notdef'] = tt_glyph(nd.at(t), 40)
+    glyf['.notdef'] = tt_glyph(nd.at(sc), 40)
     hmtx['.notdef'] = int(round(lerp(500, 540, t))) + 80
     for name, gs in drawn.items():
-        g0, g1 = gs[0], gs[-1]
-        lsb = lerp(sb[name][0][0], sb[name][-1][0], t)
-        rsb = lerp(sb[name][0][1], sb[name][-1][1], t)
-        w = lerp(g0.w, g1.w, t)
+        g0 = gs[0]
+        lsb = mix([v[0] for v in sb[name]], sc)
+        rsb = mix([v[1] for v in sb[name]], sc)
+        w = mix([g.w for g in gs], sc)
         lsb_i = int(round(lsb))
         if g0.adv is not None:
             glyf[name] = TTGlyphPen(None).glyph()
-            hmtx[name] = int(round(lerp(g0.adv, g1.adv, t)))
+            hmtx[name] = int(round(mix([g.adv for g in gs], sc)))
         else:
-            glyf[name] = tt_glyph(outl[name].at(t), lsb_i)
-            hmtx[name] = int(round(lsb_i + w + rsb))
-        anchors[name] = (lsb_i + lerp(g0.top, g1.top, t), lsb_i + lerp(g0.bottom, g1.bottom, t))
+            glyf[name] = tt_glyph(outl[name].at(sc), lsb_i)
+            hmtx[name] = int(round(lsb + w + rsb))      # rounded once, so equal advances stay equal (maths signs)
+        anchors[name] = {k: lsb_i + mix([getattr(g, k) for g in gs], sc) for k in ('top', 'bottom', 'ogonek', 'caron')}
+        if gs[0].top_y is not None:
+            anchors[name]['top_y'] = mix([g.top_y for g in gs], sc)
         for u in G.GLYPHS[name][0]:
             cmap[u] = name
-    for name, uni, base, mark in G.COMPOSITES:
+    short_dy = int(round(mix([G.short_i_accent_shift(m) for m in MASTERS], sc)))
+    # tabular figures: the widest figure's advance, per master, interpolated like every other advance
+    tf_adv = int(round(mix([max(sb[f][i][0] + drawn[f][i].w + sb[f][i][1] for f in ALT.FIGURES)
+                            for i in range(len(MASTERS))], sc)))
+    for name, unis, base, mark, place in G.COMPOSITES:
         pen = TTGlyphPen(glyf)
-        pen.addComponent(base, (1, 0, 0, 1, 0, 0))
-        top, bottom = anchors[base]
-        x = bottom if mark == 'cedillacomb' else top
-        pen.addComponent(mark, (1, 0, 0, 1, int(round(x)), 0))
-        glyph = pen.glyph()
-        glyph.components[0].flags |= 0x0200  # USE_MY_METRICS
-        glyf[name] = glyph
-        hmtx[name] = hmtx[base]
-        cmap[uni] = name
-        cmap[G.LOWER[name]] = name
+        if place == 'tab':
+            pen.addComponent(base, (1, 0, 0, 1, int(round((tf_adv - hmtx[base]) / 2)), 0))
+            glyf[name] = pen.glyph()
+            hmtx[name] = tf_adv
+            anchors[name] = anchors[base]
+        elif place == 'spacing':
+            xs = [p[0] for p in glyf[mark].coordinates]
+            side = 50
+            pen.addComponent(mark, (1, 0, 0, 1, side - min(xs), 0))
+            glyf[name] = pen.glyph()
+            hmtx[name] = int(max(xs) - min(xs) + 2 * side)
+            anchors[name] = {k: hmtx[name] / 2 for k in ('top', 'bottom', 'ogonek', 'caron')}
+        else:
+            pen.addComponent(base, (1, 0, 0, 1, 0, 0))
+            if mark:
+                x = anchors[base][MK.MARK_CLASS[mark]]
+                pen.addComponent(mark, (1, 0, 0, 1, int(round(x)), short_dy if place == 'short' else 0))
+            glyph = pen.glyph()
+            glyph.components[0].flags |= 0x0200  # USE_MY_METRICS
+            glyf[name] = glyph
+            hmtx[name] = hmtx[base]
+            anchors[name] = anchors[base]
+        for u in unis:
+            cmap[u] = name
 
     fb = FontBuilder(UPM, isTTF=True)
     fb.font.recalcTimestamp = False
@@ -371,14 +471,16 @@ def build_font(t, weight, names, drawn, outl, sb, kern):
     fb.setupNameTable(names)
     ymax = max(getattr(glyf_t[n], 'yMax', 0) for n in order if glyf_t[n].numberOfContours)
     ymin = min(getattr(glyf_t[n], 'yMin', 0) for n in order if glyf_t[n].numberOfContours)
+    win_a, win_d = WIN if WIN else (max(ASCENT, ymax), max(-DESCENT, -ymin))
     fb.setupOS2(usWeightClass=weight, fsType=0, achVendID=VENDOR, sTypoAscender=ASCENT, sTypoDescender=DESCENT,
-                sTypoLineGap=0, usWinAscent=max(ASCENT, ymax), usWinDescent=max(-DESCENT, -ymin), sxHeight=G.CAP,
+                sTypoLineGap=0, usWinAscent=win_a, usWinDescent=win_d, sxHeight=G.CAP,
                 sCapHeight=G.CAP, fsSelection=0x80, ulUnicodeRange1=0b11, ulCodePageRange1=1,
                 usDefaultChar=0, usBreakChar=32, version=4)
-    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=int(round(lerp(60, 80, t))))
+    fb.setupPost(isFixedPitch=0, underlinePosition=-120, underlineThickness=60)   # one value for the family
     fb.setupHead(unitsPerEm=UPM, fontRevision=float(VERSION), created=TIMESTAMP, modified=TIMESTAMP)
     fb.font['head'].flags |= 0x0008  # integer scaling
-    fb.addOpenTypeFeatures(kern_fea({k: [int(round(lerp(v[0], v[-1], t)))] for k, v in kern.items()}, 0))
+    mark_tops = {n: max(p[1] for p in glyf[n].coordinates) for n, c in MK.MARK_CLASS.items() if c == 'top'}
+    fb.addOpenTypeFeatures(kern_fea({k: [int(round(mix(v, sc)))] for k, v in kern.items()}, 0, anchors, mark_tops))
     gasp = newTable('gasp')
     gasp.version = 1
     gasp.gaspRange = {0xFFFF: 0x000F}
@@ -386,15 +488,18 @@ def build_font(t, weight, names, drawn, outl, sb, kern):
     return fb.font
 
 
-def kern_fea(kern, mi):
-    lines = []
+def kern_fea(kern, mi, anchors, mark_tops):
+    lines = ['languagesystem DFLT dflt;', 'languagesystem latn dflt;', 'languagesystem latn CAT;', '', F.locl(),
+             F.gsub(), F.gsub2(), F.gdef(),
+             F.marks(anchors, mark_tops, G.CAP, MK.MARK_CLASS, MK.MKMK_GAP, G.ACCENT_GAP)]
+    cname = {k: k.replace('.', '_') for k in CLASSES}
     for k, members in CLASSES.items():
-        lines.append(f'@L_{k} = [{" ".join(members)}];')
-        lines.append(f'@R_{k} = [{" ".join(members)}];')
+        lines.append(f'@L_{cname[k]} = [{" ".join(members)}];')
+        lines.append(f'@R_{cname[k]} = [{" ".join(members)}];')
     lines.append('feature kern {')
     for (a, b), vals in sorted(kern.items()):
-        la = f'@L_{a}' if a in CLASSES else a
-        rb = f'@R_{b}' if b in CLASSES else b
+        la = f'@L_{cname[a]}' if a in CLASSES else a
+        rb = f'@R_{cname[b]}' if b in CLASSES else b
         lines.append(f'  pos {la} {rb} {vals[mi]};')
     lines.append('} kern;')
     return '\n'.join(lines) + '\n'
@@ -420,15 +525,85 @@ def names_for(style, weight, variable=False):
 
 def finish_static(font, style):
     os2 = font['OS/2']
-    os2.fsSelection = 0x80 | (0x20 if style == 'Bold' else 0) | (0x40 if style == 'Regular' else 0)
+    os2.fsSelection = 0x80 | (0x20 if style == 'Bold' else 0x40)   # every style but Bold is named 'Regular' (ID 2)
     font['head'].macStyle = 0x01 if style == 'Bold' else 0
+
+
+def app_subset(spec, drawn, outl, sb, kern):
+    """One of APP_SUBSETS: the static cut at its weight and curvature, the dotted i baked in as rclt with its stem and
+    dot, trimmed to the place names' characters (HUD_UNICODES), unhinted, as webfonts/<FAMILY>-<name>.woff2"""
+    t = (spec['weight'] - WGHT[0]) / (WGHT[1] - WGHT[0])
+    font = build_font((t, spec['curv'] / CURV[1]), spec['weight'], names_for(spec['style'], spec['weight']),
+                      drawn, outl, sb, kern)
+    finish_static(font, spec['style'])
+    font.recalcTimestamp = False
+    if spec['dotted_i']:
+        stem, dot = spec['dotted_i']
+        assert stem in G.I_STEMS and dot in G.I_DOTS, spec['dotted_i']
+        # ss01 turns i (and I after a letter) into i.short.lozenge and the accented ones into i<acc>.short; cv01 and
+        # cv02 then swap the stem and the dot. Baked in: ss01 points straight at the chosen forms, and becomes rclt
+        # before the subsetter runs, so the other forms (and cv01, cv02) are dropped
+        gsub = font['GSUB'].table
+        targets = {'i.short.lozenge': f'i.{stem}.{dot}'}
+        for acc in ('acute', 'grave', 'dieresis', 'circumflex'):
+            targets[f'i{acc}.short'] = {'short': f'i{acc}.short', 'tall': 'I' + acc,
+                                        'shortplain': f'i{acc}.shortplain', 'tallplain': f'i{acc}.tallplain'}[stem]
+        for rec in gsub.FeatureList.FeatureRecord:
+            if rec.FeatureTag == 'ss01':
+                rec.FeatureTag, rec.Feature.FeatureParams = 'rclt', None
+        for lookup in gsub.LookupList.Lookup:
+            if lookup.LookupType != 1:
+                continue
+            for st in lookup.SubTable:
+                for src, dst in list(st.mapping.items()):
+                    if dst in targets and src.lower().startswith('i') and len(src) <= len('icircumflex'):
+                        st.mapping[src] = targets[dst]
+        gsub.FeatureList.FeatureRecord.sort(key=lambda r: r.FeatureTag)
+    options = subset.Options()
+    options.flavor = 'woff2'
+    options.layout_features = ['kern'] + (['rclt'] if spec['dotted_i'] else [])
+    options.name_IDs = ['*']
+    options.name_languages = ['*']
+    options.notdef_outline = True
+    options.recalc_timestamp = False
+    options.hinting = False          # the app's text is drawn by browsers that need no hints
+    sub = subset.Subsetter(options)
+    sub.populate(unicodes=[u for u in HUD_UNICODES if u in font.getBestCmap()])
+    sub.subset(font)
+    font.flavor = 'woff2'
+    font.save(os.path.join(OUT_WEB, f'{FAMILY}-{spec["name"]}.woff2'))
+
+
+def hint_static(path):
+    """Autohint a static with ttfautohint, reproducibly: no version info in the name table, and head.modified put back
+    to TIMESTAMP (ttfautohint stamps the time of the run)"""
+    from ttfautohint import ttfautohint
+    with open(path, 'rb') as f:
+        data = f.read()
+    font = TTFont(io.BytesIO(ttfautohint(in_buffer=data, no_info=True)))
+    font['head'].modified = TIMESTAMP
+    font.recalcTimestamp = False
+    font.save(path)
+
+
+def smart_dropout(font):
+    """The unhinted variable font: no hints, but smart dropout control in 'prep', so that thin joins do not drop out
+    under the TrueType rasteriser (what gftools fix-nonhinting does)"""
+    prep = newTable('prep')
+    prep.program = ttProgram.Program()
+    prep.program.fromAssembly(['PUSHW[ ]', '511', 'SCANCTRL[ ]', 'PUSHB[ ]', '4', 'SCANTYPE[ ]'])
+    font['prep'] = prep
 
 
 def build_variable(master_paths):
     ds = DesignSpaceDocument()
     ax = AxisDescriptor()
-    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'wght', 'Weight', 600, 600, 900
+    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'wght', 'Weight', WGHT[0], WGHT[0], WGHT[1]
     ax.labelNames = {'en': 'Weight'}
+    ds.addAxis(ax)
+    ax = AxisDescriptor()
+    ax.tag, ax.name, ax.minimum, ax.default, ax.maximum = 'CURV', 'Curvature', CURV[0], CURV[0], CURV[1]
+    ax.labelNames = {'en': 'Curvature'}
     ds.addAxis(ax)
     for m, path in zip(MASTERS, master_paths):
         s = SourceDescriptor()
@@ -437,7 +612,7 @@ def build_variable(master_paths):
         s.name = f'{FAMILY} {m.name}'
         s.familyName = FAMILY
         s.styleName = m.name
-        s.location = {'Weight': m.wght}
+        s.location = {'Weight': m.wght, 'Curvature': m.curv}
         ds.addSource(s)
     for style, w in INSTANCES:
         i = InstanceDescriptor()
@@ -445,7 +620,7 @@ def build_variable(master_paths):
         i.styleName = style
         i.name = f'{FAMILY} {style}'
         i.postScriptFontName = f'{FAMILY}-{style}'
-        i.location = {'Weight': w}
+        i.location = {'Weight': w, 'Curvature': CURV[0]}
         ds.addInstance(i)
     ds.write(OUT_DS)
     vf, _, _ = varlib_build(ds)
@@ -458,9 +633,15 @@ def build_variable(master_paths):
                      (4, f'{FAMILY} SemiBold'), (6, f'{FAMILY}-SemiBold'), (16, FAMILY), (17, 'SemiBold'),
                      (25, FAMILY)):
         name.setName(val, nid, 3, 1, 0x409)
-    buildStatTable(vf, [dict(tag='wght', name='Weight', values=[
-        dict(value=w, name=s, flags=0) for s, w in INSTANCES])], elidedFallbackName=2)
+    buildStatTable(vf, [
+        dict(tag='wght', name='Weight', values=[dict(value=w, name=s, flags=0) for s, w in INSTANCES]),
+        dict(tag='CURV', name='Curvature', values=[dict(value=0, name='Straight', flags=0x2),
+                                                    dict(value=50, name='Carved', flags=0),
+                                                    dict(value=100, name='Curved', flags=0)]),
+    ], elidedFallbackName=2)
     vf['OS/2'].usWeightClass = 600
+    vf['OS/2'].fsSelection |= 0x40          # nameID 2 is 'Regular'
+    smart_dropout(vf)
     return vf
 
 
@@ -469,16 +650,18 @@ def main():
     if geometry.STROKE_ERRORS:
         print('stroke fitting error > 1.5 units:', geometry.STROKE_ERRORS)
     outl = outlines(drawn)
-    tt = {name: ([o.at(m.t) for m in MASTERS] if o else [[] for _ in MASTERS]) for name, o in outl.items()}
+    tt = {name: ([o.at(scalars(m.t, m.c)) for m in MASTERS] if o else [[] for _ in MASTERS])
+          for name, o in outl.items()}
     sb = spacing(drawn, tt)
     kern = kerning(drawn, tt, sb)
 
     os.makedirs(OUT_MASTERS, exist_ok=True)
     master_paths, problems, qa_notes = [], [], {}
     for m in MASTERS:
-        names = {**names_for(m.name, m.wght), 'familyName': f'{FAMILY} {m.name}', 'styleName': 'Regular'}
-        font = build_font(m.t, m.wght, names, drawn, outl, sb, kern)
-        p = os.path.join(OUT_MASTERS, f'{FAMILY}-{m.name}.ttf')
+        names = {**names_for(m.name, m.wght), 'familyName': f'{FAMILY} {m.name}', 'styleName': 'Regular',
+                 'psName': f'{FAMILY}-{m.name.replace(" ", "")}'}
+        font = build_font((m.t, m.c), m.wght, names, drawn, outl, sb, kern)
+        p = os.path.join(OUT_MASTERS, f'{FAMILY}-{m.name.replace(" ", "")}.ttf')
         font.save(p)
         master_paths.append(p)
         errs, notes = qa.check_font(TTFont(p))
@@ -486,6 +669,14 @@ def main():
         qa_notes[m.name] = notes
     if problems:
         raise SystemExit('outline problems:\n  ' + '\n  '.join(problems))
+    # one set of Windows metrics for the whole family: the masters' extremes bound every instance's
+    global WIN
+    fonts = [TTFont(p) for p in master_paths]
+    WIN = (max(f['OS/2'].usWinAscent for f in fonts), max(f['OS/2'].usWinDescent for f in fonts))
+    for f, p in zip(fonts, master_paths):
+        f['OS/2'].usWinAscent, f['OS/2'].usWinDescent = WIN
+        f.recalcTimestamp = False
+        f.save(p)
 
     vf = build_variable(master_paths)
     os.makedirs(os.path.dirname(OUT_VF), exist_ok=True)
@@ -495,36 +686,42 @@ def main():
     os.makedirs(OUT_WEB, exist_ok=True)
     statics = []
     for style, w in INSTANCES:
-        t = (w - MASTERS[0].wght) / (MASTERS[-1].wght - MASTERS[0].wght)
-        font = build_font(t, w, names_for(style, w), drawn, outl, sb, kern)
+        t = (w - WGHT[0]) / (WGHT[1] - WGHT[0])
+        font = build_font((t, 0.0), w, names_for(style, w), drawn, outl, sb, kern)
         finish_static(font, style)
         p = os.path.join(OUT_STATIC, f'{FAMILY}-{style}.ttf')
         font.save(p)
+        hint_static(p)
         statics.append(p)
         errs, notes = qa.check_font(TTFont(p))
         if errs:
             raise SystemExit(f'outline problems in {style}:\n  ' + '\n  '.join(errs))
         qa_notes[style] = notes
 
+    # the rest of the designspace: instances between the masters must not overlap or turn either
+    grid = {}
+    for w in (600, 700, 800, 900):
+        for c in (0, 25, 50, 75, 100):
+            if c == 0 or (c == 100 and w in (600, 900)):
+                continue          # the statics and the masters are checked above
+            t = (w - WGHT[0]) / (WGHT[1] - WGHT[0])
+            font = build_font((t, c / 100), w, names_for('SemiBold', w), drawn, outl, sb, kern)
+            buf = io.BytesIO()
+            font.save(buf)
+            buf.seek(0)
+            errs, notes = qa.check_font(TTFont(buf))
+            if errs:
+                raise SystemExit(f'outline problems at wght {w} CURV {c}:\n  ' + '\n  '.join(errs))
+            grid[f'wght {w} CURV {c}'] = len(notes)
+    qa_notes['grid (soft notes per instance)'] = [f'{k}: {v}' for k, v in grid.items()]
+
     web = TTFont(OUT_VF)
     web.recalcTimestamp = False
     web.flavor = 'woff2'
     web.save(os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'))
 
-    hud = TTFont(os.path.join(OUT_STATIC, f'{FAMILY}-SemiBold.ttf'))
-    hud.recalcTimestamp = False
-    options = subset.Options()
-    options.flavor = 'woff2'
-    options.layout_features = ['kern']
-    options.name_IDs = ['*']
-    options.name_languages = ['*']
-    options.notdef_outline = True
-    options.recalc_timestamp = False
-    sub = subset.Subsetter(options)
-    sub.populate(unicodes=list(hud.getBestCmap().keys()))
-    sub.subset(hud)
-    hud.flavor = 'woff2'
-    hud.save(os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2'))
+    for spec in APP_SUBSETS:
+        app_subset(spec, drawn, outl, sb, kern)
 
     report = {
         'glyphs': len(glyph_order()),
@@ -537,7 +734,7 @@ def main():
         json.dump(report, f, indent=1, sort_keys=True)
         f.write('\n')
     for p in [*master_paths, OUT_VF, *statics, os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'),
-              os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2')]:
+              *[os.path.join(OUT_WEB, f'{FAMILY}-{s["name"]}.woff2') for s in APP_SUBSETS]]:
         print(f'{os.path.relpath(p, HERE)}: {os.path.getsize(p)} bytes')
 
 
