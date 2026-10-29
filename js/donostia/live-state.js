@@ -185,7 +185,9 @@ function localToDate(s, offsetSeconds = 0) {
 
 // --- the store -----------------------------------------------------------------------------------------------------------
 
-const state = { enabled: false, status: 'off', weather: null, sea: null, fetchedAt: null, error: null };
+// fetchStatus: how the last fetch went (ok | partial | error, null before one), whether real time was on or not
+const state = { enabled: false, status: 'off', weather: null, sea: null, fetchedAt: null, fetchStatus: null, error: null };
+const FRESH_MS = 60 * 1000;
 const override = { time: null, rate: 1, since: 0, weather: null, sea: null };
 const listeners = new Set();
 let timer = null, inFlight = null;
@@ -209,7 +211,10 @@ export function liveEnabled() {
   return state.enabled;
 }
 
-/** Turns real time on (fetching now and every REFRESH_MS) or off. */
+/**
+ * Turns real time on (fetching now and every REFRESH_MS) or off. A fetch made in the last minute, or one still under
+ * way (e.g. started behind the loading screen), is used rather than repeated.
+ */
 export function setLiveEnabled(on, fetchImpl) {
   on = !!on;
   if (on === state.enabled) return;
@@ -217,8 +222,12 @@ export function setLiveEnabled(on, fetchImpl) {
   clearInterval(timer);
   timer = null;
   if (on) {
-    state.status = state.weather ? 'ok' : 'loading';
-    refreshLive(fetchImpl);
+    const fresh = state.fetchStatus && Date.now() - Date.parse(state.fetchedAt) < FRESH_MS;
+    if (fresh && !inFlight) state.status = state.fetchStatus;
+    else {
+      state.status = state.weather ? 'ok' : 'loading';
+      if (!inFlight) refreshLive(fetchImpl);
+    }
     timer = setInterval(() => refreshLive(fetchImpl), REFRESH_MS);
   } else state.status = 'off';
   notify();
@@ -240,7 +249,8 @@ export function refreshLive(fetchImpl = globalThis.fetch) {
     else errors.push(`sea: ${s.reason?.message || s.reason}`);
     state.fetchedAt = new Date().toISOString();
     state.error = errors.length ? errors.join('; ') : null;
-    if (state.enabled) state.status = errors.length === 2 ? 'error' : errors.length ? 'partial' : 'ok';
+    state.fetchStatus = errors.length === 2 ? 'error' : errors.length ? 'partial' : 'ok';
+    if (state.enabled) state.status = state.fetchStatus;
     inFlight = null;
     notify();
     return liveSnapshot();

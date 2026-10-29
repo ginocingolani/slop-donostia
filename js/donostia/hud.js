@@ -49,15 +49,17 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   timeButtons.forEach((b) => b.addEventListener('click', () => selectTime(b.dataset.time)));
 
   // --- Real time (Orain) -----------------------------------------------------------------------------------------------
-  // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. Off by
-  // default; the choice is remembered. Turned on before the city shows, it waits for setReady().
+  // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. On by
+  // default (the city as it is now), unless this browser turned it off; the choice is remembered. Turned on before the
+  // city shows, it waits for setReady(), and the weather and the sea are fetched meanwhile, behind the loading screen.
 
   const liveButton = document.getElementById('btn-live');
   const timeSwitch = liveButton?.closest('.time-switch');
   const readout = document.getElementById('live-readout');
   const renderLive = initLiveReadout(readout);
-  let liveWanted = false, liveShown = null;
-  try { liveWanted = localStorage.getItem(LIVE_KEY) === '1'; } catch { /* storage unavailable */ }
+  let liveWanted = true, liveShown = null;
+  try { liveWanted = localStorage.getItem(LIVE_KEY) !== '0'; } catch { /* storage unavailable */ }
+  if (liveWanted) live.refreshLive();
   const showLive = (on) => {
     if (on === liveShown) return;
     liveShown = on;
@@ -297,7 +299,11 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
       if (liveSky) liveSky.ready = true;
       if (pendingTime) applyTime(pendingTime);
       pendingTime = null;
-      if (liveWanted) live.setLiveEnabled(true);
+      if (liveWanted) {
+        // the city first shows as it is now, not fading in from the preset the shaders were compiled with
+        if (liveSky) liveSky.skipFade = true;
+        live.setLiveEnabled(true);
+      }
       updateInert();
     },
     // the full map covers the whole view (main.js stops rendering it meanwhile)
