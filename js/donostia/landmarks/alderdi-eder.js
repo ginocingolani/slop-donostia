@@ -7,6 +7,8 @@ import { ALDERDI } from '../data-alderdi.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Parts, ringArea, reverseRing, insetRing, beam, clipRing, pointInRing as pointIn } from './geom.js';
 import { PaintBuilder, paintMaterial, at, box, cyl, lathe, M4 } from './paint.js';
+import { windFlag } from './wind-flag.js';
+import { liveEnabled } from '../live-state.js';
 
 // js/donostia/landmarks/alderdi-eder.js
 // Alderdi Eder ("beautiful place"), the gardens laid out in the 1880s between the old casino (the City Hall since the
@@ -18,7 +20,8 @@ import { PaintBuilder, paintMaterial, at, box, cyl, lathe, M4 } from './paint.js
 // round bed. Before the City Hall its front terrace, paved and edged with low sandstone walls, and the Belle Époque
 // carousel ("Zaldiko Maldikoa"): a two-storey merry-go-round under a painted crown, turning slowly, its bulbs lit at
 // dusk; its ticket booth; the playground beside it. On the harbour side, La Terraza del Náutico's timber deck and the
-// ikurriña's flagpole.
+// ikurriña's flagpole: its flag still with the real-time switch off, flying with the real wind while it is on
+// (wind-flag.js).
 //
 // From the photographs (Wikimedia Commons: the gardens by Josi, Daniel Díez Sanquirce, Javier Pérez Montes and others;
 // the planters; the carousel by day and by night): the fences are dark green, ~0.5 m, rails and posts with scroll
@@ -831,19 +834,25 @@ export function build(sites, ctx) {
     }
   }
   // The ikurriña's flagpole by the harbour: a white mast with a gilt ball, the flag (red, the green saltire under the
-  // white cross) flying from it
+  // white cross) flying from it. The still flag's vertices (flagVerts) give way to a wind-flag.js one with the
+  // real-time switch on.
+  const flagVerts = [], liveFlags = [];
   for (let k = 0; k < (ALDERDI.flagpoles || []).length; k += 2) {
     const x = ALDERDI.flagpoles[k], z = ALDERDI.flagpoles[k + 1], m = at(x, ground(x, z), z, 0.6);
     paint.add(cyl(0.11, 0.15, 0.3, 10), WHITE, m);
     paint.add(cyl(0.045, 0.085, 10.5, 10, 0.3), WHITE, m);
     paint.add(new THREE.SphereGeometry(0.09, 10, 8).translate(0, 10.85, 0), C.gilt, m);
     const fw = 2.0, fh = 1.15, fy = 10.0 - fh / 2, fx = 0.08 + fw / 2;
+    const hoist = new THREE.Vector3(0.06, 10.0, 0).applyMatrix4(m);
+    liveFlags.push(windFlag({ hoist: hoist.toArray(), width: fw, height: fh }));
+    flagVerts.push(paint.count);
     const flag = (geo, p) => paint.add(geo.translate(fx, fy, 0), p, m);
     flag(new THREE.BoxGeometry(fw, fh, 0.015), [0.62, 0.02, 0.04, 0.7]);
     const diag = Math.atan2(fh, fw), dl = Math.hypot(fw, fh);
     for (const sgn of [1, -1]) flag(new THREE.BoxGeometry(dl, fh * 0.12, 0.025).rotateZ(sgn * diag), [0.0, 0.3, 0.1, 0.7]);
     flag(new THREE.BoxGeometry(fw, fh * 0.12, 0.035), [0.82, 0.82, 0.8, 0.7]);
     flag(new THREE.BoxGeometry(fh * 0.12, fh, 0.035), [0.82, 0.82, 0.8, 0.7]);
+    flagVerts.push(paint.count);
   }
   const pg = ALDERDI.playground;
   if (pg?.ring?.length >= 6) addPlayground(paint, pg.ring, pg.swings || [], ground, terrain);
@@ -864,6 +873,25 @@ export function build(sites, ctx) {
   });
   const still = paint.build('AlderdiEder:furniture');
   if (still) group.add(still);
+  for (const f of liveFlags) group.add(f);
+  // With the real-time switch on, the still flags fold to nothing (their vertices onto one point, uploaded once per
+  // switch) and the wind's fly instead
+  let flagsLive = false;
+  const stillFlags = still && flagVerts.length ? still.geometry.attributes.position : null;
+  const keep = stillFlags ? stillFlags.array.slice() : null;
+  const setFlagsLive = (on) => {
+    flagsLive = on;
+    for (const f of liveFlags) f.visible = on;
+    if (!stillFlags) return;
+    const a = stillFlags.array;
+    stillFlags.clearUpdateRanges();
+    for (let k = 0; k < flagVerts.length; k += 2) {
+      const v0 = flagVerts[k], v1 = flagVerts[k + 1];
+      for (let v = v0; v < v1; v++) for (let c = 0; c < 3; c++) a[v * 3 + c] = on ? keep[v0 * 3 + c] : keep[v * 3 + c];
+      stillFlags.addUpdateRange(v0 * 3, (v1 - v0) * 3);
+    }
+    stillFlags.needsUpdate = true;
+  };
 
   // The carousel: everything that turns in one mesh, the horses instanced so they can rise and fall on their poles
   const rotor = new THREE.Group();
@@ -903,7 +931,15 @@ export function build(sites, ctx) {
   group.add(rotor);
 
   const SPEED = 0.32; // rad/s, about three turns a minute
+  let flagsCompiled = false;
   group.userData.update = (dt, elapsed, camera) => {
+    // (the flying flags show for the shader compile's frame, dt 0, so their pipeline is built behind the loading
+    // screen)
+    if (!flagsCompiled) {
+      for (const f of liveFlags) f.visible = dt === 0;
+      flagsCompiled = dt > 0;
+    }
+    if (flagsCompiled && liveEnabled() !== flagsLive) setFlagsLive(liveEnabled());
     if (camera && camera.position.distanceToSquared(rotor.position) > 600 * 600) return;
     rotor.rotation.y = elapsed * SPEED;
     rotor.updateMatrixWorld(true);

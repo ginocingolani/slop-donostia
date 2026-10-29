@@ -1,38 +1,88 @@
 import { STREETS } from './data-streets.js';
 import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
+import * as live from './live-state.js';
 
 // js/donostia/hud.js
-// HUD wiring for index.html: time of day, the fly-to list, clean view, telemetry, the street-name signs (where am I),
-// the radar & the full map [M], and the god camera's touch controls.
-// initHud({ GEO, god, terrain, lighting, grade, renderer }) -> { update(fps), setReady(), mapOpen }: main.js calls
-// update() four times a second and setReady() once the city first shows; mapOpen says the full map covers the view.
+// HUD wiring for index.html: time of day and the real-time switch (Orain) with its readout, the fly-to list, clean
+// view, telemetry, the street-name signs (where am I), the radar & the full map [M], and the god camera's touch controls.
+// initHud({ GEO, god, terrain, lighting, grade, liveSky, renderer }) -> { update(fps), setReady(), mapOpen }: main.js
+// calls update() four times a second and setReady() once the city first shows; mapOpen says the full map covers the
+// view.
 
 const TIMES = ['golden', 'midday', 'twilight', 'midnight'];
+const LIVE_KEY = 'donostia-live'; // localStorage: '1' while the real-time switch is on
 const STREET_RADIUS = 50; // m: beyond this the camera is not "on" a street
 const CORNER = 14; // m: a second street this close makes a corner (two signs)
 
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
-export function initHud({ GEO, god, terrain, lighting, grade }) {
+export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   // Until the city first shows, main.js compiles the shaders with the scene pass's render target bound (across
   // awaits): a preset applied meanwhile would bake its environment map into that target. A time picked then waits
   // for setReady(), and the shortcuts and the HUD (under the loading screen) don't answer yet.
-  let ready = false, pendingTime = null;
+  let ready = false, pendingTime = null, time = 'golden';
   const timeButtons = document.querySelectorAll('[data-time]');
-  const showTime = (id) => timeButtons.forEach((b) => {
-    b.classList.toggle('active', b.dataset.time === id);
-    b.setAttribute('aria-pressed', String(b.dataset.time === id));
-  });
+  // The time buttons show the preset picked last; while real time is on they show it overridden (unpressed, outlined:
+  // the look a click goes back to)
+  const showTime = (id) => {
+    time = id;
+    const on = Boolean(liveShown);
+    timeButtons.forEach((b) => {
+      b.classList.toggle('active', b.dataset.time === id);
+      b.setAttribute('aria-pressed', String(!on && b.dataset.time === id));
+    });
+  };
   const applyTime = (id) => {
     lighting.applyPreset(id);
     grade.applyPreset(lighting.activePresetId);
     showTime(id);
   };
+  // picking a time turns real time off and shows that look, as it always has
   const selectTime = (id) => {
+    if (liveShown) {
+      time = id; // (the look real time hands back to)
+      setLive(false);
+    }
     if (ready) applyTime(id);
     else { pendingTime = id; showTime(id); }
   };
   timeButtons.forEach((b) => b.addEventListener('click', () => selectTime(b.dataset.time)));
+
+  // --- Real time (Orain) -----------------------------------------------------------------------------------------------
+  // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. Off by
+  // default; the choice is remembered. Turned on before the city shows, it waits for setReady().
+
+  const liveButton = document.getElementById('btn-live');
+  const timeSwitch = liveButton?.closest('.time-switch');
+  const readout = document.getElementById('live-readout');
+  const renderLive = initLiveReadout(readout);
+  let liveWanted = false, liveShown = null;
+  try { liveWanted = localStorage.getItem(LIVE_KEY) === '1'; } catch { /* storage unavailable */ }
+  const showLive = (on) => {
+    if (on === liveShown) return;
+    liveShown = on;
+    liveButton?.classList.toggle('active', on);
+    liveButton?.setAttribute('aria-checked', String(on));
+    timeSwitch?.classList.toggle('is-live', on);
+    if (readout) readout.hidden = !on;
+    showTime(time);
+  };
+  const setLive = (on) => {
+    liveWanted = on;
+    try { localStorage.setItem(LIVE_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+    if (ready) live.setLiveEnabled(on);
+    else showLive(on);
+  };
+  liveButton?.addEventListener('click', () => setLive(!liveShown));
+  // the state may change from elsewhere too (slopDebug.live): the switch follows it, and real time turned off brings
+  // back the preset picked last
+  live.onLive((snap) => {
+    if (!ready) return;
+    showLive(snap.enabled);
+    if (!snap.enabled && lighting.activePresetId === 'live') applyTime(time);
+    if (snap.enabled) renderLive(snap);
+  });
+  showLive(liveWanted);
   applyTime('golden'); // (before the compile: the shaders are built for the lights it sets)
 
   const teleportList = document.getElementById('teleport-list');
@@ -230,8 +280,9 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
     if (key === 'h') hudToggle?.click();
     else if (key === 'm') fullMap.toggle();
     else if (e.key === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
-    const digit = /^Digit([1-4])$/.exec(e.code);
-    if (digit) selectTime(TIMES[digit[1] - 1]);
+    const digit = /^Digit([1-5])$/.exec(e.code);
+    if (digit?.[1] === '5') setLive(!liveShown);
+    else if (digit) selectTime(TIMES[digit[1] - 1]);
   });
 
   const elFps = document.getElementById('hud-fps');
@@ -243,8 +294,10 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
     setReady() {
       if (ready) return;
       ready = true;
+      if (liveSky) liveSky.ready = true;
       if (pendingTime) applyTime(pendingTime);
       pendingTime = null;
+      if (liveWanted) live.setLiveEnabled(true);
       updateInert();
     },
     // the full map covers the whole view (main.js stops rendering it meanwhile)
@@ -262,6 +315,97 @@ export function initHud({ GEO, god, terrain, lighting, grade }) {
       if (elLocAlt) elLocAlt.textContent = alt;
       if (elSpeed) elSpeed.textContent = String(Math.round(god.velocity.length() * 3.6));
       render(locate(god.position.x, god.position.z));
+      if (liveShown) renderLive(live.liveSnapshot());
+    }
+  };
+}
+
+// --- The real-time readout -------------------------------------------------------------------------------------------
+// The hour in Donostia, the weather (its icon, its name in Basque, °C), the tide (its level above mean sea level,
+// rising or falling, the next high or low water) and the waves (height, period), each with a tooltip in Basque,
+// Spanish and English. While the data loads, and if Open-Meteo doesn't answer, the clock runs on and says so; the sky
+// keeps to the clock with calm weather (live-state.js's defaults) meanwhile.
+
+// weather kind -> [icon, Basque, Spanish, English]
+const WEATHER = {
+  clear: ['i-sun', 'Oskarbi', 'despejado', 'clear'],
+  cloudy: ['i-cloud', 'Hodeitsu', 'nuboso', 'cloudy'],
+  overcast: ['i-cloud', 'Estalia', 'cubierto', 'overcast'],
+  fog: ['i-fog', 'Lainoa', 'niebla', 'fog'],
+  drizzle: ['i-rain', 'Zirimiria', 'sirimiri', 'drizzle'],
+  rain: ['i-rain', 'Euria', 'lluvia', 'rain'],
+  showers: ['i-rain', 'Zaparradak', 'chubascos', 'showers'],
+  snow: ['i-snow', 'Elurra', 'nieve', 'snow'],
+  storm: ['i-storm', 'Ekaitza', 'tormenta', 'storm']
+};
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compass = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+const km = (m) => (m >= 10000 ? `${Math.round(m / 1000)} km` : `${(m / 1000).toFixed(1)} km`);
+const signed = (v, digits) => `${v >= 0 ? '+' : '\u2212'}${Math.abs(v).toFixed(digits)}`;
+
+function initLiveReadout(root) {
+  if (!root) return () => {};
+  const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const part = (id) => {
+    const item = root.querySelector(`#${id}`);
+    return item && { item, use: item.querySelector('use'), word: item.querySelector('.live-word'), num: item.querySelector('.live-num'), sub: item.querySelector('.live-sub') };
+  };
+  const clock = root.querySelector('#live-time'), weather = part('live-weather'), tide = part('live-tide'), waves = part('live-waves');
+  // write only what changed (four times a second)
+  const set = (node, value) => {
+    if (node && node.textContent !== value) node.textContent = value;
+  };
+  const attr = (node, name, value) => {
+    if (node && node.getAttribute(name) !== value) node.setAttribute(name, value);
+  };
+  return (snap) => {
+    set(clock, hhmm.format(snap.date));
+    const missing = (what) => snap.status === 'error' || (snap.status === 'partial' && (snap.error || '').includes(`${what}:`));
+    root.classList.toggle('is-loading', snap.status === 'loading');
+
+    if (weather) {
+      const w = snap.weather;
+      weather.item.classList.toggle('is-error', snap.status !== 'loading' && missing('weather'));
+      if (snap.status === 'loading') {
+        attr(weather.use, 'href', '#i-cloud');
+        set(weather.word, 'Kargatzen…');
+        set(weather.num, '');
+        attr(weather.item, 'title', 'Kargatzen · cargando · loading the weather and the sea (Open-Meteo)');
+      } else if (missing('weather')) {
+        attr(weather.use, 'href', '#i-alert');
+        set(weather.word, 'Daturik ez');
+        set(weather.num, '');
+        attr(weather.item, 'title', `Daturik ez · sin datos · no weather from Open-Meteo (${snap.error || 'no answer'}): the sky keeps to the clock with calm weather, and asks again every 15 min`);
+      } else {
+        const [icon, eu, es, en] = WEATHER[w.kind] ?? WEATHER.cloudy;
+        attr(weather.use, 'href', icon === 'i-sun' && snap.sun.elevation < -0.8 ? '#i-moon' : `#${icon}`);
+        set(weather.word, eu);
+        set(weather.num, `${Math.round(w.temperature)} °C`);
+        attr(weather.item, 'title', `${eu} · ${es} · ${en}, ${Math.round(w.temperature)} °C; haizea · viento · wind ${Math.round(w.windSpeed * 3.6)} km/h from the ${compass(w.windFrom)}; ${Math.round(w.cloudCover * 100)}% cloud; ${km(w.visibility)} visibility`);
+      }
+    }
+
+    const sea = snap.sea, t = sea.tide;
+    const seaShown = snap.status !== 'loading' && !missing('sea');
+    if (tide) {
+      tide.item.hidden = !seaShown;
+      if (seaShown) {
+        const arrow = t.rate > 0.02 ? '↑ ' : t.rate < -0.02 ? '↓ ' : '';
+        set(tide.num, `${arrow}${signed(t.level, 1)} m`);
+        const turn = t.next[0];
+        const names = turn && (turn.kind === 'high' ? ['Itsasgora', 'pleamar', 'high water'] : ['Itsasbehera', 'bajamar', 'low water']);
+        set(tide.sub, turn ? `${names[0]} ${hhmm.format(turn.date)}` : '');
+        attr(tide.item, 'title', `Itsasaldia · marea · tide: ${signed(t.level, 2)} m on mean sea level, ${t.rate > 0.02 ? 'rising' : t.rate < -0.02 ? 'falling' : 'turning'}` +
+          (turn ? `; ${names.join(' · ')} at ${hhmm.format(turn.date)} (${signed(turn.level, 2)} m)` : ''));
+      }
+    }
+    if (waves) {
+      waves.item.hidden = !seaShown;
+      if (seaShown) {
+        set(waves.num, `${sea.waveHeight.toFixed(1)} m · ${Math.round(sea.wavePeriod)} s`);
+        attr(waves.item, 'title', `Olatuak · oleaje · waves: ${sea.waveHeight.toFixed(1)} m every ${Math.round(sea.wavePeriod)} s from the ${compass(sea.waveFrom)}` +
+          (Number.isFinite(sea.temperature) ? `; itsasoa · el mar · the sea ${Math.round(sea.temperature)} °C` : ''));
+      }
     }
   };
 }

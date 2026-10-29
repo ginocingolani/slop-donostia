@@ -1,0 +1,331 @@
+// js/donostia/sea-state.js
+// The sea of the real-time mode as the water's parameters: what js/donostia/water.js (and through its uniforms the
+// shore, the marina, the boats, the buoys and the ground) does with the tide, the waves, the swell and the wind that
+// js/donostia/live-state.js reports. With the switch off the water keeps FIXED_SEA, the sea the shaders were drawn for;
+// with it on, seaParams(snapshot) gives the targets the water eases towards. Also the HUD's words for the sea (the
+// Douglas scale, the surf on the three beaches) and the levels of the port's floating pontoons. No three.js here: the
+// tests run it in Node.
+//
+// Sources: the Douglas sea scale (WMO Manual on Codes, code table 3700); whitecaps after the Beaufort scale's
+// descriptions (WMO-No. 8, Annex 4.B); deep-water dispersion (L = g T² / 2π). The tide's range at Donostia (~4.5 m at
+// springs, ~1.5 m at neaps around mean sea level) after Puertos del Estado's tide gauge at Pasaia; the beaches' exposure
+// to the swell is data/donostia/water.png's (tools/donostia/build.mjs), read off at their surf zones.
+
+import { MARINA } from './data-marina.js';
+
+const G = 9.81;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const wrap180 = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+
+/** Metres above mean sea level: about the lowest astronomical tide on this coast, what the quays' ladders reach under. */
+export const LOW_WATER = -2.6;
+
+// The swell the water's surf was drawn for (js/donostia/water.js: ~1 m breakers on Zurriola, a hand's breadth inside La
+// Concha): about 1.2 m from the north-west
+const NOMINAL_SWELL = 1.2; // m
+// The sector the coast is open to (the exposure field's, tools/donostia/build.mjs SWELL: W to NNE, through north)
+const OPEN_FROM = 285, OPEN_TO = 25;
+// The high water the tidal bands (wet sand, the dark band and the weed on walls & rocks) were drawn for: a spring tide's
+export const BAND_HIGH_WATER = 1.5; // m
+// The beaches' exposure to the swell at their surf zones (data/donostia/water.png's R)
+const BEACH_EXPOSURE = { zurriola: 0.6, ondarreta: 0.2, concha: 0.12 };
+
+/**
+ * The sea the water shows with the real-time switch off: mean sea level, the bands where they were drawn, the
+ * north-west swell of the surf as drawn, a moderate breeze's chop from the texture's own directions (chopFrom null).
+ */
+export const FIXED_SEA = Object.freeze({
+  level: 0, mark: 0,
+  surf: 1, surfPeriodA: 7, surfPeriodB: 11, // breaker scale; the breakers' period (s) from the sheltered to the open beaches
+  swell: 0, swellPeriod: 10, swellFrom: 315, // the open sea's long swell (m) on top of the wind sea: none
+  chop: 1, chopFrom: null, calm: 0, whitecaps: 0, spray: 0
+});
+
+/** How far the coast is open to a swell from azimuth `from` (deg): 1 inside the W-NNE sector, fading off 90° outside it. */
+export function openTo(from) {
+  if (!Number.isFinite(from)) return 1;
+  const half = ((((OPEN_TO - OPEN_FROM) % 360) + 360) % 360) / 2, mid = (OPEN_FROM + half) % 360;
+  const outside = Math.max(0, Math.abs(wrap180(from - mid)) - half);
+  return 1 - 0.85 * smooth(0, 90, outside);
+}
+
+/** The swell that reaches the coast: { height (m, its open share), period (s), from (deg) } from the live sea. */
+export function effectiveSwell(sea) {
+  const height = Number.isFinite(sea.waveHeight) ? sea.waveHeight : sea.swellHeight ?? 0;
+  const from = Number.isFinite(sea.swellFrom) && (sea.swellHeight ?? 0) >= 0.5 * height ? sea.swellFrom : sea.waveFrom;
+  const period = clamp(Math.max(sea.wavePeriod || 0, sea.swellPeriod || 0) || 9, 4, 20);
+  return { height: Math.max(0, height) * openTo(from), period, from: Number.isFinite(from) ? from : 315 };
+}
+
+/** The deep-water wavelength (m) of waves of period T (s). */
+export const wavelength = (T) => (G * T * T) / (2 * Math.PI);
+
+/**
+ * The level the tidal bands are drawn from (m): the last high water less the spring high water they were drawn for,
+ * so the wet sand reaches as far up the beach as the sea came, and a neap tide's bands sit lower. tide: the
+ * snapshot's { level, next: [{ kind, level }] }; without the curve (an override's fixed level) a spring tide's.
+ */
+export function bandMark(tide) {
+  const high = tide?.next?.find((t) => t.kind === 'high')?.level;
+  const recent = Number.isFinite(high) ? Math.max(high, tide.level) : Math.max(BAND_HIGH_WATER, tide?.level ?? 0);
+  return recent - BAND_HIGH_WATER;
+}
+
+/** The wind sea's energy relative to the fixed sea's (a moderate breeze): glassy in a calm, rough in a gale. */
+export function chopEnergy(windSpeed, windWaveHeight = 0) {
+  const fromWind = 0.3 + 0.7 * Math.pow(Math.max(0, windSpeed) / 5, 0.9);
+  const fromSea = 0.6 + 1.5 * Math.max(0, windWaveHeight);
+  return clamp(Math.max(fromWind, windWaveHeight > 0.05 ? fromSea : 0), 0.3, 2.6);
+}
+
+/** The share of the open sea whitecaps break on (0..1): from a gentle breeze (scattered) to a near gale (everywhere). */
+export function whitecapCover(windSpeed) {
+  return Math.pow(clamp((windSpeed - 4.5) / 10, 0, 1), 1.2);
+}
+
+/**
+ * The water's parameters for a live snapshot ({ sea, weather }): the tide's level and the bands' mark (m); the
+ * breakers' scale (relative to the fixed sea's) and period (s); the open sea's swell (m), its period (s) and where it
+ * comes from (deg); the wind sea's energy (relative), where it comes from (deg) and the wind's speed (m/s), the bay's
+ * calm (0..1: glassy), the whitecaps' cover (0..1) and the spray against the walls (0..1: a big swell's).
+ */
+export function seaParams({ sea, weather }) {
+  const swell = effectiveSwell(sea);
+  const windSpeed = weather?.windSpeed ?? 3;
+  const T = swell.period;
+  return {
+    level: sea.tide?.level ?? 0,
+    mark: bandMark(sea.tide),
+    surf: clamp(swell.height / NOMINAL_SWELL, 0.04, 5),
+    surfPeriodA: 0.8 * T, surfPeriodB: T,
+    swell: swell.height, swellPeriod: T, swellFrom: swell.from,
+    chop: chopEnergy(windSpeed, sea.windWaveHeight ?? 0),
+    chopFrom: Number.isFinite(weather?.windFrom) ? weather.windFrom : 300, windSpeed,
+    // flat & glassy inside the bay under a small swell and light airs
+    calm: smooth(0.7, 0.25, swell.height) * smooth(6, 3, windSpeed),
+    whitecaps: whitecapCover(windSpeed),
+    spray: smooth(1.8, 3.4, swell.height)
+  };
+}
+
+// --- the HUD's words ----------------------------------------------------------------------------------------------------
+
+const DOUGLAS = [
+  [0, 'calm (glassy)'], [0.1, 'calm (rippled)'], [0.5, 'smooth'], [1.25, 'slight'], [2.5, 'moderate'], [4, 'rough'],
+  [6, 'very rough'], [9, 'high'], [14, 'very high'], [Infinity, 'phenomenal']
+];
+/** The Douglas sea scale for a significant wave height (m): { degree 0..9, name }. */
+export function douglas(height) {
+  const h = Math.max(0, height || 0);
+  const degree = h === 0 ? 0 : DOUGLAS.findIndex(([top]) => h <= top);
+  return { degree, name: DOUGLAS[degree][1] };
+}
+
+/**
+ * The surf on the beaches (the breakers' height, m, as the water draws them): { zurriola, ondarreta, concha }, and the
+ * Douglas scale of the open sea. Zurriola, open to the swell, gets the most; Santa Klara and Igeldo shelter the bay's.
+ */
+export function surfReport(sea) {
+  const { surf } = seaParams({ sea, weather: null });
+  const at = (e) => Math.round((e * 1.5 + 0.12) * surf * 10) / 10;
+  return {
+    zurriola: at(BEACH_EXPOSURE.zurriola), ondarreta: at(BEACH_EXPOSURE.ondarreta), concha: at(BEACH_EXPOSURE.concha),
+    sea: douglas(sea.waveHeight)
+  };
+}
+
+// --- the low-water channels ---------------------------------------------------------------------------------------------
+
+/**
+ * Where the water keeps running at low tide though the terrain's sea floor would dry: the isobaths reach neither the
+ * Urumea's mouth nor Santa Klara's jetty, and the harmonic fill between them and the LiDAR's shore leaves a bar across
+ * the river (-0.4 m) and the ferries' landing in half a metre of water. With the real-time switch on these channels are
+ * dredged to `floor` (m) along `path` ([x, z, ...], local frame), fully within `inner` m of it and blending back into
+ * the fill by `outer`, wherever the fill lies under mean sea level (sea-uniforms.js lowers the terrain and the water's
+ * sea floor alike; with the switch off nothing changes). Traced on the terrain along the river's thalweg (from the bar
+ * out to the -3 m contour and up to the channel's -3.5 m bed) and along the ferries' lanes (js/donostia/data-boats.js
+ * FERRY) to the jetty's head.
+ */
+export const LOW_WATER_CHANNELS = [
+  { name: 'Urumea mouth', floor: -3.3, inner: 12, outer: 30,
+    path: [505, -541, 530, -500, 580, -460, 622, -420, 648, -380, 668, -330, 690, -290, 715, -250, 730, -220] },
+  { name: 'Santa Klara landing', floor: -3.6, inner: 13, outer: 24,
+    path: [-850, 140, -905, 140, -925, 131, -922, 117, -916, 110] }
+];
+
+/** The sea floor at (x, z) once the low-water channels are dredged, from the terrain's `bed` there (m). */
+export function channelFloor(x, z, bed) {
+  let floor = bed;
+  for (const { floor: target, inner, outer, path } of LOW_WATER_CHANNELS) {
+    let d = Infinity;
+    for (let k = 0; k + 3 < path.length; k += 2) {
+      const ax = path[k], az = path[k + 1], dx = path[k + 2] - ax, dz = path[k + 3] - az;
+      const t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0, 1);
+      d = Math.min(d, Math.hypot(x - ax - t * dx, z - az - t * dz));
+    }
+    const mask = smooth(outer, inner, d) * smooth(0.1, -0.4, bed);
+    floor = Math.min(floor, bed + (target - bed) * mask);
+  }
+  return floor;
+}
+
+// --- the dry pockets -----------------------------------------------------------------------------------------------------
+
+/** m: the highest the live sea is drawn to rise (a spring tide's high water and a storm surge on top) */
+export const HIGH_WATER = 2.2;
+const WATER_CLASS = 7, SEA_BED = 0.5; // the terrain's water class; water cells this low are the sea's or the river's
+
+/**
+ * Ground below `maxLevel` that the sea cannot reach, which the sea plane, one level everywhere, would flood once the
+ * tide rises over it: railway cuttings, underpasses, the beds of ponds, yards behind walls. Returned as rectangles [x0,
+ * z0, x1, z1] (m, local frame) that cover those samples (and the terrain's triangles round them) and none the sea
+ * reaches below maxLevel, for js/donostia/water.js to leave as holes in the plane while the live tide runs. grids: the
+ * terrain's core and then its context ({ x0, z0, w, h, res, heights, classes }, samples at cell centres); the context's
+ * samples under the core are left to it. The sea reaches what is connected, through samples below maxLevel, to its
+ * own and the river's water or to a grid's edge.
+ */
+export function dryPockets(grids, maxLevel = HIGH_WATER) {
+  const rects = [];
+  const [core] = grids;
+  const underCore = (x, z) => x > core.x0 + core.res && x < core.x0 + (core.w - 1) * core.res && z > core.z0 + core.res &&
+    z < core.z0 + (core.h - 1) * core.res;
+  for (const g of grids) {
+    const { w, h, res, heights, classes } = g, n = w * h;
+    const skip = g === core ? null : (i, j) => underCore(g.x0 + (i + 0.5) * res, g.z0 + (j + 0.5) * res);
+    const low = (k) => heights[k] < maxLevel;
+    // the sea's reach
+    const wet = new Uint8Array(n), stack = [];
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const k = j * w + i, edge = i === 0 || j === 0 || i === w - 1 || j === h - 1;
+        if ((classes[k] === WATER_CLASS && heights[k] <= SEA_BED) || (edge && low(k))) { wet[k] = 1; stack.push(k); }
+      }
+    }
+    while (stack.length) {
+      const k = stack.pop(), i = k % w;
+      for (const m of [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w]) {
+        if (m >= 0 && m < n && !wet[m] && low(m)) { wet[m] = 1; stack.push(m); }
+      }
+    }
+    // the rest below it, pocket by pocket; each pocket's bounds (a sample and a half round), split while they take in
+    // any of the sea's
+    const done = new Uint8Array(n);
+    for (let k0 = 0; k0 < n; k0++) {
+      if (wet[k0] || done[k0] || !low(k0)) continue;
+      const cells = [];
+      done[k0] = 1;
+      stack.push(k0);
+      while (stack.length) {
+        const k = stack.pop(), i = k % w;
+        cells.push(k);
+        for (const m of [i > 0 ? k - 1 : -1, i < w - 1 ? k + 1 : -1, k - w, k + w]) {
+          if (m >= 0 && m < n && !wet[m] && !done[m] && low(m)) { done[m] = 1; stack.push(m); }
+        }
+      }
+      const cover = (list, depth) => {
+        let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
+        for (const k of list) {
+          const i = k % w, j = (k - i) / w;
+          i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+        }
+        const a0 = Math.max(0, i0 - 1), a1 = Math.min(w - 1, i1 + 1), b0 = Math.max(0, j0 - 1), b1 = Math.min(h - 1, j1 + 1);
+        let clash = false;
+        for (let j = b0; j <= b1 && !clash; j++) for (let i = a0; i <= a1 && !clash; i++) clash = wet[j * w + i] === 1 && low(j * w + i);
+        if (clash && depth < 12 && list.length > 1) {
+          // halve along the longer side
+          const alongI = i1 - i0 >= j1 - j0, mid = alongI ? (i0 + i1) / 2 : (j0 + j1) / 2;
+          const lo = list.filter((k) => (alongI ? k % w : Math.floor(k / w)) <= mid), hi = list.filter((k) => (alongI ? k % w : Math.floor(k / w)) > mid);
+          if (lo.length && hi.length) { cover(lo, depth + 1); cover(hi, depth + 1); return; }
+        }
+        if (clash) return; // (a single sample against the sea's: left to it)
+        const x = (i) => g.x0 + (i + 0.5) * res, z = (j) => g.z0 + (j + 0.5) * res;
+        if (skip && skip(x((i0 + i1) / 2), z((j0 + j1) / 2))) return;
+        // the samples' cells and half of their neighbours' (the triangles that dip under the level)
+        rects.push([x(i0) - res, z(j0) - res, x(i1) + res, z(j1) + res]);
+      };
+      cover(cells, 0);
+    }
+  }
+  return rects;
+}
+
+// --- the spray's places --------------------------------------------------------------------------------------------------
+
+const SPRAY_MAX = 260, SPRAY_SPACING = 16; // places, m between them
+// The coast searched (local frame, m): Igeldo's cliffs to Ulia's, Santa Klara and the bay
+const SPRAY_COAST = { x0: -2600, z0: -1500, x1: 3200, z1: 900 };
+const fract = (v) => v - Math.floor(v);
+
+/**
+ * Where a big swell breaks on steep shore and throws up spray (js/donostia/spray.js): water exposed to the swell
+ * (exposure 0.35 and up) with land within two cells standing 1.5 m and more out of mean sea level (a wall, a rock
+ * platform, a cliff: a beach's sand slopes in far lower), at the last of the water before it; the most exposed first,
+ * one every SPRAY_SPACING m. fields: the water fields' RGBA bytes on the context grid ({ data, width, height }: R exposure, G river; tools/
+ * donostia/build.mjs), context: that grid's { x0, z0, res }, heightAt(x, z): the terrain. Returns [[x, z, phase (0..1:
+ * neighbours hit by the same crest a little apart), strength (0..1)], ...].
+ */
+export function sprayPlaces(fields, context, heightAt) {
+  const { data, width: w, height: h } = fields;
+  const { x0, z0, res } = context;
+  const found = [];
+  const i0 = Math.max(2, Math.floor((SPRAY_COAST.x0 - x0) / res)), i1 = Math.min(w - 2, Math.ceil((SPRAY_COAST.x1 - x0) / res));
+  const j0 = Math.max(2, Math.floor((SPRAY_COAST.z0 - z0) / res)), j1 = Math.min(h - 2, Math.ceil((SPRAY_COAST.z1 - z0) / res));
+  for (let j = j0; j < j1; j++) {
+    for (let i = i0; i < i1; i++) {
+      const k = 4 * (j * w + i), e = data[k] / 255;
+      if (e < 0.35 || data[k + 1] > 0.3 * 255) continue;
+      const x = x0 + (i + 0.5) * res, z = z0 + (j + 0.5) * res;
+      const bed = heightAt(x, z);
+      if (bed > -0.3 || bed < -20) continue;
+      let land = null;
+      for (let r = 1; r <= 2 && !land; r++) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+          const lx = x + dx * r * res, lz = z + dz * r * res, y = heightAt(lx, lz);
+          if (y > 1.5 && (!land || y > land.y)) land = { x: lx, z: lz, y };
+        }
+      }
+      if (!land) continue;
+      // the last of the water before the land
+      let fx = x, fz = z;
+      for (let s = 0.125; s < 1; s += 0.125) {
+        const px = x + (land.x - x) * s, pz = z + (land.z - z) * s;
+        if (heightAt(px, pz) > -0.5) break;
+        fx = px;
+        fz = pz;
+      }
+      found.push({ x: fx, z: fz, e: e * Math.min(1, (land.y - 1.5) / 3 + 0.4) });
+    }
+  }
+  found.sort((a, b) => b.e - a.e);
+  const kept = [], cells = new Map();
+  for (const f of found) {
+    if (kept.length >= SPRAY_MAX) break;
+    const ci = Math.floor(f.x / SPRAY_SPACING), cj = Math.floor(f.z / SPRAY_SPACING);
+    let close = false;
+    for (let a = -1; a <= 1 && !close; a++) {
+      for (let b = -1; b <= 1 && !close; b++) {
+        close = (cells.get(`${ci + a},${cj + b}`) || []).some((k) => Math.hypot(k.x - f.x, k.z - f.z) < SPRAY_SPACING);
+      }
+    }
+    if (close) continue;
+    kept.push(f);
+    const key = `${ci},${cj}`;
+    cells.set(key, [...(cells.get(key) || []), f]);
+  }
+  return kept.map((f, n) => [f.x, f.z, fract(f.x * 0.0071 + f.z * 0.0043 + fract(Math.sin(n * 127.1 + 311.7) * 43758.5453) * 0.35),
+    Math.min(1, f.e)]);
+}
+
+// --- the port's floating pontoons ----------------------------------------------------------------------------------------
+
+/** The pontoons' level (m, the floats' waterline): the water's, down to where they settle on the basins' bed. */
+export function pontoonLevel(level) {
+  return Math.max(level, MARINA.level.ground);
+}
+
+/** A gangway's pitch (rad, + down to the pontoon) hinged at hingeY on the quay, its foot on the deck at `level`. */
+export function gangwayPitch(hingeY, length, level) {
+  const drop = hingeY - (pontoonLevel(level) + MARINA.level.freeboard);
+  return Math.asin(clamp(drop / length, -0.95, 0.95));
+}

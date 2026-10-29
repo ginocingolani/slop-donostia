@@ -561,6 +561,16 @@ export function createFacadeMaterial() {
     // jogs in a facade: plain wall; party walls & jogs stay flat
     col.assign(mix(col, wallBase.mul(mottle.add(1.0)), kSolid));
     reliefV.assign(reliefV.mul(float(1.0).sub(kBlank)).mul(float(1.0).sub(kSolid)));
+    // the real-time weather's rain (cityUniforms.uRainWetness, js/donostia/weather.js; 0 without it, and this uniform
+    // branch skipped): the wall a little darker and glossier, its foot much more, up to a ragged line where the
+    // splashing stops
+    If(cityUniforms.uRainWetness.greaterThan(0.0), () => {
+      const wet = cityUniforms.uRainWetness;
+      const ragged = noise2D(vec2(u.mul(1.3), seed.mul(57.0))).mul(0.6);
+      const splash = float(1.0).sub(smoothstep(0.3, 1.25, v.sub(ragged)));
+      col.assign(col.mul(float(1.0).sub(splash.mul(0.38).add(0.1).mul(wet))));
+      roughV.assign(mix(roughV, roughV.mul(0.55), wet.mul(splash.mul(0.5).add(0.5))));
+    });
     return col;
   })();
 
@@ -709,11 +719,12 @@ export function createRoofMaterial() {
       dGlassV.assign(dGlass);
       dLitV.assign(step(float(1.0).sub(litShare()), hash2D(vec2(floor(gx), runLen.mul(1.7)).add(seed.mul(31.0)))));
     });
-    return col;
+    // rain-darkened (the real-time weather's; 0 without it)
+    return col.mul(float(1.0).sub(cityUniforms.uRainWetness.mul(0.22)));
   })();
 
   mat.roughnessNode = mix(mix(mix(float(0.82), float(0.6), isCover(COVER.SLATE)), float(0.42), max(isCover(COVER.ZINC), isCover(COVER.METAL))), float(0.1), dGlassV)
-    .add(isSurf(SURF.PARAPET).mul(0.08));
+    .add(isSurf(SURF.PARAPET).mul(0.08)).mul(float(1.0).sub(cityUniforms.uRainWetness.mul(0.45))); // glossier in the rain
   mat.metalnessNode = max(isCover(COVER.ZINC), isCover(COVER.METAL)).mul(slope.add(step(0.95, nW.y).mul(isSurf(SURF.FLAT)))).mul(0.45).mul(float(1.0).sub(dormerV))
     .add(dGlassV.mul(0.3));
   mat.emissiveNode = vec3(1.0, 0.78, 0.5).mul(dGlassV).mul(dLitV).mul(0.65).mul(cityUniforms.uInteriorGlow);

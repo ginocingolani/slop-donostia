@@ -63,6 +63,8 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags), the island ferry's route | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | The lights' characters, elevations, ranges and structures, San Sebastián (nos. 1788-1800): [NGA Pub. 113, List of Lights, Radio Aids and Fog Signals](https://msi.nga.mil/Publications/NGALOL) (2019 edition, corrected to Notice to Mariners 26/2019), the check on OSM's seamarks (`bake-seamarks.mjs`) | U.S. National Geospatial-Intelligence Agency | U.S. Government work, no copyright claimed (public domain) |
 | La Concha's leading lights' arcs of visibility and the red pierhead's elevation (`bake-seamarks.mjs`): the list of lights of "Costa Cantábrica" (Spanish edition, 2005), p. 201 | RCC Pilotage Foundation (John Lawson) | facts only: no text, plan or photograph of the book is reproduced |
+| The weather and the sea now, for the HUD's real-time switch (Orain): Open-Meteo's [forecast API](https://open-meteo.com/en/docs) (`current`: weather code, temperature, cloud cover, visibility, precipitation, wind) and [marine API](https://open-meteo.com/en/docs/marine-weather-api) (waves, swell, sea level), asked by the browser every 15 minutes while the switch is on (`js/donostia/live-state.js`); nothing is stored or committed | Open-Meteo.com ("Weather & sea data by Open-Meteo.com", `LIVE_CREDIT`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| The sun's and the moon's places for the real-time switch: the Astronomical Almanac's low-precision sun and Meeus, *Astronomical Algorithms* ch. 47 (main terms), as in SunCalc; refraction by Bennett | the formulas (facts) | none needed |
 | Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Licences
@@ -262,7 +264,7 @@ map.
   bay). The runtime eases them along those lanes (slower through the bends, accelerating & stopping gently), with
   pauses at each end, one at the island while the other is in port, from 10:00 to 20:00 (the summer timetable,
   motorasdelaisla.com) by the time of day the lighting shows (`presets.js`'s `clock`: under way at midday, moored at
-  the other three).
+  the other three; with the real-time switch on, the city's own hour).
 - Miramar jauregia (`js/donostia/landmarks/miramar.js`) is built on the municipal outline in the palace's own frame:
   walls take each edge's height and finish from where it lies (the garden front's canted bays one storey high, the
   loggia, the gallery, the service wing), roofs are rectangles of the plan with jettied half-timbered gables, hips or
@@ -377,10 +379,84 @@ map.
   (`js/donostia/seamark-timing.js`, which the lighthouses' lanterns and Igeldo's beams share), a revolving optic's
   flashes reaching each bearing as its beams sweep past. In the app's console (`?debug`),
   `slopDebug.world.modules.seamarks.userData.freeze(t)` stops that clock at t s, for renders of a given moment.
+- The sea in real time (`js/donostia/sea-state.js`, no three.js, tested by `tests/donostia-sea.test.mjs`; `water.js`,
+  `sea-uniforms.js`, `spray.js`): with the real-time switch on, the water reads `live-state.js`'s snapshot four times a
+  second and eases into it (everything blends in over 1.5 s from the fixed sea and back out when the switch goes off,
+  after which the fixed sea's uniforms hold exactly their old values and the extras sit in branches that skip them).
+  - The tide: the sea plane stands at `sea.tide.level` (Open-Meteo's `sea_level_height_msl`: about −2.4 to +1.5 m at
+    a spring tide), and so do what floats on it: the pontoons and their gangways' pitch (down to where the pontoons
+    settle on the basins' bed, −2.55 m), the moored boats, the ferries and their wakes, the buoys. The tidal bands
+    (the beaches' wet sand, the walls', rocks', piles', ladders' and slipway's dark band and weed) are drawn from a
+    mark, the last high water less a spring tide's 1.5 m (`bandMark`), so a neap tide's sit lower and the ebb bares
+    the weed; the swash on the sand and on the rocks runs at the water's edge. What the ebb uncovers below the mark
+    turns wet: flat seabed to rippled wet sand and silt, the rest (the quays' and stairs' feet, the rubble the 2 m grid
+    leaves against the moles) dark and weed-grown. The ladders and the fishing quay's strakes, which the bake stops at
+    −1.2 and −0.8 m, go on down past the lowest tides (`LOW_WATER`, −2.6 m) in a mesh only the live tide shows.
+  - Two low-water channels (`LOW_WATER_CHANNELS`): the isobaths reach neither the Urumea's mouth nor Santa Klara's
+    jetty, and the fill between them and the LiDAR's shore leaves a bar across the river at −0.4 m and the ferries'
+    landing in half a metre of water, so a spring tide's low water stranded the river in a pond and the ferries on the
+    sand. With the switch on, a channel traced along the river's thalweg (to −3.3 m) and one along the ferries' lanes
+    to the jetty's head (−3.6 m) are dredged into the terrain's vertices and the water's sea floor alike
+    (`sea-uniforms.js` `channelFloor`), only where the fill lies under mean sea level.
+  - Dry pockets (`dryPockets`): the sea is one plane, so a tide over ground it cannot reach (the railway cuttings at
+    Anoeta and Amara, underpasses, the ponds' beds) would show through it. While the live tide runs the plane is cut
+    with holes over the ground below the day's high water (at most `HIGH_WATER`, 2.2 m) that no path below it joins
+    to the sea or the river, a flood fill of the terrain's two grids (~0.1 s, again when the high water steps by
+    0.25 m).
+  - Waves (`seaParams`): the breakers on the beaches scale with the swell that reaches the coast (the total wave
+    height, cut down by how far its direction lies outside the W-NNE sector the coast is open to: `openTo`) against
+    the 1.2 m north-westerly they were drawn for, Zurriola's the most and La Concha's and Ondarreta's as their
+    exposure (`water.png`'s) already shelters them, none in the port; their period is the swell's, and a big swell
+    breaks all along the shore and trails its foam further. The open sea gets the swell as three long-crested trains
+    from its direction (deep-water wavelengths, the beat gathering them into sets), fading into the bay and gone in
+    the port. The wind sea's four texture layers turn downwind of `weather.windFrom` (spread wider the shorter they
+    are) with an energy from `windSpeed` and `windWaveHeight` (`chopEnergy`: 0.3 in a calm, 1 at the fixed sea's 5 m/s
+    breeze, 2.6 in a gale), the bay glassy under a small swell and light airs; whitecaps from 4.5 m/s
+    (`whitecapCover`, after the Beaufort scale's descriptions), patches drawn out downwind that dissolve into a sheen
+    at a distance. In a swell of 2 m and more (`spray`, full at 3.4 m), every wave that breaks on steep shore throws
+    up a burst of spray, timed to the swell's period and as high as the swell is big (`sprayPlaces`: water exposed to
+    the swell with land standing 1.5 m over mean sea level within two cells, one place every 16 m: the Paseo Nuevo,
+    the Peine del Viento, the Zurriola dike, the cliffs; never a beach): one instanced draw, built the first time a
+    big swell comes.
+  - For the HUD: `surfReport(sea)` (the breakers on Zurriola, Ondarreta and La Concha as the water draws them, and the
+    open sea's Douglas sea state, `douglas`), the water's `userData.seaState()` (the eased values shown).
+  - Debug: `slopDebug.live.setLiveEnabled(true)`, then `slopDebug.live.setLiveOverride({ sea: { level: -2.4,
+    waveHeight: 4, swellHeight: 4, swellFrom: 320, swellPeriod: 14 }, weather: { windSpeed: 12, windFrom: 320 } })`.
 - Building heights: each 1:500 outline takes the area-weighted b5m `AVERAGE_HEIGHT` of the b5m footprints under it.
   Roofs come from `MAX_HEIGHT − AVERAGE_HEIGHT` (a hip roof of rise r averages a third of it); gaps over 12 m are
   neighbouring towers or trees caught in the footprint, not roofs. b5m construction dates are cadastral and often
   record refurbishments.
+- The real-time weather's effects (`js/donostia/weather.js`, its numbers in `js/donostia/weather-model.js`, tested in
+  `tests/donostia-weather.test.mjs`), only with the real-time switch on; with it off nothing draws and every uniform
+  they move holds the value that gives the old picture:
+  - What falls: drizzle, rain, showers, a storm's downpour and snow from Open-Meteo's weather code and its 15-minute
+    precipitation (mm/h, snowfall cm/h), one instanced draw of camera-facing streaks or flakes (up to 60,000) in a 30 x
+    24 x 30 m box that follows the camera. The drops keep their places in the city (the box wraps them round), fall at
+    their kind's terminal speed (Gunn & Kinzer: drizzle ~2 m/s, rain 6.5-8.6 m/s, snow ~1 m/s) and drift with the
+    wind, so a storm's rain slants; a drop thinner than a pixel is drawn a pixel wide and as much fainter. They take
+    the hemisphere light the time of day sets, the street lamps' warm glints low over the streets at night
+    (`uInteriorGlow`) and the lightning's flash. A 64 m shelter map round the camera (the ground, the ground over a
+    tunnel, the water's surface, the buildings' eaves inside their outer rings and out of their courtyards) keeps the
+    drops out from under roofs, arcades and tunnels; within 12 m some of the rain's instances are splashes, landing on
+    that surface (the paving, the sand, the roofs, the sea).
+  - Lightning in a storm, two to six flashes a minute at random, one to four strokes each: the hemisphere light, the
+    environment's intensity and the sky's exposure (and the night sky's colour) brighten over whatever the time of day
+    set (as bright as an overcast day at night, a fraction of the daylight by day), the rain with them; a bolt, a
+    second draw only while it shows, now and then. Thunder is an event after the distance's delay (~3 s a km,
+    `weather.userData.onThunder(fn)`): Slop Donostia has no sound yet.
+  - Wetness: `cityUniforms.uRainWetness`, on top of the time of day's `uRoadWetness` (the presets' damp streets at
+    night, which the sky's part keeps), runs on the city's clock: towards ~0.45 under drizzle and ~0.75-0.9 under rain,
+    within a few minutes, and back down over an hour or so after it (sooner in sunshine and wind). It drives the
+    ground's damp, film and puddles (rings spread on them while it rains), darkens the beaches' dry sand to a damp
+    ochre, the grass and earth a little, the facades (their foot most, up to a ragged splash line) and the roofs, and
+    wets the Plaza de la Constitución's paving (not under its arcades). When the switch comes on the streets start as
+    wet as the weather leaves them.
+  - Wind (`js/donostia/weather-uniforms.js`): the trees' sway takes the wind's direction, a strength from its speed
+    (today's fixed breeze is ~4 m/s), a steady lean and its gusts (a smooth random series between the mean wind and the
+    reported gust); the tifo's flags turn to stream downwind and flap harder; Alderdi Eder's ikurriña flies from its
+    pole with the wind (`landmarks/wind-flag.js`; hanging in a calm), the still flag folding away meanwhile.
+  - In the console (`?debug`): `slopDebug.weather.strike({ distance, bearing, bolt })`, `hold(flash)`, `snap(wet)`
+    (settle the eased rain and wind, and with `wet` the streets, on the weather now), `setWetness(w)`, `state()`.
 - The light-building layers repeat each other (EraikinArinak redraws almost every ESTALPEA shed, BEROTEGIA greenhouse
   and KIOSKOA kiosk): `build.mjs` extrudes a light building only when an earlier outline does not already cover it.
   A few stretches of wall are drawn as buildings (ERAIKINA): an outline under 8 m² and under 0.9 m wide is left out
@@ -391,6 +467,36 @@ map.
   from their pixels committed.
 - Shapefile rings: outer rings run clockwise and holes counter-clockwise; `extract.py` groups them by orientation, so
   a courtyard that touches its building's outline stays a hole.
+- Real time (the HUD's Orain switch, key 5; off by default, remembered in `localStorage` as `donostia-live`): the city
+  follows its own clock, weather and sea (`js/donostia/live-state.js`; data by Open-Meteo.com, CC BY 4.0, credited in
+  the data popover and on the switch's readout). The sky's part (`js/donostia/time-of-day.js`, applied each frame by
+  `js/donostia/live-sky.js`):
+  - The four looks are keyframes on the real sun's elevation, each shown exactly where the sun stands at its keyframe:
+    Gaua at -12° and below, Ordu urdina at -3°, Ilunabarra at 11° (the preset's own sun, 20:30 in mid-June), Eguerdia
+    from 25° (winter's noon reaches 23°). Every field the presets set (lights, sky, haze, the city's glow, the colour
+    grade) is blended between neighbours with a smoothstep, so dawn and dusk have no step and a timelapse no pop.
+  - The light and the sky's sun come from the real sun; below 11° it eases down to hang at 5° from -3° on, as the
+    twilight preset's (the sun disc sets with the real sun, the glow stays). From -4° to -11° they turn to the moon,
+    where it stands, or to the night preset's sky while it is down; the direct light dips while they turn. The moon's
+    light grows with its phase (a half moon gives a third of a full one's) and its height; a new-moon night has a third
+    of the light and a darker sky.
+  - The weather acts on the blend: the cloud cover sets the sky's clouds (the calm defaults, 20% with 10% low, keep
+    the look's own), an overcast dims and greys the direct light and lifts the sky's fill (by night it hides the moon
+    and gives back the city's glow), rain and storms darken and grey the sky, and the visibility sets the haze (30 km
+    keeps the look's own, 40 km is clearer, 400 m is fog: 98% gone at 400 m, under a lower layer). The weather eases
+    over a few seconds; the switch fades in over two; picking a time turns it off and shows that preset as before.
+  - The environment map (the sky in a PMREM cube: the image-based light, the haze's colour, the reflections) is baked
+    again only when the sky has changed enough to show (the sun or the moon 0.75° on, its brightness 4%, its clouds, haze
+    or grey a step) and at most every 0.15 s: on the real clock every 3 minutes or so by day and by moonlight, every
+    20 s at dusk and dawn (650 to 770 bakes a day); a bake takes ~0.4 ms of CPU and a few ms of GPU.
+  - What keyed on the preset follows the clock: `cityUniforms.uInteriorGlow` (windows, lamps, the boats' and the
+    landmarks' night lights, the seamarks' and Igeldo's beams), the ferries' hours (`liveSky.hour()`), the colour
+    grade. For the other effects, `cityUniforms.uDaylight` (0 night .. 1 a clear day, the weather's gloom included) and
+    `cityUniforms.uSkySunDir` (towards the shadow-casting light, sun or moon) hold either way, and `liveSky.state` the
+    same as numbers with the real sun's and moon's directions and the eased weather.
+  - In the console (`?debug`): `slopDebug.timeOfDay()` gives the blend as it stands (the keyframes' weights, the sun, the
+    moon, the light, the weather, the bakes), `await slopDebug.timeOfDay.benchBake(20)` times a bake, and
+    `slopDebug.live.setLiveOverride({ time, rate, weather })` forces any moment, a timelapse or a weather.
 - The national Catastro does not cover Gipuzkoa (foral cadastre), hence b5m.
 - jsDelivr cannot serve arbitrary three.js commits (the repository exceeds its 50 MB package limit), so `index.html`
   pins the npm release instead of a dev-branch SHA.

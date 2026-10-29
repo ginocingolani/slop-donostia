@@ -5,6 +5,7 @@ import {
   normalLocal, normalGeometry, normalView, normalViewGeometry, positionViewDirection, cameraViewMatrix, instanceIndex,
   storage, transformNormal
 } from 'three/tsl';
+import { weatherUniforms } from './weather-uniforms.js';
 
 // js/donostia/trees-material.js
 // Materials of Donostia's trees (js/donostia/vegetation.js). Adapted from createTreeMaterial, FoliageLightingModel,
@@ -72,8 +73,11 @@ class DonostiaTreeMaterial extends THREE.MeshStandardNodeMaterial {
   }
 }
 
-// Prevailing wind (xz): the north-westerlies off the Bay of Biscay, blowing south-east over the city
-const TREE_WIND = vec2(0.6, 0.8);
+// The wind (xz, the way it blows): the prevailing north-westerlies off the Bay of Biscay, blowing south-east over the
+// city, (0.6, 0.8); with the real-time switch on, the real wind, and its strength in the sway & a steady lean
+// (weatherUniforms: their defaults give the old fixed breeze)
+const TREE_WIND = weatherUniforms.uWindDir;
+const { uWindSway, uWindLean, uGustPhase } = weatherUniforms;
 
 // Bark by species (uv in metres: x round the stem, y along it), species order of trees-species.js SPECIES
 const barkColour = Fn(([species, bu, rnd]) => {
@@ -141,12 +145,12 @@ export function createTreeMaterial(leafAtlas, instances) {
     const g = positionGeometry;
     const phase = rnd.mul(6.2832);
     // gusts rolling downwind across the city
-    const gust = sin(time.mul(0.5).sub(dot(p.xz, TREE_WIND).mul(0.045))).mul(0.5).add(0.5);
-    const strength = gust.mul(gust).mul(0.7).add(0.3);
+    const gust = sin(time.mul(0.5).add(uGustPhase).sub(dot(p.xz, TREE_WIND).mul(0.045))).mul(0.5).add(0.5);
+    const strength = gust.mul(gust).mul(0.7).add(0.3).mul(uWindSway);
     // the whole tree bends with height, leaning downwind and rocking across it
     const h = g.y.div(11.0);
     const bend = h.mul(h);
-    const lean = sin(time.mul(0.85).add(phase)).mul(0.45).add(0.55).mul(strength).mul(0.2);
+    const lean = sin(time.mul(0.85).add(phase)).mul(0.45).add(0.55).mul(strength).mul(0.2).add(uWindLean.mul(gust.mul(0.5).add(0.5)));
     const rock = sin(time.mul(0.67).add(phase.mul(1.7))).mul(0.06).mul(strength);
     const sway = vec3(TREE_WIND.x.mul(lean).sub(TREE_WIND.y.mul(rock)), 0.0, TREE_WIND.y.mul(lean).add(TREE_WIND.x.mul(rock))).mul(bend);
     // branches bob, the phase flowing smoothly through the crown so joints stay together
@@ -249,7 +253,9 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
     // shrink away past the draw distance
     const fade = float(1.0).sub(smoothstep(uniforms.farEnd.mul(0.85), uniforms.farEnd, length(centre.sub(uniforms.view))));
     // a slow sway of the whole crown, so the far woods are not frozen
-    const sway = sin(time.mul(0.7).add(rnd.mul(6.2832)).sub(dot(P.xz, TREE_WIND).mul(0.03))).mul(0.06).mul(S.z).mul(select(isCrown, g.y.add(1.0), 0.0));
+    const crownUp = select(isCrown, g.y.add(1.0), 0.0);
+    const sway = sin(time.mul(0.7).add(rnd.mul(6.2832)).sub(dot(P.xz, TREE_WIND).mul(0.03))).mul(0.06).mul(S.z).mul(crownUp)
+      .mul(uWindSway).add(uWindLean.mul(S.x.add(S.z).div(11.0)).mul(crownUp).mul(0.5));
     return P.xyz.add(yawed(local).mul(far.mul(fade))).add(vec3(TREE_WIND.x, 0.0, TREE_WIND.y).mul(sway));
   })();
 

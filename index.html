@@ -56,6 +56,16 @@
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M5.5 18.5 7 17M17 7l1.5-1.5"/></symbol>
       <symbol id="i-twilight" viewBox="0 0 24 24"><path d="M3 15.5h18M7.5 19h9M8 15.5a4 4 0 0 1 8 0M17.5 4v3.2M15.9 5.6h3.2M7 7.4v1.8M6.1 8.3h1.8"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z"/></symbol>
+      <!-- the real-time switch (Orain) and its readout: a clock, the weather, the tide and the waves -->
+      <symbol id="i-live" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.2V12l3.3 2.1"/></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.4 17.6h9.9a3.7 3.7 0 0 0 .4-7.4 5.4 5.4 0 0 0-10.3 1.3 3.1 3.1 0 0 0 0 6.1z"/></symbol>
+      <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.4 14.2h9.9a3.5 3.5 0 0 0 .4-7 5.2 5.2 0 0 0-10 1.2 2.9 2.9 0 0 0-.3 5.8zM8.6 17.4l-1.1 2.4M12.6 17.4l-1.1 2.4M16.6 17.4l-1.1 2.4"/></symbol>
+      <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7.4 14.2h9.9a3.5 3.5 0 0 0 .4-7 5.2 5.2 0 0 0-10 1.2 2.9 2.9 0 0 0-.3 5.8zM8.5 18h.01M12 20h.01M15.5 18h.01" stroke-width="2.4"/></symbol>
+      <symbol id="i-storm" viewBox="0 0 24 24"><path d="M7.4 14.2h9.9a3.5 3.5 0 0 0 .4-7 5.2 5.2 0 0 0-10 1.2 2.9 2.9 0 0 0-.3 5.8zM12.8 15.4l-2 3.3h3l-2 3.3"/></symbol>
+      <symbol id="i-fog" viewBox="0 0 24 24"><path d="M4 8.5h13M7 12.5h13M4 16.5h11"/></symbol>
+      <symbol id="i-tide" viewBox="0 0 24 24"><path d="M3 17c1.5-1.3 3-1.3 4.5 0s3 1.3 4.5 0 3-1.3 4.5 0 3 1.3 4.5 0M12 3.6v9.2M9.6 6 12 3.6 14.4 6M9.6 10.4l2.4 2.4 2.4-2.4"/></symbol>
+      <symbol id="i-waves" viewBox="0 0 24 24"><path d="M3 10c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0M3 15.5c1.5-1.4 3-1.4 4.5 0s3 1.4 4.5 0 3-1.4 4.5 0 3 1.4 4.5 0"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.2 3.4 19h17.2L12 4.2zM12 10v4.2M12 16.6v.2"/></symbol>
       <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21.2s-6.6-5.7-6.6-11.2a6.6 6.6 0 0 1 13.2 0c0 5.5-6.6 11.2-6.6 11.2z"/><circle cx="12" cy="10" r="2.4"/></symbol>
       <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4.5 3.5 6.6v13l5.5-2.1 6 2.1 5.5-2.1v-13L15 6.6 9 4.5zM9 4.5v13M15 6.6v13"/></symbol>
       <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
@@ -109,6 +119,8 @@
         <button class="time-btn" data-time="midday" type="button" title="Eguerdia · midday [2]"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label">Eguerdia</span></button>
         <button class="time-btn" data-time="twilight" type="button" title="Ordu urdina · blue hour [3]"><svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label">Ordu urdina</span></button>
         <button class="time-btn" data-time="midnight" type="button" title="Gaua · night [4]"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span class="seg-label">Gaua</span></button>
+        <!-- real time (js/donostia/hud.js, live-sky.js): the city's clock, weather and sea now, over the four looks -->
+        <button id="btn-live" class="time-btn live-btn" type="button" role="switch" aria-checked="false" title="Orain · ahora · real time: Donostia's own clock, weather and sea, now [5]"><svg class="icon" aria-hidden="true"><use href="#i-live"/></svg><span class="seg-label">Orain</span></button>
       </div>
       <span class="toolbar-divider" aria-hidden="true"></span>
       <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Fly to a viewpoint">
@@ -123,6 +135,14 @@
       <button id="btn-toggle-hud" class="tool-btn icon-only" type="button" title="Clean view [H]" aria-label="Hide HUD" aria-pressed="false">
         <svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye-off"/></svg>
       </button>
+    </div>
+    <!-- under the toolbar while real time is on: the hour, the weather, the tide and the waves in Donostia now -->
+    <div id="live-readout" class="panel live-readout" role="group" aria-label="Donostia orain · ahora · now" hidden>
+      <span class="live-item live-clock" title="Orain · ahora · now (Europe/Madrid)"><span class="live-dot" aria-hidden="true"></span><span id="live-time" class="live-num">--:--</span></span>
+      <span id="live-weather" class="live-item live-weather"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-sun"/></svg><span class="live-word"></span><span class="live-num"></span></span>
+      <span id="live-tide" class="live-item live-tide"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-tide"/></svg><span class="live-num"></span><span class="live-sub"></span></span>
+      <span id="live-waves" class="live-item live-waves"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-waves"/></svg><span class="live-num"></span></span>
+      <a class="live-credit" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" title="Weather &amp; sea data by Open-Meteo.com (CC BY 4.0)">Open-Meteo</a>
     </div>
   </div>
 
@@ -141,6 +161,7 @@
     <p>Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
     <p>The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
     <p>Aitor Zabaleta's portrait on the tifo's banner at Anoeta: from a photo by <a href="https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan" target="_blank" rel="noopener noreferrer">Goiena.eus</a> via <a href="https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>, in greys (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>). The medallion it shows is the supporters’ work</p>
+    <p>Real time (Orain): weather &amp; sea data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>), its forecast and marine models; the sun's and the moon's places after the Astronomical Almanac and Meeus' <i>Astronomical Algorithms</i></p>
     <p>Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
     <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
   </div>

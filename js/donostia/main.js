@@ -18,9 +18,12 @@ import { buildMarina } from './marina.js';
 import { buildBoats } from './boats.js';
 import { buildSeamarks } from './seamarks.js';
 import { buildFerries } from './ferries.js';
+import { buildWeather } from './weather.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
+import * as live from './live-state.js';
+import { createLiveSky } from './live-sky.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -41,12 +44,14 @@ const STORAGE_KEY = 'donostia-god-camera';
  * Loads and builds the city: lighting, terrain & ground, water, landmarks, buildings, trees, street furniture, bridges,
  * the shore's walls & rocks, the tunnels' portals, the port's moorings, its boats, the island ferries and the aids to
  * navigation.
- * Returns { scene, lighting, terrain, modules: { name: Object3D }, updaters }.
+ * Returns { scene, lighting, liveSky, terrain, modules: { name: Object3D }, updaters }: liveSky is the real-time
+ * switch's time of day (js/donostia/live-sky.js), idle while the switch is off.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
  */
 export async function buildWorld(renderer, { status = () => {}, mark = () => {} } = {}) {
   const scene = new THREE.Scene();
   const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS);
+  const liveSky = createLiveSky({ lighting, presets: DONOSTIA_PRESETS });
   mark('lighting');
 
   const modules = {}, updaters = [];
@@ -93,10 +98,14 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   add('marina', marina);
   // the boats in the port ride the sea's level (the tide)
   add('boats', buildBoats(water.userData.seaLevel));
-  // the island ferries, under way in the service's hours of the time of day the lighting shows
-  add('ferries', buildFerries(water.userData.seaLevel, () => DONOSTIA_PRESETS[lighting.activePresetId]?.clock ?? 12));
+  // the island ferries, under way in the service's hours of the time of day the lighting shows (the preset's, or the
+  // city's own with the real-time switch on)
+  add('ferries', buildFerries(water.userData.seaLevel, () => liveSky.hour()));
   // the aids to navigation: the lights (the lighthouses' at their models' lanterns), the posts, columns & buoys
   add('seamarks', buildSeamarks(terrain, { seaLevel: water.userData.seaLevel, landmarks: landmarks.group }));
+  // the real-time weather's rain, snow & lightning, and its wind & wetness on the city's shaders (nothing with the
+  // real-time switch off)
+  add('weather', buildWeather({ GEO, terrain, lighting, renderer, seaLevel: () => water.userData.getSeaLevel?.() ?? 0 }));
   modules.sky = lighting.sky;
   mark('details');
 
@@ -119,7 +128,7 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   modules.water?.traverse((o) => { o.renderOrder = 1; });
   lighting.sky.renderOrder = 2;
 
-  return { scene, lighting, terrain, modules, updaters };
+  return { scene, lighting, liveSky, terrain, modules, updaters };
 }
 
 // --- the view: render pipeline, shader compilation, frame ------------------------------------------------------------------
@@ -160,7 +169,7 @@ const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield
  * render(), compile(onProgress), warmUp() }.
  */
 export function createView(renderer, world, camera) {
-  const { scene, lighting, terrain, updaters } = world;
+  const { scene, lighting, liveSky, terrain, updaters } = world;
   shareOpaqueShadowPrograms(renderer);
 
   const scenePass = pass(scene, camera);
@@ -191,11 +200,14 @@ export function createView(renderer, world, camera) {
   const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
   const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask), DONOSTIA_CAMERA);
   const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
+  liveSky?.attachGrade(grade);
 
   let elapsed = 0;
   const simulate = (dt) => {
     elapsed += dt;
     terrain.update(camera.position);
+    // the real-time switch's sun, moon & weather first: what follows reads the lights it sets
+    liveSky?.update(dt);
     lighting.update(camera.position);
     for (const update of updaters) update(dt, elapsed, camera);
   };
@@ -342,7 +354,7 @@ async function initApp() {
   const view = createView(renderer, world, camera);
   const { pipeline, grade } = view;
 
-  const hud = initHud({ GEO, god, terrain, lighting, grade, renderer });
+  const hud = initHud({ GEO, god, terrain, lighting, grade, liveSky: world.liveSky, renderer });
   window.addEventListener('resize', () => {
     god.onResize(window.innerWidth, window.innerHeight);
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -365,6 +377,16 @@ async function initApp() {
     const device = renderer.backend.device;
     window.slopDebug = {
       THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
+      // the real-time state (js/donostia/live-state.js): live.setLiveEnabled(true), live.setLiveOverride({ time, rate,
+      // weather, sea }), live.liveSnapshot()
+      live,
+      // the real-time switch's time of day (js/donostia/live-sky.js): timeOfDay() gives the blend as it stands (the
+      // keyframes' weights, the sun, the moon, the light, the eased weather, the environment map's bakes);
+      // await timeOfDay.benchBake(20) times a bake of the environment map
+      timeOfDay: Object.assign(() => world.liveSky.debug(), { benchBake: (n) => world.liveSky.benchBake(n), state: () => world.liveSky.state }),
+      // the weather's effects (js/donostia/weather.js) with the switch on: weather.strike({ distance, bearing }),
+      // weather.hold(flash), weather.setWetness(w), weather.state()
+      weather: world.modules.weather?.userData.debug,
       // the tifo on Anoeta's south stand: slopDebug.tifo(false) hides it, tifo(true) shows it, tifo() toggles
       tifo(on) {
         const t = scene.getObjectByName('AnoetaTifo');

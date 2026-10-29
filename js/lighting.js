@@ -15,7 +15,8 @@ import {
   max,
   exp,
   abs,
-  select
+  select,
+  dot
 } from 'three/tsl';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { SunLight } from 'three/addons/lights/SunLight.js';
@@ -135,6 +136,9 @@ const TIME_PRESETS = {
   }
 };
 
+// the night sky's colour, mixed in by nightFactor (applyLook scales it by the moon's light)
+const NIGHT_SKY = 0x0b1528;
+
 class LightingSystem {
   // presets: same shape as TIME_PRESETS (another city's sun & sky)
   constructor(scene, renderer = null, presets = TIME_PRESETS) {
@@ -174,13 +178,18 @@ class LightingSystem {
     // Calibrate SkyMesh raw radiance (EE=1000 * 0.04) into standard exposure=1.0 HDR range
     this.uSkyExposure = uniform(0.148);
     this.uNightFactor = uniform(0.0);
-    this.uNightSkyColor = uniform(new THREE.Color(0x0b1528));
+    this.uNightSkyColor = uniform(new THREE.Color(NIGHT_SKY));
+    // The real-time switch's weather (applyLook; 0 for the presets): overcast, rain and fog drain the sky's colour
+    // towards a grey of its own brightness, a touch cool, and the aerial haze's with it (uFogGrey)
+    this.uSkyGrey = uniform(0.0);
+    this.uFogGrey = uniform(0.0);
     const rawSkyNode = this.sky.material.colorNode;
     this.sky.material.colorNode = Fn(() => {
       const raw = rawSkyNode;
       const dayCol = raw.rgb.mul(this.uSkyExposure);
       const finalSky = mix(dayCol, this.uNightSkyColor, this.uNightFactor);
-      return vec4(finalSky, float(1.0));
+      const grey = vec3(0.96, 1.0, 1.07).mul(dot(finalSky, vec3(0.2126, 0.7152, 0.0722)));
+      return vec4(mix(finalSky, grey, this.uSkyGrey), float(1.0));
     })();
 
     // In reversedDepthBuffer mode ([1..0]), camera.far is z = 0.0 (whereas SkyMesh defaults to z = w)
@@ -199,6 +208,9 @@ class LightingSystem {
     this.pmremGenerator = renderer ? new THREE.PMREMGenerator(renderer) : null;
     this.envScene = new THREE.Scene();
     this.envRenderTarget = null;
+    // the sun disc's strength in the view (the environment map is baked without it): 1 for the presets, the real sun's
+    // or the moon's for the real-time switch
+    this.sunDisc = 1;
 
     // Three.js r186 SunLight with automatic 2-Cascade Shadow Map (SunLightShadow + SunShadowNode)
     // Shines from its position vector toward the origin (no .target needed)
@@ -238,7 +250,9 @@ class LightingSystem {
     const dist = length(toFrag);
     const dir = toFrag.div(max(dist, 0.001));
     const horizonDir = normalize(vec3(dir.x, max(dir.y, 0.015), dir.z));
-    const skyColor = pmremTexture(this.envRenderTarget.texture, horizonDir, float(0.3)).rgb;
+    // (a grey haze, applyLook's: from a rougher, broader read of the sky, drained of its colour)
+    const horizonSky = pmremTexture(this.envRenderTarget.texture, horizonDir, mix(float(0.3), float(0.85), this.uFogGrey)).rgb;
+    const skyColor = mix(horizonSky, vec3(dot(horizonSky, vec3(0.2126, 0.7152, 0.0722))), this.uFogGrey);
     // Mean haze density exp(-y / H) along the ray between the fragment and the camera
     const H = this.uFogHeight;
     const ya = max(positionWorld.y, 0.0);
@@ -261,7 +275,7 @@ class LightingSystem {
       renderTarget: this.envRenderTarget
     });
     this.scene.environment = this.envRenderTarget.texture;
-    this.sky.showSunDisc.value = 1;
+    this.sky.showSunDisc.value = this.sunDisc;
     this.scene.add(this.sky);
   }
 
@@ -307,7 +321,61 @@ class LightingSystem {
     }
 
     this.scene.environmentIntensity = p.envIntensity;
+    // the real-time switch's knobs back to neutral (applyLook)
+    this.uNightSkyColor.value.setHex(NIGHT_SKY);
+    this.uSkyGrey.value = 0;
+    this.uFogGrey.value = 0;
+    if (this.uFogHeight) this.uFogHeight.value = 900.0;
+    this.sunDisc = 1;
+    if (cityUniforms.uDaylight) cityUniforms.uDaylight.value = p.daylight ?? 1;
     this.bakeEnvironmentMap();
+  }
+
+  // A look between the presets, as js/donostia/time-of-day.js blends them for the real-time switch: applyPreset's
+  // fields with linear [r, g, b] colours, the light's direction (lightDir) apart from the sky's sun (skySunDir), and
+  // the weather's knobs (skyGrey, fogGrey, fogHeight, nightSky, sunDisc). Every frame while the switch is on: it sets
+  // uniforms and lights only, and leaves the environment map to the caller (bakeEnvironmentMap(), when it is due).
+  applyLook(look) {
+    this.activePresetId = 'live';
+    this.sunLight.color.setRGB(...look.sunColor);
+    this.sunLight.intensity = look.sunIntensity;
+    this.sunLight.position.fromArray(look.lightDir);
+    this.sunLight.updateMatrixWorld();
+
+    this.hemiLight.color.setRGB(...look.hemiSky);
+    this.hemiLight.groundColor.setRGB(...look.hemiGround);
+    this.hemiLight.intensity = look.hemiIntensity;
+
+    this.scene.fog.color.setRGB(...look.fogColor);
+    this.scene.fog.density = look.fogDensity;
+    if (this.uFogDensity) this.uFogDensity.value = look.fogDensity;
+    if (this.uFogHeight) this.uFogHeight.value = look.fogHeight;
+
+    this.sky.turbidity.value = look.turbidity;
+    this.sky.rayleigh.value = look.rayleigh;
+    this.sky.mieCoefficient.value = look.mieCoefficient;
+    this.sky.mieDirectionalG.value = look.mieDirectionalG;
+    this.sky.cloudCoverage.value = look.cloudCoverage;
+    this.sky.cloudDensity.value = look.cloudDensity;
+    this.sky.sunPosition.value.fromArray(look.skySunDir);
+    this.sunDisc = look.sunDisc;
+    this.sky.showSunDisc.value = look.sunDisc;
+    this.uSkyExposure.value = look.skyExposure;
+    this.uNightFactor.value = look.nightFactor;
+    this.uNightSkyColor.value.setHex(NIGHT_SKY).multiplyScalar(look.nightSky);
+    this.uSkyGrey.value = look.skyGrey;
+    this.uFogGrey.value = look.fogGrey;
+
+    cityUniforms.uSunColor.value.setRGB(...look.sunColor);
+    cityUniforms.uSkyTopColor.value.setRGB(...look.skyTop);
+    cityUniforms.uSkyHorizonColor.value.setRGB(...look.skyHorizon);
+    cityUniforms.uSkySunDir.value.fromArray(look.lightDir);
+    cityUniforms.uInteriorGlow.value = look.interiorGlow;
+    cityUniforms.uRoadWetness.value = look.roadWetness;
+    if (cityUniforms.uCanyonBounce) cityUniforms.uCanyonBounce.value = look.canyonBounce;
+    if (cityUniforms.uDaylight) cityUniforms.uDaylight.value = look.daylight;
+
+    this.scene.environmentIntensity = look.envIntensity;
   }
 
   update(focusPos) {

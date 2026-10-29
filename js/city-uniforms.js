@@ -12,7 +12,12 @@ const cityUniforms = {
   uSkySunDir: uniform(new THREE.Vector3(-0.66, 0.34, -0.67).normalize()),
   uInteriorGlow: uniform(0.78),
   uRoadWetness: uniform(0.38),
-  uCanyonBounce: uniform(0.52)
+  // the real-time weather's rain on top of the time of day's uRoadWetness (js/donostia/weather.js; 0 without it)
+  uRainWetness: uniform(0),
+  uCanyonBounce: uniform(0.52),
+  // how much daylight there is, 0 (night) .. 1 (a clear day): the preset's (presets' `daylight`, 1 when they have
+  // none), or the real time of day and weather with js/donostia's real-time switch (js/donostia/time-of-day.js)
+  uDaylight: uniform(1.0)
 };
 
 export { cityUniforms };

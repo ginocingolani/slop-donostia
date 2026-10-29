@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, int, vec2, vec3, vec4, ivec2, color, floor, fract, abs, min, max, clamp, mix, step, smoothstep, dot,
-  sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionView, normalView,
-  normalWorldGeometry, cameraPosition, PI
+  sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionLocal, positionView, normalView,
+  normalWorldGeometry, cameraPosition, time, PI
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
+import { weatherUniforms } from './weather-uniforms.js';
+import { seaUniforms, channelFloor } from './sea-uniforms.js';
 import { decodePNGOffThread } from './png.js';
 import { releaseImageData } from './terrain.js';
 
@@ -16,6 +18,10 @@ import { releaseImageData } from './terrain.js';
 // from OpenStreetMap as exact rectangles. Patterns line up with the nearest street edge and settle to their mean
 // colour once smaller than a pixel. Outside the core (and wherever the maps are missing) the ground is natural:
 // meadow parcels, scrub and woods on the slopes, rock on the cliffs and wet rock and weed at the waterline.
+// The sea (js/donostia/sea-uniforms.js): the beaches' wet sand reaches up from the tidal bands' mark and their swash
+// runs at the water's edge, wherever the tide stands; the coast's wet rock & weed keep to the mark. With the real-time
+// switch on, whatever the ebb uncovers below the mark (the seabed, the quays' and stairs' feet, the river's banks)
+// turns dark, glossy and weedy as the bands on the walls; with it off that pass is skipped.
 //
 // Cost: the ground covers most of the screen, so the shader works out only the surface under the pixel. What every
 // pixel needs (the pixel footprints, the shared noise, the four texels and the street frame) is built up front in the
@@ -140,6 +146,22 @@ const bumpNormal = Fn(([height]) => {
   const det = dpdx.dot(r1);
   const grad = det.sign().mul(hgt.dFdx().mul(r1).add(hgt.dFdy().mul(r2)));
   return det.abs().mul(normalView).sub(grad).normalize();
+});
+
+// Rings spreading on standing water where raindrops land (height, m): two staggered 0.4 m grids of drops, each cell's
+// drop landing again every ~1.1 s at its own place and phase, its ring widening and fading
+const rainRings = Fn(([xz, t]) => {
+  const h = float(0).toVar();
+  for (const [ox, oy, salt] of [[0, 0, 0], [0.5, 0.5, 17.3]]) {
+    const p = xz.div(0.4).add(vec2(ox, oy));
+    const cell = floor(p), f = fract(p);
+    const phase = hash12(cell.add(salt));
+    const centre = vec2(hash12(cell.add(salt + 3.1)), hash12(cell.add(salt + 7.7))).mul(0.5).add(0.25);
+    const life = fract(t.mul(0.9).add(phase));
+    const ring = smoothstep(0.09, 0.0, abs(length(f.sub(centre)).sub(life.mul(0.45))));
+    h.addAssign(ring.mul(float(1).sub(life).mul(float(1).sub(life))));
+  }
+  return h.mul(0.004);
 });
 
 // Share of a footprint `w` wide around x that lies in the band lo < x < hi (an exact box filter: a 20 cm kerb seen
@@ -326,20 +348,33 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   const damp = float(0).toVar('groundDamp');
   const puddle = float(0).toVar('groundPuddle');
   const hard = flagsW.x;
-  const film = smoothstep(0.2, 0.8, cityUniforms.uRoadWetness).toVar();
+  // the time of day's wetness and, with the real-time switch on, the rain's on top (js/donostia/weather.js)
+  const wetness = cityUniforms.uRoadWetness.add(cityUniforms.uRainWetness).min(1).toVar();
+  const film = smoothstep(0.2, 0.8, wetness).toVar();
+  // the sea: the water's level, the tidal bands' mark (both 0 at mean sea level), and what the live tide uncovers
+  const { uSeaLevel, uTideMark, uTideLive } = seaUniforms;
+  const tidalWet = float(0).toVar('groundTidalWet');
 
   // TSL keeps a shared node in the variable it was first assigned to: one first built inside a branch would be stale
   // wherever that branch didn't run (see facade-material.js). Everything the branches share is built up front here.
   const shared = [fw, fwY, slope, inCore, nM, nL, nXL, fwM, ci, cj, t.x, best, sid, edgeMix, surfW.x, flagsW.x, group,
-    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, film, y, ...texels.map((k) => k.id), ...scores];
+    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, wetness, film, y, ...texels.map((k) => k.id), ...scores];
 
   const mat = new THREE.MeshStandardNodeMaterial();
+  // Live: the low-water channels dredged into the terrain (sea-uniforms.js; the water's sea floor follows them)
+  mat.positionNode = Fn(() => {
+    const pos = positionLocal.toVar();
+    If(uTideLive.greaterThan(0), () => {
+      pos.assign(vec3(pos.x, channelFloor(pos.xz, pos.y), pos.z));
+    });
+    return pos;
+  })();
 
   mat.colorNode = Fn(() => {
     // the slots' variables are declared here, in the main flow, before any branch assigns them
     surfColour.assign(vec3(shared.reduce((s, n) => s.add(n), float(0)).mul(0)));
     for (const v of [naturalColour]) v.assign(vec3(0));
-    for (const v of [relief, sandWet, swash, zebra, kerbStone, damp, puddle]) v.assign(float(0));
+    for (const v of [relief, sandWet, swash, zebra, kerbStone, damp, puddle, tidalWet]) v.assign(float(0));
     nF.assign(float(0.5));
 
     // grain, ~0.3 m: only resolved below a 12 cm pixel (it is its mean, 0.5, beyond)
@@ -367,9 +402,9 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       const rockAmt = max(smoothstep(0.33, 0.5, slope.add(nM.sub(0.5).mul(0.12))), cliff);
       // the tidal band (up to ~2 m on this coast): wet dark rock, weed below half tide; a little higher on rocky slopes,
       // so flat land just above the sea stays dry
-      const tide = y.add(nM.sub(0.5).mul(0.6));
+      const tide = y.sub(uTideMark).add(nM.sub(0.5).mul(0.6));
       const shore = max(smoothstep(2.1, 1.1, tide), smoothstep(3.2, 1.8, tide).mul(smoothstep(0.06, 0.15, slope)));
-      const wet = mix(C.rockWet, C.weed, smoothstep(1.0, 0.2, y).mul(0.7)).mul(nF.mul(0.3).add(0.85));
+      const wet = mix(C.rockWet, C.weed, smoothstep(1.0, 0.2, y.sub(uTideMark)).mul(0.7)).mul(nF.mul(0.3).add(0.85));
       const c = mix(meadow, scrub, scrubAmt.mul(0.85)).toVar();
       c.assign(mix(c, forest, forestAmt));
       c.assign(mix(c, rock, rockAmt));
@@ -433,10 +468,11 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       const dome = pavedUV.x.mul(float(1).sub(pavedUV.x)).mul(pavedUV.y.mul(float(1).sub(pavedUV.y))).mul(16).mul(Cc.w);
       relief.assign(dome.sub(joint.mul(0.006)).mul(fade(0.06, 0.015)));
     }).ElseIf(group.lessThan(3.5), () => {
-      // La Concha, Ondarreta & Zurriola: golden dry sand, darker wet sand in the tidal band, glossy where the waves wash
+      // La Concha, Ondarreta & Zurriola: golden dry sand, darker wet sand in the tidal band (up from its mark), glossy
+      // where the waves wash (just over the water)
       const tideLine = y.add(nM.sub(0.5).mul(0.5)).add(nL.sub(0.5).mul(0.6));
-      sandWet.assign(smoothstep(2.3, 1.2, tideLine));
-      swash.assign(smoothstep(0.55, 0.1, tideLine));
+      sandWet.assign(smoothstep(2.3, 1.2, tideLine.sub(uTideMark)));
+      swash.assign(smoothstep(0.55, 0.1, tideLine.sub(uSeaLevel)));
       const sand = mix(mix(C.sandDry, C.sandDry2, nM.mul(0.6).add(nF.mul(0.4))), C.sandWet, sandWet).mul(nF.mul(0.08).add(0.96));
       surfColour.assign(mix(sand, C.sandSwash, swash));
       // ripples in the wet sand
@@ -504,31 +540,58 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     const marked = mix(mix(blended.mul(float(1).sub(gutter.mul(0.32))), kerbColour, kerbStone), C.paint, zebra);
 
     // --- rain: damp stains, puddles & a wet film on the hard surfaces (roadWetMasks in js/tsl-materials.js) ---
-    const wetness = cityUniforms.uRoadWetness;
     const field = nL.mul(0.55).add(nM.mul(0.33)).add(nF.mul(0.12));
     const level = mix(float(0.86), float(0.56), clamp(wetness.sub(0.1).div(0.55), 0, 1));
     damp.assign(smoothstep(level.sub(0.09), level.sub(0.015), field).mul(hard));
     puddle.assign(smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, wetness))
       .mul(flagsW.y).mul(smoothstep(0.985, 0.996, normalWorldGeometry.y)).mul(float(1).sub(kerbStone)));
 
+    // the real-time weather's rain (0 without it): grass, earth & rock a little darker; the beaches' dry sand a damp
+    // ochre, in blotches as the drops pit it (matte, unlike the swash), near & far alike
+    const isBeach = eq(wid, S.beach);
+    const rainedSand = smoothstep(0.05, 0.5, cityUniforms.uRainWetness).mul(isBeach).mul(float(1).sub(sandWet))
+      .mul(smoothstep(0.25, 0.75, nM).mul(0.3).add(0.7));
     const lit = marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
-      .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film));
+      .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film))
+      .mul(float(1).sub(cityUniforms.uRainWetness.mul(float(1).sub(hard)).mul(float(1).sub(isBeach)).mul(0.16)))
+      .mul(mix(vec3(1), vec3(0.56, 0.53, 0.46), rainedSand));
     // The faces the 2 m grid still draws as steep ramps (a wall's ends, a flight's flanks, the quays and abutments the
     // shore walls leave out): weathered stone rather than the surface's sand or paving stretched down them. The soft
     // surfaces (the woods, gardens and hedges on a hillside) keep their own ground up to the crags, past 60°; the
     // natural ground has its own rock on the steep faces.
     const steepFace = smoothstep(mix(0.5, 0.3, hard), mix(0.7, 0.5, hard), slope).mul(inCore).mul(float(1).sub(eq(wid, S.natural)));
     const faceStone = mix(C.rockA, C.rockB, nM).mul(nF.mul(0.2).add(0.88)).mul(smoothstep(-0.5, 3.0, y).mul(0.3).add(0.7));
-    return mix(lit, faceStone, steepFace);
+    const ground = mix(lit, faceStone, steepFace).toVar();
+
+    // Live: below the tidal bands' mark, what the ebb leaves bare (not the beaches' sand, which has its own) is dark,
+    // wet and glossy up to ~1.9 m over the mark, weedy under ~0.6 m, as the walls' band (shore.js tidal); the soft
+    // seabed is wet sand & silt instead, rippled by the current
+    If(uTideLive.greaterThan(0), () => {
+      const over = y.sub(uTideMark).add(nM.sub(0.5).mul(0.4)).add(nL.sub(0.5).mul(0.3));
+      // (the beaches' sand has its own band; not the steep slivers the grid leaves against walls & stairs)
+      const sand = eq(wid, S.beach).mul(smoothstep(0.15, 0.08, slope));
+      const band = smoothstep(1.9, 0.6, over).mul(float(1).sub(sand)).mul(inCore).mul(uTideLive);
+      const weed = smoothstep(0.6, -0.2, over).mul(nF.mul(0.4).add(0.6));
+      const hardWet = mix(ground.mul(vec3(0.4, 0.4, 0.37)), C.weed.mul(0.6), weed.mul(0.85));
+      const silt = mix(C.sandWet, C.sandSwash, nL.mul(0.6).add(0.2)).mul(nM.mul(0.16).add(nF.mul(0.08)).add(0.84));
+      // (flat seabed only: the slopes the 2 m grid leaves against the quays and moles are rubble, weed-grown)
+      const soft = eq(wid, S.seabed).mul(smoothstep(0.12, 0.04, slope));
+      ground.assign(mix(ground, mix(hardWet, silt, soft), band));
+      relief.addAssign(sin(dot(xz, vec2(0.62, 0.78)).mul(52).add(nM.mul(9))).mul(0.0025).mul(soft.mul(band)).mul(fade(0.03, 0.008)));
+      // the sheen of the water just gone off it
+      tidalWet.assign(band.mul(smoothstep(1.4, 0.2, y.sub(uSeaLevel))));
+    });
+    return ground;
   })();
 
-  const shoreWet = max(eq(wid, S.natural), eq(wid, S.rock)).mul(smoothstep(2.4, 1.2, y));
+  const shoreWet = max(eq(wid, S.natural), eq(wid, S.rock)).mul(smoothstep(2.4, 1.2, y.sub(uTideMark)));
   mat.roughnessNode = Fn(() => {
     const r = surfW.w.toVar();
     r.assign(mix(r, float(0.42), max(film.mul(0.85), damp.mul(0.8)).mul(hard)));
     r.assign(mix(r, float(0.07), puddle));
     r.assign(mix(r, mix(float(0.55), float(0.18), swash), sandWet));
     r.assign(mix(r, float(0.5), shoreWet));
+    r.assign(mix(r, float(0.3), tidalWet));
     return r;
   })();
 
@@ -536,13 +599,18 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   // mirror the city through SSR at grazing angles yet only darken seen from above
   const viewUp = normalize(cameraPosition.sub(p)).y;
   const fresnel = pow(float(1).sub(clamp(viewUp, 0, 1)), 5).mul(0.98).add(0.02);
-  mat.metalnessNode = clamp(fresnel.mul(1.6), 0, 0.85).mul(max(max(puddle, film.mul(0.5).mul(hard)), swash.mul(0.6)));
+  mat.metalnessNode = clamp(fresnel.mul(1.6), 0, 0.85).mul(max(max(puddle, film.mul(0.5).mul(hard)), max(swash.mul(0.6), tidalWet.mul(0.4))));
 
   // Relief: paving joints & domed setts, the kerb's 12 cm step, asphalt grain, ripples in the wet sand
   mat.normalNode = Fn(() => {
     const kerbStep = float(1).sub(smoothstep(-0.03, 0.03, rK)).mul(0.12).mul(kerbed).mul(fade(0.08, 0.02));
     const asphaltGrain = nF.sub(0.5).mul(0.003).mul(roadShare).mul(float(1).sub(puddle)).mul(fade(0.05, 0.012));
-    return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)));
+    // rain falling on the puddles (the real-time weather; a uniform branch, skipped when it doesn't rain)
+    const rings = float(0).toVar();
+    If(weatherUniforms.uRainfall.greaterThan(0.01), () => {
+      rings.assign(rainRings(xz, time).mul(puddle).mul(weatherUniforms.uRainfall.min(1)).mul(fade(0.03, 0.006)));
+    });
+    return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)).add(rings));
   })();
 
   return mat;
