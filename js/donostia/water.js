@@ -8,6 +8,7 @@ import { MARINA } from './data-marina.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
 import { FIXED_SEA, seaParams, wavelength } from './sea-state.js';
 import { seaUniforms, channelFloor } from './sea-uniforms.js';
+import { createSpray } from './spray.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -463,14 +464,17 @@ function createWaterMaterial(terrain, fieldsTex) {
 
     // Live: the open sea's swell, long crests running in from its direction in sets, fading into the bay (what
     // rounds Santa Klara is the breakers' business) and gone in the port
+    // (its slopes drawn half as steep again: a plane's shading has only them to show a swell by), its crests catch
+    // the light as the wind sea's do
     If(S.swell.greaterThan(0.0), () => {
-      const reach = mix(float(0.12), float(1.0), surf).mul(float(1.0).sub(sheltered.mul(0.95))).mul(float(1.0).sub(river))
-        .mul(S.swell).mul(0.5);
+      const open = mix(float(0.12), float(1.0), surf).mul(float(1.0).sub(sheltered.mul(0.95))).mul(float(1.0).sub(river));
       const sets = noise2D(q.mul(0.0021).add(vec2(t.mul(0.004), t.mul(-0.003)))).mul(0.9).add(0.55);
+      const reach = open.mul(sets).toVar();
       SWELL_TRAINS.forEach(([, , weight, phase0], i) => {
         const tr = S.trains[i];
-        const ph = dot(tr.xy, q).mul(tr.z).sub(tr.w.mul(t)).add(phase0);
-        slope.addAssign(tr.xy.mul(tr.z.mul(cos(ph)).mul(reach.mul(sets).mul(weight))));
+        const ph = dot(tr.xy, q).mul(tr.z).sub(tr.w.mul(t)).add(phase0).toVar();
+        slope.addAssign(tr.xy.mul(tr.z.mul(cos(ph)).mul(reach.mul(S.swell).mul(0.75 * weight))));
+        crest.addAssign(sin(ph).mul(reach.mul(min(S.swell, 3.0)).mul(0.06 * weight)));
       });
     });
     return vec4(slope, variance, crest.mul(4.0));
@@ -517,8 +521,8 @@ function createWaterMaterial(terrain, fieldsTex) {
       const n = mx_noise_float(vec3(w2.mul(0.2), time.mul(0.3))).add(noise2D(w2.mul(1.1)).sub(0.5).mul(0.3));
       const threshold = float(0.6).sub(S.whitecaps.mul(0.28));
       const local = float(1.0).sub(harbour).mul(float(1.0).sub(river)).mul(mix(float(0.35), float(1.0), surf));
-      // (a cap is densest at its breaking front, downwind, and thins out behind)
-      const near = smoothstep(threshold, threshold.add(0.12), n).mul(smoothstep(threshold.add(0.4), threshold.add(0.1), n).mul(0.35).add(0.35));
+      // (a cap is faint at its edges and dense where it breaks)
+      const near = smoothstep(threshold, threshold.add(0.2), n).mul(smoothstep(threshold.add(0.1), threshold.add(0.35), n).mul(0.4).add(0.25));
       const share = S.whitecaps.mul(0.1);
       const far = smoothstep(0.4, 3.0, fwidth(p.x).add(fwidth(p.z)));
       density.assign(max(density, mix(near, share, far).mul(local)));
@@ -672,7 +676,8 @@ function pondMesh(terrain, material) {
 // --- Builder ------------------------------------------------------------------------------------------------------------
 
 export async function createWater(terrain) {
-  const material = createWaterMaterial(terrain, await loadFields());
+  const fields = await loadFields();
+  const material = createWaterMaterial(terrain, fields);
 
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, 1, 1);
   geo.rotateX(-Math.PI / 2);
@@ -707,6 +712,8 @@ export async function createWater(terrain) {
   const S = material.userData.seaState;
   const live = { ...FIXED_SEA, windSpeed: 3 }, shown = { ...FIXED_SEA };
   let blend = 0, target = null, readAt = 0, clock = 0;
+  // the spray against the steep shore in a big swell (spray.js), built the first time one comes
+  let spray = null;
   const SEA_EASE = 4, BLEND = 1.5, READ = 0.25;
   const EASED = ['surf', 'surfPeriodA', 'surfPeriodB', 'swell', 'swellPeriod', 'chop', 'calm', 'whitecaps', 'spray', 'windSpeed'];
   group.userData.seaState = () => ({ ...shown, blend });
@@ -745,6 +752,11 @@ export async function createWater(terrain) {
       }
       applySeaState(S, shown);
       uTideLive.value = b;
+      if (shown.spray > 0.01 && !spray && fields.image.width > 1) {
+        spray = createSpray({ fields: fields.image, context: terrain.context, terrain, seaLevel: uSeaLevel }) || { update() {} };
+        if (spray.mesh) group.add(spray.mesh);
+      }
+      spray?.update(shown.spray, shown.swell, shown.swellPeriod);
       y = shown.level;
       mark = shown.mark;
     }

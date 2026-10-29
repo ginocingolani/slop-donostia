@@ -188,3 +188,27 @@ test('low-water channels: the ferries float to Santa Klara\'s jetty and the Urum
   for (const [x, z] of [[-300, 600], [900, -600], [0, -150], [545, -430]]) assert.equal(dredged(x, z), bedAt(x, z));
   assert.equal(sea.channelFloor(-918, 112, 2.5), 2.5);
 });
+
+test('spray in a big swell: on the Paseo Nuevo, the Peine del Viento and the Zurriola dike, never on the beaches', async () => {
+  const load = (rel) => {
+    const b = fs.readFileSync(`${root}${rel}`);
+    return decodePNG(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  };
+  const [context, water] = await Promise.all([load(GEO.terrain.context.url), load('data/donostia/water.png')]);
+  const X = GEO.terrain.context;
+  const contextAt = (x, z) => {
+    const i = Math.floor((x - X.x0) / X.res), j = Math.floor((z - X.z0) / X.res), k = 3 * (j * X.w + i);
+    return ((context.data[k] << 8) | context.data[k + 1]) / 100 - GEO.terrain.heightOffset;
+  };
+  const inCore = (x, z) => x > T.x0 && x < T.x0 + T.w * T.res && z > T.z0 && z < T.z0 + T.h * T.res;
+  const places = sea.sprayPlaces(water, X, (x, z) => (inCore(x, z) ? bedAt(x, z) : contextAt(x, z)));
+  assert.ok(places.length > 80 && places.length <= 260, `${places.length} places`);
+  const near = (x, z, r) => places.filter(([px, pz]) => Math.hypot(px - x, pz - z) < r).length;
+  assert.ok(near(100, -600, 150) >= 5, 'the Paseo Nuevo');
+  assert.ok(near(-1370, -20, 120) >= 3, 'the Peine del Viento');
+  assert.ok(near(600, -520, 100) >= 2, 'the Zurriola dike');
+  for (const [x, z, r, name] of [[-300, 650, 250, 'La Concha'], [-1000, 520, 150, 'Ondarreta'], [950, -560, 150, 'Zurriola']]) {
+    assert.equal(near(x, z, r), 0, name);
+  }
+  for (const [, , phase, strength] of places) assert.ok(phase >= 0 && phase < 1 && strength > 0 && strength <= 1);
+});

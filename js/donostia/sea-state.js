@@ -170,6 +170,73 @@ export function channelFloor(x, z, bed) {
   return floor;
 }
 
+// --- the spray's places --------------------------------------------------------------------------------------------------
+
+const SPRAY_MAX = 260, SPRAY_SPACING = 16; // places, m between them
+// The coast searched (local frame, m): Igeldo's cliffs to Ulia's, Santa Klara and the bay
+const SPRAY_COAST = { x0: -2600, z0: -1500, x1: 3200, z1: 900 };
+const fract = (v) => v - Math.floor(v);
+
+/**
+ * Where a big swell breaks on steep shore and throws up spray (js/donostia/spray.js): water exposed to the swell
+ * (exposure 0.35 and up) with land within two cells standing 1.5 m and more out of mean sea level (a wall, a rock
+ * platform, a cliff: a beach's sand slopes in far lower), at the last of the water before it; the most exposed first,
+ * one every SPRAY_SPACING m. fields: the water fields' RGBA bytes on the context grid ({ data, width, height }: R exposure, G river; tools/
+ * donostia/build.mjs), context: that grid's { x0, z0, res }, heightAt(x, z): the terrain. Returns [[x, z, phase (0..1:
+ * neighbours hit by the same crest a little apart), strength (0..1)], ...].
+ */
+export function sprayPlaces(fields, context, heightAt) {
+  const { data, width: w, height: h } = fields;
+  const { x0, z0, res } = context;
+  const found = [];
+  const i0 = Math.max(2, Math.floor((SPRAY_COAST.x0 - x0) / res)), i1 = Math.min(w - 2, Math.ceil((SPRAY_COAST.x1 - x0) / res));
+  const j0 = Math.max(2, Math.floor((SPRAY_COAST.z0 - z0) / res)), j1 = Math.min(h - 2, Math.ceil((SPRAY_COAST.z1 - z0) / res));
+  for (let j = j0; j < j1; j++) {
+    for (let i = i0; i < i1; i++) {
+      const k = 4 * (j * w + i), e = data[k] / 255;
+      if (e < 0.35 || data[k + 1] > 0.3 * 255) continue;
+      const x = x0 + (i + 0.5) * res, z = z0 + (j + 0.5) * res;
+      const bed = heightAt(x, z);
+      if (bed > -0.3 || bed < -20) continue;
+      let land = null;
+      for (let r = 1; r <= 2 && !land; r++) {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+          const lx = x + dx * r * res, lz = z + dz * r * res, y = heightAt(lx, lz);
+          if (y > 1.5 && (!land || y > land.y)) land = { x: lx, z: lz, y };
+        }
+      }
+      if (!land) continue;
+      // the last of the water before the land
+      let fx = x, fz = z;
+      for (let s = 0.125; s < 1; s += 0.125) {
+        const px = x + (land.x - x) * s, pz = z + (land.z - z) * s;
+        if (heightAt(px, pz) > -0.5) break;
+        fx = px;
+        fz = pz;
+      }
+      found.push({ x: fx, z: fz, e: e * Math.min(1, (land.y - 1.5) / 3 + 0.4) });
+    }
+  }
+  found.sort((a, b) => b.e - a.e);
+  const kept = [], cells = new Map();
+  for (const f of found) {
+    if (kept.length >= SPRAY_MAX) break;
+    const ci = Math.floor(f.x / SPRAY_SPACING), cj = Math.floor(f.z / SPRAY_SPACING);
+    let close = false;
+    for (let a = -1; a <= 1 && !close; a++) {
+      for (let b = -1; b <= 1 && !close; b++) {
+        close = (cells.get(`${ci + a},${cj + b}`) || []).some((k) => Math.hypot(k.x - f.x, k.z - f.z) < SPRAY_SPACING);
+      }
+    }
+    if (close) continue;
+    kept.push(f);
+    const key = `${ci},${cj}`;
+    cells.set(key, [...(cells.get(key) || []), f]);
+  }
+  return kept.map((f, n) => [f.x, f.z, fract(f.x * 0.0071 + f.z * 0.0043 + fract(Math.sin(n * 127.1 + 311.7) * 43758.5453) * 0.35),
+    Math.min(1, f.e)]);
+}
+
 // --- the port's floating pontoons ----------------------------------------------------------------------------------------
 
 /** The pontoons' level (m, the floats' waterline): the water's, down to where they settle on the basins' bed. */
