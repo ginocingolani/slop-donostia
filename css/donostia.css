@@ -198,6 +198,145 @@
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
+   Real time (Orain): the switch closes the time of day's group behind a hairline; on, it takes the sandstone and
+   spells its name, and the preset picked last steps back to a dashed outline (overridden: the look a click returns to)
+   ------------------------------------------------------------------------------------------------------------------ */
+.live-btn {
+  position: relative;
+  margin-left: 7px;
+}
+
+.live-btn::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--divider);
+}
+
+.time-switch.is-live .time-btn[data-time].active {
+  gap: 0;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--text-2);
+  box-shadow: none;
+  outline: 1px dashed rgba(220, 181, 116, 0.55);
+  outline-offset: -4px;
+}
+
+.time-switch.is-live .time-btn[data-time].active:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.time-switch.is-live .time-btn[data-time].active .seg-label {
+  max-width: 0;
+  opacity: 0;
+}
+
+/* The readout under the toolbar: a carved strip of small Inter figures, the hour first */
+.hud-top-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.live-readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+  max-width: min(560px, calc(100vw - 2 * var(--edge)));
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text);
+  animation: rise-in 0.35s var(--ease-out) both;
+}
+
+.live-readout[hidden] {
+  display: none;
+}
+
+.live-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.live-item[hidden] {
+  display: none;
+}
+
+.live-item .icon {
+  color: var(--harri);
+}
+
+.live-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.live-clock .live-num {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.live-word,
+.live-sub {
+  font-weight: 550;
+  color: var(--text-2);
+}
+
+/* the hour's sandstone dot breathes while real time runs (still with reduced motion), and dims while loading */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--harri);
+  box-shadow: 0 0 0 3px rgba(220, 181, 116, 0.18);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% { box-shadow: 0 0 0 5px rgba(220, 181, 116, 0); }
+}
+
+.live-readout.is-loading .live-dot {
+  background: var(--text-3);
+  box-shadow: none;
+}
+
+.live-weather.is-error .icon,
+.live-weather.is-error .live-word {
+  color: var(--warn);
+}
+
+.live-credit {
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--text-3);
+  text-decoration: none;
+}
+
+.live-credit:hover,
+.live-credit:focus-visible {
+  color: var(--text-2);
+  text-decoration: underline;
+}
+
+body.hud-minimized .live-readout {
+  display: none;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
    Bottom right: the god camera reads its altitude above sea level (upstream shows it in the helicopter only)
    ------------------------------------------------------------------------------------------------------------------ */
 body[data-mode='god'] .gauge-alt {
@@ -478,10 +617,13 @@ body[data-mode='god'] .gauge-alt {
   .location-place .loc-es { display: none; }
   .location-place .loc-eu { flex-shrink: 1; min-width: 0; }
   .street-sign { padding: 8px 11px 6px; font-size: 14px; }
+  /* the real-time readout keeps its figures: the next turn of the tide goes to the tooltip */
+  .live-sub { display: none; }
 }
 
 @media (max-width: 440px) {
-  .toolbar { width: 182px; height: auto; padding: 5px; flex-wrap: wrap; justify-content: center; }
+  /* five time buttons (the four looks & real time) on the first row, the tools on the second */
+  .toolbar { width: 206px; height: auto; padding: 5px; flex-wrap: wrap; justify-content: center; }
   .toolbar-divider { display: none; }
   /* the folded toolbar leaves the top-left corner free again */
   .hud-top-left { top: max(var(--edge), env(safe-area-inset-top)); }
@@ -489,6 +631,9 @@ body[data-mode='god'] .gauge-alt {
   #credits-popover { top: calc(max(var(--edge), env(safe-area-inset-top)) + 100px); right: 12px; }
   .loc-es { display: none; }
   .fullmap-search-wrap { min-width: 0; }
+  /* the readout down to its figures on one line (the data popover keeps Open-Meteo's credit) */
+  .live-word,
+  .live-credit { display: none; }
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
@@ -529,11 +674,20 @@ body.touch-enabled .radar-expand { width: 36px; height: 36px; top: 4px; right: 4
 body.touch-enabled .hud-bottom-left { bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 172px); }
 
 @media (max-width: 440px) {
-  body.touch-enabled .toolbar { width: 194px; padding: 4px; }
+  /* five 44 px time buttons a row: real time's hairline makes way */
+  body.touch-enabled .toolbar { width: 236px; padding: 4px; }
+  body.touch-enabled .live-btn { margin-left: 0; }
+  body.touch-enabled .live-btn::before { display: none; }
   body.touch-enabled .tool-btn .icon-sm { display: none; }
   body.touch-enabled #teleport-popover,
   body.touch-enabled #credits-popover { top: calc(max(var(--edge), env(safe-area-inset-top)) + 114px); }
   .touch-look-hint { top: calc(max(var(--edge), env(safe-area-inset-top)) + 118px); }
+  /* (under the real-time readout while it shows) */
+  body:has(.live-readout:not([hidden])) .touch-look-hint { top: calc(max(var(--edge), env(safe-area-inset-top)) + 172px); }
+}
+
+@media (max-width: 360px) {
+  body.touch-enabled .toolbar { width: 236px; }
 }
 
 /* Phones on their side: the signs & a smaller radar sit between the stick and the buttons */

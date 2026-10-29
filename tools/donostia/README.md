@@ -63,6 +63,8 @@ Igeldo to Ulía past the end of Sagüés and south to the Hospital Universitario
 | Names, landmark footprints, water, bridges, street furniture, the aids to navigation (seamark tags), the island ferry's route | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (`queries/*.overpassql`, via `tools/overpass.sh`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | The lights' characters, elevations, ranges and structures, San Sebastián (nos. 1788-1800): [NGA Pub. 113, List of Lights, Radio Aids and Fog Signals](https://msi.nga.mil/Publications/NGALOL) (2019 edition, corrected to Notice to Mariners 26/2019), the check on OSM's seamarks (`bake-seamarks.mjs`) | U.S. National Geospatial-Intelligence Agency | U.S. Government work, no copyright claimed (public domain) |
 | La Concha's leading lights' arcs of visibility and the red pierhead's elevation (`bake-seamarks.mjs`): the list of lights of "Costa Cantábrica" (Spanish edition, 2005), p. 201 | RCC Pilotage Foundation (John Lawson) | facts only: no text, plan or photograph of the book is reproduced |
+| The weather and the sea now, for the HUD's real-time switch (Orain): Open-Meteo's [forecast API](https://open-meteo.com/en/docs) (`current`: weather code, temperature, cloud cover, visibility, precipitation, wind) and [marine API](https://open-meteo.com/en/docs/marine-weather-api) (waves, swell, sea level), asked by the browser every 15 minutes while the switch is on (`js/donostia/live-state.js`); nothing is stored or committed | Open-Meteo.com ("Weather & sea data by Open-Meteo.com", `LIVE_CREDIT`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| The sun's and the moon's places for the real-time switch: the Astronomical Almanac's low-precision sun and Meeus, *Astronomical Algorithms* ch. 47 (main terms), as in SunCalc; refraction by Bennett | the formulas (facts) | none needed |
 | Aitor Zabaleta's portrait on the tifo's banner: [`File:Reala Kopa 2026 Zabaleta.jpg`](https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg) (the Real Sociedad fan zone's screen at the 2026 Copa del Rey final in Seville, remembering him; 960 x 720 px), the disc of his portrait in it | [Goiena.eus](https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan), via Wikimedia Commons | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 ## Licences
@@ -262,7 +264,7 @@ map.
   bay). The runtime eases them along those lanes (slower through the bends, accelerating & stopping gently), with
   pauses at each end, one at the island while the other is in port, from 10:00 to 20:00 (the summer timetable,
   motorasdelaisla.com) by the time of day the lighting shows (`presets.js`'s `clock`: under way at midday, moored at
-  the other three).
+  the other three; with the real-time switch on, the city's own hour).
 - Miramar jauregia (`js/donostia/landmarks/miramar.js`) is built on the municipal outline in the palace's own frame:
   walls take each edge's height and finish from where it lies (the garden front's canted bays one storey high, the
   loggia, the gallery, the service wing), roofs are rectangles of the plan with jettied half-timbered gables, hips or
@@ -391,6 +393,36 @@ map.
   from their pixels committed.
 - Shapefile rings: outer rings run clockwise and holes counter-clockwise; `extract.py` groups them by orientation, so
   a courtyard that touches its building's outline stays a hole.
+- Real time (the HUD's Orain switch, key 5; off by default, remembered in `localStorage` as `donostia-live`): the city
+  follows its own clock, weather and sea (`js/donostia/live-state.js`; data by Open-Meteo.com, CC BY 4.0, credited in
+  the data popover and on the switch's readout). The sky's part (`js/donostia/time-of-day.js`, applied each frame by
+  `js/donostia/live-sky.js`):
+  - The four looks are keyframes on the real sun's elevation, each shown exactly where the sun stands at its keyframe:
+    Gaua at -12° and below, Ordu urdina at -3°, Ilunabarra at 11° (the preset's own sun, 20:30 in mid-June), Eguerdia
+    from 25° (winter's noon reaches 23°). Every field the presets set (lights, sky, haze, the city's glow, the colour
+    grade) is blended between neighbours with a smoothstep, so dawn and dusk have no step and a timelapse no pop.
+  - The light and the sky's sun come from the real sun; below 11° it eases down to hang at 5° from -3° on, as the
+    twilight preset's (the sun disc sets with the real sun, the glow stays). From -4° to -11° they turn to the moon,
+    where it stands, or to the night preset's sky while it is down; the direct light dips while they turn. The moon's
+    light grows with its phase (a half moon gives a third of a full one's) and its height; a new-moon night has a third
+    of the light and a darker sky.
+  - The weather acts on the blend: the cloud cover sets the sky's clouds (the calm defaults, 20% with 10% low, keep
+    the look's own), an overcast dims and greys the direct light and lifts the sky's fill (by night it hides the moon
+    and gives back the city's glow), rain and storms darken and grey the sky, and the visibility sets the haze (30 km
+    keeps the look's own, 40 km is clearer, 400 m is fog: 98% gone at 400 m, under a lower layer). The weather eases
+    over a few seconds; the switch fades in over two; picking a time turns it off and shows that preset as before.
+  - The environment map (the sky in a PMREM cube: the image-based light, the haze's colour, the reflections) is baked
+    again only when the sky has changed enough to show (the sun or the moon 0.75° on, its brightness 4%, its clouds, haze
+    or grey a step) and at most every 0.15 s: on the real clock every 3 minutes or so by day and by moonlight, every
+    20 s at dusk and dawn (650 to 770 bakes a day); a bake takes ~0.4 ms of CPU and a few ms of GPU.
+  - What keyed on the preset follows the clock: `cityUniforms.uInteriorGlow` (windows, lamps, the boats' and the
+    landmarks' night lights, the seamarks' and Igeldo's beams), the ferries' hours (`liveSky.hour()`), the colour
+    grade. For the other effects, `cityUniforms.uDaylight` (0 night .. 1 a clear day, the weather's gloom included) and
+    `cityUniforms.uSkySunDir` (towards the shadow-casting light, sun or moon) hold either way, and `liveSky.state` the
+    same as numbers with the real sun's and moon's directions and the eased weather.
+  - In the console (`?debug`): `slopDebug.timeOfDay()` gives the blend as it stands (the keyframes' weights, the sun, the
+    moon, the light, the weather, the bakes), `await slopDebug.timeOfDay.benchBake(20)` times a bake, and
+    `slopDebug.live.setLiveOverride({ time, rate, weather })` forces any moment, a timelapse or a weather.
 - The national Catastro does not cover Gipuzkoa (foral cadastre), hence b5m.
 - jsDelivr cannot serve arbitrary three.js commits (the repository exceeds its 50 MB package limit), so `index.html`
   pins the npm release instead of a dev-branch SHA.
