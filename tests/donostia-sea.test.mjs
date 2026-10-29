@@ -11,6 +11,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const sea = await import(pathToFileURL(`${root}js/donostia/sea-state.js`).href);
 const live = await import(pathToFileURL(`${root}js/donostia/live-state.js`).href);
 const { MARINA } = await import(pathToFileURL(`${root}js/donostia/data-marina.js`).href);
+const { FERRY } = await import(pathToFileURL(`${root}js/donostia/data-boats.js`).href);
+const { GEO } = await import(pathToFileURL(`${root}js/donostia/geodata.js`).href);
+const { decodePNG } = await import(pathToFileURL(`${root}js/donostia/png.js`).href);
 const fixture = (name) => JSON.parse(fs.readFileSync(`${root}tests/fixtures/open-meteo-${name}.json`, 'utf8'));
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -140,4 +143,48 @@ test('the pontoons float from the lowest to the highest tide and their gangways 
   }
   // at mean sea level, as the bake hung them
   assert.ok(near(sea.gangwayPitch(G[2], G[5], 0), Math.asin((G[2] - freeboard) / G[5])));
+});
+
+// The baked 2 m terrain (terrain-core.png: R/G heights), sampled at points
+const terrainPNG = fs.readFileSync(`${root}${GEO.terrain.core.url}`);
+const terrain = await decodePNG(terrainPNG.buffer.slice(terrainPNG.byteOffset, terrainPNG.byteOffset + terrainPNG.byteLength));
+const T = GEO.terrain.core;
+const bedAt = (x, z) => {
+  const i = Math.floor((x - T.x0) / T.res), j = Math.floor((z - T.z0) / T.res), k = 3 * (j * T.w + i);
+  return ((terrain.data[k] << 8) | terrain.data[k + 1]) / 100 - GEO.terrain.heightOffset;
+};
+const dredged = (x, z) => sea.channelFloor(x, z, bedAt(x, z));
+
+test('low-water channels: the ferries float to Santa Klara\'s jetty and the Urumea reaches the sea at the lowest tide', () => {
+  const lowest = -2.4, draft = 0.85;
+  // the lanes' last 150 m to the island's landing, under the hull (within 4 m of its track)
+  for (const f of FERRY.ferries) {
+    const [lx, lz] = [f.island[0] / 100, f.island[1] / 100];
+    for (const lane of [f.out, f.back]) {
+      for (let k = 0; k < lane.length; k += 3) {
+        const x = lane[k] / 100, z = lane[k + 1] / 100;
+        if (Math.hypot(x - lx, z - lz) > 150) continue;
+        for (const [dx, dz] of [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]]) {
+          const floor = dredged(x + dx, z + dz);
+          assert.ok(floor < lowest - draft + 0.6, `(${x + dx}, ${z + dz}): floor ${floor.toFixed(2)}`);
+        }
+        // (and the undredged fill would have stranded it: the reason for the channel)
+      }
+    }
+    assert.ok(bedAt(lx, lz) > lowest);
+  }
+  // the river's channel holds water all the way from its -3.5 m bed to the sea's -3 m contour
+  const path = sea.LOW_WATER_CHANNELS.find((c) => c.name === 'Urumea mouth').path;
+  let dry = 0;
+  for (let k = 0; k + 3 < path.length; k += 2) {
+    for (let s = 0; s <= 1; s += 0.1) {
+      const x = path[k] + (path[k + 2] - path[k]) * s, z = path[k + 1] + (path[k + 3] - path[k + 1]) * s;
+      assert.ok(dredged(x, z) < lowest - 0.5, `(${x}, ${z}): floor ${dredged(x, z).toFixed(2)}`);
+      if (bedAt(x, z) > lowest) dry++;
+    }
+  }
+  assert.ok(dry > 20, 'without the channel the bar dries');
+  // nothing changes away from the channels, nor above mean sea level
+  for (const [x, z] of [[-300, 600], [900, -600], [0, -150], [545, -430]]) assert.equal(dredged(x, z), bedAt(x, z));
+  assert.equal(sea.channelFloor(-918, 112, 2.5), 2.5);
 });
