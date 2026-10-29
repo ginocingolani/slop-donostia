@@ -43,7 +43,7 @@ const MAX_DROPS = 60000;
 const BELOW = 0.42;
 // the share of the drops that are splashes on the ground instead (rain only), within SPLASH_REACH m of the camera, each
 // a crown of SPLASH_SIZE m living SPLASH_LIFE s
-const SPLASH_SHARE = 0.15, SPLASH_REACH = 13, SPLASH_SIZE = 0.13, SPLASH_LIFE = 0.45;
+const SPLASH_SHARE = 0.12, SPLASH_REACH = 12, SPLASH_SIZE = 0.1, SPLASH_LIFE = 0.4;
 // the shelter map: SHELTER x SHELTER cells of 1 m round the camera (the box and a margin), refilled once the camera is
 // SHELTER_SLACK m off its centre
 const SHELTER = 64, SHELTER_SLACK = 12;
@@ -569,7 +569,7 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
       shelter.update(camera);
       R.shelterOrigin.value.copy(shelter.origin);
       R.splashes.value = Math.round(count * SPLASH_SHARE * (1 - s.snow));
-      R.splashAlpha.value = 0.55 * s.rainfall / Math.max(s.density, 0.01);
+      R.splashAlpha.value = 0.3 * s.rainfall / Math.max(s.density, 0.01);
       R.length.value = s.length;
       R.width.value = s.width;
       R.alpha.value = s.alpha;
