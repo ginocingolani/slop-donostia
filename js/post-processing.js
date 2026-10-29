@@ -29,8 +29,13 @@ const LOOKS = {
   midnight: { exposure: 1.04, contrast: 1.08, saturation: 1.06, balance: [0.985, 1.00, 1.035], bloom: 0.30, threshold: 1.00 }
 };
 
-function createPostProcessing(renderer, sceneColor, reflections) {
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// options: another city's camera. toneMapping (a THREE tone mapping), looks (LOOKS' shape), bloomRadius, and
+// contrastCeiling: the luminance above which the contrast curve stops lifting, leaving highlights to the tone
+// mapper's shoulder (Infinity: lifts everything, as here).
+function createPostProcessing(renderer, sceneColor, reflections, {
+  toneMapping = THREE.ACESFilmicToneMapping, looks = LOOKS, bloomRadius = 0.40, contrastCeiling = Infinity
+} = {}) {
+  renderer.toneMapping = toneMapping;
   // Exposure is applied before bloom so its threshold follows the image's exposed brightness.
   // RenderPipeline performs ACES and the output color-space conversion exactly once, after this graph.
   renderer.toneMappingExposure = 1.0;
@@ -45,7 +50,7 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   // The original HDR image keeps its full range for the tone mapper's highlight shoulder.
   const peak = max(max(exposed.r, exposed.g), exposed.b);
   const bloomInput = vec4(exposed.mul(float(8.0).div(max(peak, 8.0))), 1.0);
-  const bloomPass = bloom(bloomInput, 0.24, 0.40, 1.20);
+  const bloomPass = bloom(bloomInput, 0.24, bloomRadius, 1.20);
   bloomPass.smoothWidth.value = 0.30;
   bloomPass.setResolutionScale(0.5);
 
@@ -59,7 +64,8 @@ function createPostProcessing(renderer, sceneColor, reflections) {
     color.mulAssign(shadows.mul(highlights));
 
     // Contrast pivots around middle gray and scales RGB together, avoiding per-channel gamma shifts.
-    color.mulAssign(pow(max(luma, 0.0001).div(0.18), contrast.sub(1.0)));
+    const lifted = Number.isFinite(contrastCeiling) ? min(max(luma, 0.0001), contrastCeiling) : max(luma, 0.0001);
+    color.mulAssign(pow(lifted.div(0.18), contrast.sub(1.0)));
     const gray = dot(color, vec3(0.2126, 0.7152, 0.0722));
     const chroma = max(max(color.r, color.g), color.b).sub(min(min(color.r, color.g), color.b));
     const vibrance = float(0.10).mul(float(1).sub(chroma.div(max(max(max(color.r, color.g), color.b), 0.0001))));
@@ -73,7 +79,7 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   })();
 
   function applyPreset(id) {
-    const look = LOOKS[id] || LOOKS.golden;
+    const look = looks[id] || looks.golden;
     exposure.value = look.exposure;
     contrast.value = look.contrast;
     saturation.value = look.saturation;
@@ -83,7 +89,7 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   }
 
   applyPreset('golden');
-  return { outputNode, applyPreset };
+  return { outputNode, applyPreset, looks };
 }
 
 export { createPostProcessing };

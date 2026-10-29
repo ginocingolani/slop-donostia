@@ -20,7 +20,7 @@ import { buildSeamarks } from './seamarks.js';
 import { buildFerries } from './ferries.js';
 import { GodCamera } from './god-camera.js';
 import { initHud } from './hud.js';
-import { DONOSTIA_PRESETS } from './presets.js';
+import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -189,7 +189,7 @@ export function createView(renderer, world, camera) {
   ssrPass.intensity.value = 0.5;
   ssrPass.screenEdgeFadeBlack = true;
   const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
-  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask));
+  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask), DONOSTIA_CAMERA);
   const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
 
   let elapsed = 0;
