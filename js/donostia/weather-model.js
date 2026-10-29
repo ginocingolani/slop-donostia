@@ -98,7 +98,8 @@ export function wetnessTarget(weather) {
   const p = precipitation(weather);
   if (p.kind === 'none') return weather?.kind === 'fog' ? 0.14 : 0;
   if (p.kind === 'snow') return 0.3 + 0.35 * (1 - Math.exp(-p.rate / 1.5));
-  return 0.3 + 0.6 * (1 - Math.exp(-Math.max(p.rate, p.density * 4) / 3));
+  // (a rain code whose 15-minute sum is still empty wets by its density; drizzle's fine drops by their rate)
+  return 0.3 + 0.6 * (1 - Math.exp(-Math.max(p.rate, p.density * (p.kind === 'drizzle' ? 1 : 4)) / 3));
 }
 
 /**
