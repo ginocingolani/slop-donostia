@@ -504,8 +504,8 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     const p = precipitation(weather);
     if (!s.on || s.snap) {
       // switched on: start as the weather stands (the streets as wet as it leaves them), no easing in; a debug snap
-      // does the same but keeps the wetness
-      if (!s.snap) s.wet = wetnessTarget(weather);
+      // does the same, keeping the wetness unless asked
+      if (!s.on || s.snap === 'wet') s.wet = wetnessTarget(weather);
       s.on = true;
       s.snap = false;
       s.density = p.density;
@@ -615,8 +615,8 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     return () => thunderListeners.delete(fn);
   };
   // Debug (slopDebug.weather in ?debug): strike({ distance, bearing, bolt }) now (a bolt is put at that bearing from the
-  // camera, clockwise from north), hold(f) a flash of f (null lets go), snap() the eased rain & wind to the weather now,
-  // setWetness(w) the streets' wetness now, state()
+  // camera, clockwise from north), hold(f) a flash of f (null lets go), snap(wet) the eased rain & wind (and with wet,
+  // the streets' wetness) to the weather now, setWetness(w) the streets' wetness now, state()
   group.userData.debug = {
     strike(options = {}) {
       const st = lightning.strike(clock, options);
@@ -625,7 +625,7 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
       return st;
     },
     hold(f = 1) { s.hold = f; return f; },
-    snap() { s.snap = true; return true; },
+    snap(wet = false) { s.snap = wet ? 'wet' : true; return true; },
     setWetness(w) { wetOverride = w; s.wet = w; return w; },
     state: () => ({ on: s.on, wet: s.wet, density: s.density, drops: rain.visible ? rain.geometry.instanceCount : 0, snow: s.snow,
       wind: { x: W.uWindDir.value.x, z: W.uWindDir.value.y, sway: W.uWindSway.value, lean: W.uWindLean.value }, flash: s.flash })

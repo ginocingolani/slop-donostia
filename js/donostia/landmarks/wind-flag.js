@@ -36,7 +36,7 @@ export function windFlag({ hoist, width = 2.0, height = 1.15, red = [0.62, 0.02,
     const x = g.x.mul(width), y = g.y.mul(height);
     const v = uFlagWind;
     // the fly's droop: hanging nearly along the pole in a calm, near level in a gale
-    const droop = float(Math.PI / 2 * 0.88).mul(float(1).sub(smoothstep(0.6, 9.0, v).mul(0.88)));
+    const droop = float(Math.PI / 2 * 0.88).mul(float(1).sub(smoothstep(0.5, 7.0, v).mul(0.88)));
     const cd = cos(droop), sd = sin(droop);
     // waves running out to the fly, growing towards it: deeper & quicker in a stronger wind (uFlagPhase runs on with it)
     const k = 2.6, arg = x.mul(k).sub(time.mul(5.2).add(uFlagPhase));
