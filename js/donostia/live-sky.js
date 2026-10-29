@@ -71,6 +71,9 @@ export function createLiveSky({ lighting, presets }) {
 
   const self = {
     ready: false,
+    // true: the next switch-on shows the live look at once, without the fade from the preset (the HUD sets it when
+    // real time is on as the city first shows)
+    skipFade: false,
     attachGrade(g) { grade = g; },
 
     // Every frame (main.js's view.simulate)
@@ -89,7 +92,8 @@ export function createLiveSky({ lighting, presets }) {
         sky = { ...target };
         logVis = Math.log(target.visibility);
         fadeFrom = presets[lighting.activePresetId] ? presetLook(presets, grade.looks, lighting.activePresetId) : current;
-        fade = fadeFrom ? 0 : 1;
+        fade = fadeFrom && !self.skipFade ? 0 : 1;
+        self.skipFade = false;
         baked = null;
       } else {
         const k = 1 - Math.exp(-Math.max(0, dt) / EASE);

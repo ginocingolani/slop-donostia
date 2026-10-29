@@ -112,3 +112,15 @@ test('fetching: a failed request keeps the calm defaults and says so', async () 
   off();
   assert.ok(seen >= 3);
 });
+
+test('a fetch made before the switch goes on (behind the loading screen) is used, not repeated', async () => {
+  let calls = 0;
+  const ok = async (url) => { calls++; return { ok: true, status: 200, json: async () => fixture(url.includes('marine') ? 'marine' : 'weather') }; };
+  await live.refreshLive(ok);
+  assert.equal(calls, 2);
+  assert.equal(live.liveSnapshot().status, 'off');
+  live.setLiveEnabled(true, ok);
+  assert.equal(calls, 2); // fresh: no second fetch
+  assert.equal(live.liveSnapshot().status, 'ok');
+  live.setLiveEnabled(false);
+});

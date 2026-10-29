@@ -467,7 +467,8 @@ map.
   from their pixels committed.
 - Shapefile rings: outer rings run clockwise and holes counter-clockwise; `extract.py` groups them by orientation, so
   a courtyard that touches its building's outline stays a hole.
-- Real time (the HUD's Orain switch, key 5; off by default, remembered in `localStorage` as `donostia-live`): the city
+- Real time (the HUD's Orain switch, key 5; on by default unless the browser turned it off, remembered in
+  `localStorage` as `donostia-live`, with the weather and the sea fetched behind the loading screen): the city
   follows its own clock, weather and sea (`js/donostia/live-state.js`; data by Open-Meteo.com, CC BY 4.0, credited in
   the data popover and on the switch's readout). The sky's part (`js/donostia/time-of-day.js`, applied each frame by
   `js/donostia/live-sky.js`):
