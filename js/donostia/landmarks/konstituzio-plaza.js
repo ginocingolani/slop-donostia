@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  Fn, attribute, uv, texture, float, vec2, vec3, vec4, floor, fract, abs, max, min, mix, smoothstep, step, sin, dot,
+  Fn, If, attribute, uv, texture, float, vec2, vec3, vec4, floor, fract, abs, max, min, mix, smoothstep, step, sin, dot,
   clamp, length, select, fwidth, pow, mod, normalize, positionWorld, normalWorld, cameraPosition, mx_noise_float
 } from 'three/tsl';
 import { cityUniforms } from '../../city-uniforms.js';
@@ -474,8 +474,24 @@ function pavingMaterial() {
   const ajoint = float(1).sub(smoothstep(0.004, 0.012, min(ajx, ajy)));
   const slate = mix(vec3(0.17, 0.165, 0.155), vec3(0.22, 0.213, 0.2), hash(aId, 7.0)).mul(float(1).sub(ajoint.mul(0.35).mul(fadeJ)));
   const grain = mx_noise_float(positionWorld.mul(3.1)).mul(0.05).add(1.0);
-  mat.colorNode = mix(plaza, slate, arcade).mul(grain);
-  mat.roughnessNode = mix(float(0.82), float(0.66), arcade);
+  // the real-time weather's rain (cityUniforms.uRainWetness; 0 without it) on the open square, not under the arcades:
+  // darker granite, a wet sheen, shallow pools where the slabs have settled, mirroring the facades at grazing angles
+  // (water's Fresnel on metalness, as ground.js's puddles)
+  // (the pools' noise only runs while it is wet: a uniform branch)
+  const wet = cityUniforms.uRainWetness.mul(float(1).sub(arcade));
+  const pool = float(0).toVar('plazaPool');
+  mat.colorNode = Fn(() => {
+    const w = wet.toVar();
+    pool.assign(0);
+    If(cityUniforms.uRainWetness.greaterThan(0), () => {
+      const settled = mx_noise_float(vec3(positionWorld.x.mul(0.21), 0.0, positionWorld.z.mul(0.21))).mul(0.5).add(0.5);
+      pool.assign(smoothstep(0.72, 0.76, settled.add(w.mul(0.12))).mul(smoothstep(0.3, 0.6, w)));
+    });
+    return mix(plaza, slate, arcade).mul(grain).mul(float(1).sub(w.mul(0.3))).mul(float(1).sub(pool.mul(0.3)));
+  })();
+  mat.roughnessNode = mix(mix(float(0.82), float(0.66), arcade), float(0.3), wet.mul(0.85)).mul(float(1).sub(pool.mul(0.85)));
+  const grazing = pow(float(1).sub(clamp(normalize(cameraPosition.sub(positionWorld)).y, 0, 1)), 5).mul(0.98).add(0.02);
+  mat.metalnessNode = clamp(grazing.mul(1.6), 0, 0.85).mul(max(pool, wet.mul(0.4)));
   // the arcades' lanterns on the slate at night
   const night = smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow);
   // (on the square: within a few metres of the arcades' fronts, a box round the square's middle)

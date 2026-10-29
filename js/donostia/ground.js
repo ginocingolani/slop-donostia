@@ -2,9 +2,10 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, int, vec2, vec3, vec4, ivec2, color, floor, fract, abs, min, max, clamp, mix, step, smoothstep, dot,
   sin, cos, pow, length, normalize, fwidth, textureLoad, positionWorld, positionView, normalView,
-  normalWorldGeometry, cameraPosition, PI
+  normalWorldGeometry, cameraPosition, time, PI
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
+import { weatherUniforms } from './weather-uniforms.js';
 import { decodePNGOffThread } from './png.js';
 import { releaseImageData } from './terrain.js';
 
@@ -140,6 +141,22 @@ const bumpNormal = Fn(([height]) => {
   const det = dpdx.dot(r1);
   const grad = det.sign().mul(hgt.dFdx().mul(r1).add(hgt.dFdy().mul(r2)));
   return det.abs().mul(normalView).sub(grad).normalize();
+});
+
+// Rings spreading on standing water where raindrops land (height, m): two staggered 0.4 m grids of drops, each cell's
+// drop landing again every ~1.1 s at its own place and phase, its ring widening and fading
+const rainRings = Fn(([xz, t]) => {
+  const h = float(0).toVar();
+  for (const [ox, oy, salt] of [[0, 0, 0], [0.5, 0.5, 17.3]]) {
+    const p = xz.div(0.4).add(vec2(ox, oy));
+    const cell = floor(p), f = fract(p);
+    const phase = hash12(cell.add(salt));
+    const centre = vec2(hash12(cell.add(salt + 3.1)), hash12(cell.add(salt + 7.7))).mul(0.5).add(0.25);
+    const life = fract(t.mul(0.9).add(phase));
+    const ring = smoothstep(0.09, 0.0, abs(length(f.sub(centre)).sub(life.mul(0.45))));
+    h.addAssign(ring.mul(float(1).sub(life).mul(float(1).sub(life))));
+  }
+  return h.mul(0.004);
 });
 
 // Share of a footprint `w` wide around x that lies in the band lo < x < hi (an exact box filter: a 20 cm kerb seen
@@ -326,12 +343,14 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   const damp = float(0).toVar('groundDamp');
   const puddle = float(0).toVar('groundPuddle');
   const hard = flagsW.x;
-  const film = smoothstep(0.2, 0.8, cityUniforms.uRoadWetness).toVar();
+  // the time of day's wetness and, with the real-time switch on, the rain's on top (js/donostia/weather.js)
+  const wetness = cityUniforms.uRoadWetness.add(cityUniforms.uRainWetness).min(1).toVar();
+  const film = smoothstep(0.2, 0.8, wetness).toVar();
 
   // TSL keeps a shared node in the variable it was first assigned to: one first built inside a branch would be stale
   // wherever that branch didn't run (see facade-material.js). Everything the branches share is built up front here.
   const shared = [fw, fwY, slope, inCore, nM, nL, nXL, fwM, ci, cj, t.x, best, sid, edgeMix, surfW.x, flagsW.x, group,
-    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, film, y, ...texels.map((k) => k.id), ...scores];
+    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, wetness, film, y, ...texels.map((k) => k.id), ...scores];
 
   const mat = new THREE.MeshStandardNodeMaterial();
 
@@ -437,7 +456,9 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       const tideLine = y.add(nM.sub(0.5).mul(0.5)).add(nL.sub(0.5).mul(0.6));
       sandWet.assign(smoothstep(2.3, 1.2, tideLine));
       swash.assign(smoothstep(0.55, 0.1, tideLine));
-      const sand = mix(mix(C.sandDry, C.sandDry2, nM.mul(0.6).add(nF.mul(0.4))), C.sandWet, sandWet).mul(nF.mul(0.08).add(0.96));
+      // the dry sand darkens in the rain, in blotches as the drops pit it (matte: no gloss, unlike the swash's)
+      const rained = smoothstep(0.05, 0.6, cityUniforms.uRainWetness).mul(nM.mul(0.35).add(nF.mul(0.25)).add(0.4)).mul(0.75);
+      const sand = mix(mix(C.sandDry, C.sandDry2, nM.mul(0.6).add(nF.mul(0.4))), C.sandWet, max(sandWet, rained)).mul(nF.mul(0.08).add(0.96));
       surfColour.assign(mix(sand, C.sandSwash, swash));
       // ripples in the wet sand
       relief.assign(sin(dot(xz, vec2(0.62, 0.78)).mul(52).add(nM.mul(9))).mul(0.0025)
@@ -504,7 +525,6 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     const marked = mix(mix(blended.mul(float(1).sub(gutter.mul(0.32))), kerbColour, kerbStone), C.paint, zebra);
 
     // --- rain: damp stains, puddles & a wet film on the hard surfaces (roadWetMasks in js/tsl-materials.js) ---
-    const wetness = cityUniforms.uRoadWetness;
     const field = nL.mul(0.55).add(nM.mul(0.33)).add(nF.mul(0.12));
     const level = mix(float(0.86), float(0.56), clamp(wetness.sub(0.1).div(0.55), 0, 1));
     damp.assign(smoothstep(level.sub(0.09), level.sub(0.015), field).mul(hard));
@@ -512,7 +532,9 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       .mul(flagsW.y).mul(smoothstep(0.985, 0.996, normalWorldGeometry.y)).mul(float(1).sub(kerbStone)));
 
     const lit = marked.mul(mix(float(1), float(0.72), damp)).mul(mix(float(1), float(0.62), puddle))
-      .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film));
+      .mul(mix(float(1), mix(float(0.88), float(0.8), hard), film))
+      // grass, earth & rock darker in the rain too (the real-time weather's; the sand has its own above)
+      .mul(float(1).sub(cityUniforms.uRainWetness.mul(float(1).sub(hard)).mul(float(1).sub(eq(wid, S.beach))).mul(0.16)));
     // The faces the 2 m grid still draws as steep ramps (a wall's ends, a flight's flanks, the quays and abutments the
     // shore walls leave out): weathered stone rather than the surface's sand or paving stretched down them. The soft
     // surfaces (the woods, gardens and hedges on a hillside) keep their own ground up to the crags, past 60°; the
@@ -542,7 +564,12 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   mat.normalNode = Fn(() => {
     const kerbStep = float(1).sub(smoothstep(-0.03, 0.03, rK)).mul(0.12).mul(kerbed).mul(fade(0.08, 0.02));
     const asphaltGrain = nF.sub(0.5).mul(0.003).mul(roadShare).mul(float(1).sub(puddle)).mul(fade(0.05, 0.012));
-    return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)));
+    // rain falling on the puddles (the real-time weather; a uniform branch, skipped when it doesn't rain)
+    const rings = float(0).toVar();
+    If(weatherUniforms.uRainfall.greaterThan(0.01), () => {
+      rings.assign(rainRings(xz, time).mul(puddle).mul(weatherUniforms.uRainfall.min(1)).mul(fade(0.03, 0.006)));
+    });
+    return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)).add(rings));
   })();
 
   return mat;
