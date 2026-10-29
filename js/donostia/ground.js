@@ -543,11 +543,14 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     // seabed is wet sand & silt instead, rippled by the current
     If(uTideLive.greaterThan(0), () => {
       const over = y.sub(uTideMark).add(nM.sub(0.5).mul(0.4)).add(nL.sub(0.5).mul(0.3));
-      const band = smoothstep(1.9, 0.6, over).mul(float(1).sub(eq(wid, S.beach))).mul(inCore).mul(uTideLive);
+      // (the beaches' sand has its own band; not the steep slivers the grid leaves against walls & stairs)
+      const sand = eq(wid, S.beach).mul(smoothstep(0.15, 0.08, slope));
+      const band = smoothstep(1.9, 0.6, over).mul(float(1).sub(sand)).mul(inCore).mul(uTideLive);
       const weed = smoothstep(0.6, -0.2, over).mul(nF.mul(0.4).add(0.6));
-      const hardWet = mix(ground.mul(vec3(0.5, 0.5, 0.46)), C.weed.mul(0.6), weed.mul(0.8));
+      const hardWet = mix(ground.mul(vec3(0.4, 0.4, 0.37)), C.weed.mul(0.6), weed.mul(0.85));
       const silt = mix(C.sandWet, C.sandSwash, nL.mul(0.6).add(0.2)).mul(nM.mul(0.16).add(nF.mul(0.08)).add(0.84));
-      const soft = eq(wid, S.seabed).mul(float(1).sub(steepFace));
+      // (flat seabed only: the slopes the 2 m grid leaves against the quays and moles are rubble, weed-grown)
+      const soft = eq(wid, S.seabed).mul(smoothstep(0.12, 0.04, slope));
       ground.assign(mix(ground, mix(hardWet, silt, soft), band));
       relief.addAssign(sin(dot(xz, vec2(0.62, 0.78)).mul(52).add(nM.mul(9))).mul(0.0025).mul(soft.mul(band)).mul(fade(0.03, 0.008)));
       // the sheen of the water just gone off it
