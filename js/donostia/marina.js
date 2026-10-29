@@ -5,6 +5,8 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { MARINA } from './data-marina.js';
+import { seaUniforms } from './sea-uniforms.js';
+import { LOW_WATER, pontoonLevel, gangwayPitch } from './sea-state.js';
 
 // js/donostia/marina.js
 // The port's moorings, from tools/donostia/bake-marina.mjs (js/donostia/data-marina.js):
@@ -15,15 +17,18 @@ import { MARINA } from './data-marina.js';
 // - Fixed: the guide piles (white steel tubes under conical caps), the aluminium gangways hinged on the quay
 //   (their pitch follows the pontoons), an access gate at the head of each, the quays' cast-iron bollards, mooring
 //   rings, galvanised ladders down the walls and the fishing quay's timber strakes, the old port's concrete slipway.
-// The tidal band (wet stone, then weed under half tide) darkens the piles, ladders, floats and the slipway after the
-// sea's level (seaLevel: the water's userData.seaLevel uniform). Lamps & pedestal lights glow at dusk & night
-// (cityUniforms.uInteriorGlow), as js/donostia/streetscape.js's.
+// The tidal band (wet stone, then weed under half tide) darkens the piles, ladders, floats and the slipway: on what
+// floats after the sea's level (seaLevel: the water's userData.seaLevel uniform), on what stands fixed after the tidal
+// bands' mark (js/donostia/sea-uniforms.js uTideMark: the same level with the real-time switch off, the last high
+// water's with it on). With the switch on the ladders and the fishing quay's strakes go on down past the lowest tides
+// (sea-state.js LOW_WATER) from the bake's bottom, a mesh of their own the fixed sea never shows. Lamps & pedestal
+// lights glow at dusk & night (cityUniforms.uInteriorGlow), as js/donostia/streetscape.js's.
 // Draws: the decks and the slipway (one material), one per instanced fitting kind and one for the gangways, gates &
-// ladders; three materials. Small fittings are culled by distance.
+// ladders (and one for their feet, live); three materials. Small fittings are culled by distance.
 // buildMarina(GEO, terrain, water) -> Promise<Object3D | null>; its userData.update(dt, elapsed, camera) floats the
 // pontoons and culls the fittings.
 
-const { freeboard: FREEBOARD, draft: DRAFT, ground: GROUND } = MARINA.level;
+const { freeboard: FREEBOARD, draft: DRAFT } = MARINA.level;
 const WALING = 0.16; // m: the timber round a deck's edge
 const FINGER_DROP = 0.015; // m: a finger's deck under its walkway's
 
@@ -51,6 +56,8 @@ const SLIPWAY = [0.33, 0.32, 0.3];
 const PLAIN = 0, PLANKS = 1, SLABS = 2, GROOVES = 3;
 
 const night = () => smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow);
+// The level a surface's tidal band is drawn from: the water's on what floats (userData.rides), the bands' mark on the rest
+const bandLevel = (seaLevel) => mix(seaUniforms.uTideMark, seaLevel, uniform(0).onObjectUpdate(({ object }) => (object.userData.rides ? 1 : 0)));
 // 1 below a, 0 above b (a < b): a falling smoothstep written with its edges in order (WGSL's smoothstep, as Metal's,
 // leaves reversed edges undefined)
 const fall = (a, b, x) => float(1).sub(smoothstep(a, b, x));
@@ -105,7 +112,7 @@ function surfaceMaterial(seaLevel) {
   const gu = u.div(0.25).toVar();
   const aaG = fwidth(gu).max(0.0001);
   const groove = smoothstep(0.42, 0.5, min(fract(gu), float(1).sub(fract(gu))).add(aaG.mul(0.5))).mul(fall(0.06, 0.2, aaG)).mul(isGrooves).toVar();
-  const h = p.y.sub(seaLevel);
+  const h = p.y.sub(bandLevel(seaLevel));
   mat.colorNode = Fn(() => {
     const c = base.toVar();
     c.mulAssign(mix(float(1), tone.mul(0.32).add(0.84).add(grain.mul(0.12)), isPlanks));
@@ -124,7 +131,7 @@ function paintMaterial(seaLevel) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0 });
   const paint = attribute('aPaint', 'vec4'), wet = attribute('aWet', 'float');
   const n = mx_noise_float(positionWorld.mul(1.7));
-  mat.colorNode = mix(paint.xyz, tidal(paint.xyz, positionWorld.y.sub(seaLevel), n.mul(2)), wet);
+  mat.colorNode = mix(paint.xyz, tidal(paint.xyz, positionWorld.y.sub(bandLevel(seaLevel)), n.mul(2)), wet);
   mat.roughnessNode = paint.w;
   return mat;
 }
@@ -442,26 +449,42 @@ function ladder(b, drop, m) {
   for (let y = -0.3; y > -drop + 0.1; y -= 0.3) b.box(2 * h, 0.03, 0.03, 0, y, out, STEEL, 1, m);
 }
 
-// The gates, ladders & strakes in one geometry
+// The same ladder on down from `drop` to `low` under the coping, its rungs & brackets in step with the rest
+function ladderFoot(b, drop, low, m) {
+  const out = 0.16, h = 0.22;
+  for (const s of [-1, 1]) {
+    b.box(0.06, low - drop, 0.025, s * h, -low, out, STEEL, 1, m);
+    for (let y = -0.4; y > -low; y -= 1.6) if (y <= -drop) b.box(0.05, 0.05, out, s * h, y, out / 2, STEEL, 1, m);
+  }
+  for (let y = -0.3; y > -low + 0.1; y -= 0.3) if (y <= -drop + 0.1) b.box(2 * h, 0.03, 0.03, 0, y, out, STEEL, 1, m);
+}
+
+// The gates, ladders & strakes in one geometry; and their feet below the bake's bottom down past the lowest tides,
+// another, which only the live tide's ebb shows (with the real-time switch off the water covers them for good)
 function fittingsGeometry(data) {
-  const b = new Builder();
+  const b = new Builder(), feet = new Builder();
   const yaw = (deg) => (deg * Math.PI) / 180;
   const G = data.gangways;
   for (let k = 0; k < G.length; k += 7) {
     const [hx, hz, hy, fx, fz, , W] = G.slice(k, k + 7);
     gate(b, W, M4().makeTranslation(hx, hy, hz).multiply(M4().makeRotationY(Math.atan2(fx - hx, fz - hz))));
   }
+  const low = LOW_WATER - 0.2;
   const L = data.ladders;
   for (let k = 0; k < L.length; k += 5) {
     const [x, z, a, top, bottom] = L.slice(k, k + 5);
-    ladder(b, top - bottom, M4().makeTranslation(x, top, z).multiply(M4().makeRotationY(yaw(a))));
+    const m = M4().makeTranslation(x, top, z).multiply(M4().makeRotationY(yaw(a)));
+    ladder(b, top - bottom, m);
+    if (bottom > low) ladderFoot(feet, top - bottom, top - low, m);
   }
   const S = data.strakes;
   for (let k = 0; k < S.length; k += 5) {
     const [x, z, a, top, bottom] = S.slice(k, k + 5);
-    b.box(0.24, top - bottom, 0.2, 0, bottom, 0.1, STRAKE_TIMBER, 1, M4().makeTranslation(x, 0, z).multiply(M4().makeRotationY(yaw(a))));
+    const m = M4().makeTranslation(x, 0, z).multiply(M4().makeRotationY(yaw(a)));
+    b.box(0.24, top - bottom, 0.2, 0, bottom, 0.1, STRAKE_TIMBER, 1, m);
+    if (bottom > low) feet.box(0.24, bottom - low, 0.2, 0, low, 0.1, STRAKE_TIMBER, 1, m);
   }
-  return b;
+  return { fittings: b, feet };
 }
 
 // The gangways: local geometry per gangway with its hinge & heading; lay(level) pitches each so its foot rests on the
@@ -487,8 +510,7 @@ function gangwayMesh(data, material) {
   const m = M4(), nm = new THREE.Matrix3(), v = V3();
   mesh.userData.lay = (level) => {
     for (const g of parts) {
-      const drop = g.hy - (level + FREEBOARD);
-      const pitch = Math.asin(Math.max(-0.95, Math.min(0.95, drop / g.L)));
+      const pitch = gangwayPitch(g.hy, g.L, level);
       m.makeTranslation(g.hx, g.hy, g.hz).multiply(M4().makeRotationY(g.heading)).multiply(M4().makeRotationX(pitch));
       nm.getNormalMatrix(m);
       for (let i = g.start; i < g.end; i++) {
@@ -615,25 +637,37 @@ export async function buildMarina(GEO, terrain, water = null) {
       rings: instanced(ringGeometry(), paint, rings, 'Marina_rings', false)
     };
     for (const k of ['hoops', 'cleats', 'pedestals', 'pedestalLights', 'lampPosts', 'lampGlobes']) if (meshes[k]) floating.add(meshes[k]);
+    for (const o of floating.children) o.userData.rides = true;
     for (const k of ['piles', 'bollards', 'rings']) if (meshes[k]) group.add(meshes[k]);
 
     const gangways = gangwayMesh(data, paint);
     if (gangways) group.add(gangways);
-    const fixed = fittingsGeometry(data);
-    if (fixed.pos.length) {
-      const mesh = new THREE.Mesh(fixed.build(), paint);
+    const { fittings, feet } = fittingsGeometry(data);
+    if (fittings.pos.length) {
+      const mesh = new THREE.Mesh(fittings.build(), paint);
       mesh.name = 'Marina_gates_ladders';
       mesh.castShadow = mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       group.add(mesh);
+    }
+    // the ladders' and strakes' feet, shown while the live tide runs (sea-uniforms.js uTideLive)
+    let footings = null;
+    if (feet.pos.length) {
+      footings = new THREE.Mesh(feet.build(), paint);
+      footings.name = 'Marina_ladder_feet';
+      footings.castShadow = footings.receiveShadow = true;
+      footings.matrixAutoUpdate = false;
+      footings.visible = false;
+      group.add(footings);
     }
 
     const culled = Object.entries(CULL).filter(([k]) => meshes[k]).map(([k, d]) => new DistanceCulled(meshes[k], d));
     const last = V3(Infinity, Infinity, Infinity);
     let level = NaN;
     group.userData.update = (dt, elapsed, camera) => {
+      if (footings) footings.visible = seaUniforms.uTideLive.value > 0;
       // the pontoons follow the water down to where they settle on the bed
-      const y = Math.max(getSeaLevel(), GROUND);
+      const y = pontoonLevel(getSeaLevel());
       if (y !== level) {
         level = y;
         floating.position.y = y;

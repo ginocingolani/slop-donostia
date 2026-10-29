@@ -7,6 +7,7 @@ import { WALL, COPING, visibleWalls } from './shore-walls.js';
 import { SHORE } from './data-shore.js';
 import { accessGeometry } from './beach-access.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
+import { seaUniforms } from './sea-uniforms.js';
 
 // js/donostia/shore.js
 // The shore: the masonry of the sea & river walls the terrain now steps down at (GEO.terrain.walls, found in the LiDAR by
@@ -19,8 +20,10 @@ import { BEACH_ACCESS } from './data-beach-access.js';
 // - Rocks: the flysch sandstone of Urgull's foot (fallen blocks, bedded slabs), the Zurriola dike's concrete cubes, the
 //   riprap at the foot of the river walls and boulders along the rocky coast; a few procedural geometries, instanced
 //   per kind and per 1 km tile so whole tiles drop out of view, and each kind culled by distance.
-// The tidal band darkens walls & rocks below the high-water line and weed grows under half tide, after the sea's level
-// (seaLevel: the water's userData.seaLevel uniform, so the tide moves it).
+// The tidal band darkens walls & rocks below the high-water line and weed grows under half tide, after the tidal bands'
+// mark (js/donostia/sea-uniforms.js uTideMark: the water's level with the real-time switch off, so the demo tide moves
+// it; the last high water's with it on, so the ebb uncovers the weed); the rocks' swash runs at the water's level
+// (seaLevel: the water's userData.seaLevel uniform).
 // - The beaches' stairs & ramps (js/donostia/beach-access.js, from data-beach-access.js) in the walls' masonry, in the
 //   walls' mesh.
 // - Stairs: the other flights of steps down from the walls (the municipal map's, GEO.terrain.stairs: the port's quays,
@@ -248,7 +251,7 @@ const tidal = (c, h, n) => {
   return mix(mix(c, c.mul(vec3(0.5, 0.5, 0.46)), wet), vec3(0.045, 0.06, 0.03), weed.mul(0.85));
 };
 
-function wallMaterial(seaLevel) {
+function wallMaterial() {
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.88, metalness: 0 });
   const u = attribute('aU', 'float'), y = positionWorld.y;
   const mason = attribute('aMason', 'vec4'), mortar = attribute('aMortar', 'float'), foot = attribute('aFoot', 'float');
@@ -323,7 +326,7 @@ function wallMaterial(seaLevel) {
     // the arcade: the gallery through the openings, the columns & the arches' rings in dressed stone
     c.assign(mix(c, gallery, open.mul(float(1).sub(col))));
     c.assign(mix(c, dressedStone.mul(mix(float(1), roundness.mul(0.35).add(0.65), shaft)), max(col, ring)));
-    return tidal(c, y.sub(seaLevel), grain.mul(4));
+    return tidal(c, y.sub(seaUniforms.uTideMark), grain.mul(4));
   })();
   mat.normalNode = bumpNormal(joint.mul(-0.012).add(grain.mul(0.004)).mul(float(1).sub(max(open, col))));
   // (the sky lights the face, not the gallery under the deck)
@@ -341,7 +344,7 @@ function mergeInto(a, b) {
   return a;
 }
 
-function wallMesh(GEO, terrain, seaLevel) {
+function wallMesh(GEO, terrain) {
   const walls = wallGeometry(visibleWalls(GEO.terrain.walls || []), (x, z) => terrain.heightAt(x, z));
   const g = mergeInto(walls || { pos: [], nrm: [], col: [], u: [], mason: [], mortar: [], foot: [], arc: [], idx: [] }, accessGeometry(BEACH_ACCESS));
   if (!g.idx.length) return null;
@@ -357,7 +360,7 @@ function wallMesh(GEO, terrain, seaLevel) {
   geo.setIndex(new THREE.BufferAttribute(new Uint32Array(g.idx), 1));
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, wallMaterial(seaLevel));
+  const mesh = new THREE.Mesh(geo, wallMaterial());
   mesh.name = 'DonostiaShoreWalls';
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -640,9 +643,8 @@ function rockMaterials(seaLevel) {
     const base = mix(sand, vec3(0.24, 0.215, 0.18), step(0.82, tint)).toVar();
     const bed = sin(positionGeometry.y.mul(26).add(n1.mul(2.5))).mul(0.5).add(0.5);
     const c = base.mul(mix(float(0.9), float(1.07), bed)).mul(n1.mul(0.14).add(n2.mul(0.08)).add(1)).toVar();
-    const h = p.y.sub(seaLevel);
-    c.assign(tidal(c, h, n1));
-    return mix(c, vec3(0.75, 0.78, 0.78), swash(h));
+    c.assign(tidal(c, p.y.sub(seaUniforms.uTideMark), n1));
+    return mix(c, vec3(0.75, 0.78, 0.78), swash(p.y.sub(seaLevel)));
   })();
   rock.normalNode = bumpNormal(n2.mul(0.03).add(n1.mul(0.05)));
 
@@ -654,9 +656,8 @@ function rockMaterials(seaLevel) {
     // weathered: darker patches and rust-brown runs on each cube
     const stain = smoothstep(0.2, 0.7, mx_noise_float(p.mul(0.45).add(vec3(tint.mul(40), 0, 0)))).mul(0.3);
     const c = base.mul(n1.mul(0.12).add(n2.mul(0.06)).add(1)).mul(float(1).sub(pits)).mul(float(1).sub(stain)).toVar();
-    const h = p.y.sub(seaLevel);
-    c.assign(tidal(c, h, n1));
-    return mix(c, vec3(0.75, 0.78, 0.78), swash(h));
+    c.assign(tidal(c, p.y.sub(seaUniforms.uTideMark), n1));
+    return mix(c, vec3(0.75, 0.78, 0.78), swash(p.y.sub(seaLevel)));
   })();
   concrete.normalNode = bumpNormal(n2.mul(0.01));
   return { rock, concrete };
@@ -762,15 +763,15 @@ class RockCull {
 }
 
 /**
- * The shore walls & rocks. seaLevel: the water's level uniform (js/donostia/water.js userData.seaLevel), for the tidal
- * band; a fixed mean sea level without it.
+ * The shore walls & rocks. seaLevel: the water's level uniform (js/donostia/water.js userData.seaLevel), for the rocks'
+ * swash; a fixed mean sea level without it.
  */
 export async function buildShore(GEO, terrain, seaLevel = null) {
   try {
     const level = seaLevel || uniform(0);
     const group = new THREE.Group();
     group.name = 'DonostiaShore';
-    const walls = wallMesh(GEO, terrain, level);
+    const walls = wallMesh(GEO, terrain);
     if (walls) group.add(walls);
     const stone = rockMaterials(level);
     const stairs = stairMesh(GEO.terrain.stairs || [], stone.concrete);
