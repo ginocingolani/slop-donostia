@@ -1,10 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, If, float, vec2, vec3, vec4, texture, positionWorld, cameraPosition, cameraViewMatrix, time, mix, smoothstep,
-  clamp, pow, dot, normalize, min, max, abs, fract, floor, sin, sqrt, exp, fwidth, select, mx_noise_float, uniform
+  clamp, pow, dot, normalize, min, max, abs, fract, floor, sin, cos, sqrt, exp, fwidth, select, mx_noise_float, uniform
 } from 'three/tsl';
 import { decodePNGOffThread } from './png.js';
 import { MARINA } from './data-marina.js';
+import { liveEnabled, liveSnapshot } from './live-state.js';
+import { FIXED_SEA, seaParams, wavelength } from './sea-state.js';
+import { seaUniforms } from './sea-uniforms.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -25,6 +28,13 @@ import { MARINA } from './data-marina.js';
 //   more the further from the mouth: smaller ripples (the reflections sharpen), no surf or swash, and the harbour's
 //   green water, never the turquoise of a sandy shallow (the LiDAR bed in the basins lies at -0.3 m). Off when the
 //   marina's data has no harbour.
+// - Real time (js/donostia/live-state.js, switched on): the tide's level, and the sea js/donostia/sea-state.js makes of
+//   the waves, the swell and the wind, eased in every frame through uniforms: the breakers' size & period follow the
+//   swell (Zurriola's the most, the bay's refracted round Santa Klara & Igeldo, none in the port); the wind sea's
+//   energy and direction follow the wind (glassy in a calm, whitecaps from a fresh breeze); the open sea's long swell
+//   runs in from its direction as three long-crested trains. Each uniform holds the fixed sea's value with the switch
+//   off (FIXED_SEA), so the water is today's to the bit, and the live sea's extras sit behind uniform branches that
+//   skip them.
 
 const SIZE = 60000;
 const POND_SINK = 0.4; // m: build.mjs sinks pond cells this far below their surveyed surface
@@ -316,10 +326,64 @@ const LAYERS = [
   [3.3, 2.71, 0.064]
 ];
 const FLOW_PERIOD = 3.0; // s between flow-map resets (two phases cross-fade so the jump never shows)
+// Live: each layer turned round the wind's direction by this much (rad), the shorter waves spread wider
+const LAYER_SPREAD = [0.0, 0.3, -0.42, 0.75];
+// Live: the open sea's swell as three long-crested trains, [turn (rad) from the swell's direction, period (times the
+// swell's), height (times half the swell's), phase (rad)]: their beat gathers the crests into sets
+const SWELL_TRAINS = [
+  [0.0, 1.0, 0.62, 0.0],
+  [0.13, 0.91, 0.36, 2.1],
+  [-0.09, 1.1, 0.3, 4.4]
+];
+// The texture's waves run along +(cos, sin)(0.3) in its own coordinates: a layer turned by rot moves them along
+// world angle 0.3 - rot + π (x towards z)
+const TEXTURE_AXIS = 0.3;
+
+// The live sea's uniforms (createWater's update sets them): the fixed sea's values with the switch off
+function seaStateUniforms() {
+  const v2 = (a) => new THREE.Vector2(Math.cos(a), Math.sin(a));
+  return {
+    surf: uniform(FIXED_SEA.surf), periodA: uniform(FIXED_SEA.surfPeriodA), periodB: uniform(FIXED_SEA.surfPeriodB),
+    chop: uniform(FIXED_SEA.chop), calm: uniform(FIXED_SEA.calm), whitecaps: uniform(FIXED_SEA.whitecaps),
+    // per layer, its turn as (cos, sin): its own fixed angle, or round the wind's direction
+    turns: LAYERS.map(([, rot]) => uniform(v2(rot))),
+    // the swell's height (m) and, per train, (direction of travel x, z; wavenumber, rad/m; angular frequency, rad/s)
+    swell: uniform(FIXED_SEA.swell),
+    trains: SWELL_TRAINS.map(() => uniform(new THREE.Vector4(1, 0, 0.04, 0.6))),
+    // the whitecaps' drift downwind (m/s)
+    windDrift: uniform(new THREE.Vector2(0, 0))
+  };
+}
+
+// Sets the uniforms from a sea state (sea-state.js FIXED_SEA's keys; chopFrom null: the layers' own angles)
+function applySeaState(S, s) {
+  S.surf.value = s.surf;
+  S.periodA.value = s.surfPeriodA;
+  S.periodB.value = s.surfPeriodB;
+  S.chop.value = s.chop;
+  S.calm.value = s.calm;
+  S.whitecaps.value = s.whitecaps;
+  S.swell.value = s.swell;
+  // directions of travel (x east, z south) from where the wind & the swell come from
+  const travel = (from) => Math.atan2(Math.cos((from * Math.PI) / 180), -Math.sin((from * Math.PI) / 180));
+  const wind = s.chopFrom == null ? null : travel(s.chopFrom);
+  LAYERS.forEach(([, rot], i) => {
+    const a = wind == null ? rot : TEXTURE_AXIS + Math.PI - wind + LAYER_SPREAD[i];
+    S.turns[i].value.set(Math.cos(a), Math.sin(a));
+  });
+  if (wind != null) S.windDrift.value.set(Math.cos(wind), Math.sin(wind)).multiplyScalar(0.6 + 0.15 * (s.windSpeed ?? 3));
+  const swell = travel(s.swellFrom);
+  SWELL_TRAINS.forEach(([turn, tf], i) => {
+    const T = s.swellPeriod * tf;
+    S.trains[i].value.set(Math.cos(swell + turn), Math.sin(swell + turn), (2 * Math.PI) / wavelength(T), (2 * Math.PI) / T);
+  });
+}
 
 function createWaterMaterial(terrain, fieldsTex) {
   const { core, context } = terrain;
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0.0, roughness: 0.25 });
+  const S = seaStateUniforms();
+  mat.userData.seaState = S;
   const waveTex = waveTexture();
   const p = positionWorld;
 
@@ -358,9 +422,11 @@ function createWaterMaterial(terrain, fieldsTex) {
     const gustA = noise2D(q.mul(0.0047).add(vec2(t.mul(0.011), t.mul(-0.007))));
     const gustB = noise2D(q.mul(0.0135).add(vec2(t.mul(-0.009), t.mul(0.013))).add(31.7));
     const gust = smoothstep(0.18, 0.82, gustA.mul(0.62).add(gustB.mul(0.38)));
-    // the open sea choppiest, La Concha & the port calmer, the river & the ponds calmest
+    // the open sea choppiest, La Concha & the port calmer, the river & the ponds calmest; live, as much as the wind
+    // raises, and the bay glassy in a calm
     const shelter = mix(mix(float(0.5), float(1.25), surf), float(0.3), river);
-    const energy = mix(float(0.55), float(1.25), gust).mul(shelter).mul(mix(float(1.0), float(0.28), sheltered)).toVar();
+    const energy = mix(float(0.55), float(1.25), gust).mul(shelter).mul(mix(float(1.0), float(0.28), sheltered))
+      .mul(S.chop).mul(float(1.0).sub(S.calm.mul(float(1.0).sub(surf)).mul(0.75))).toVar();
 
     // The river carries the two short layers seaward: two flow-map phases half a period apart, each faded out as it
     // resets
@@ -372,11 +438,12 @@ function createWaterMaterial(terrain, fieldsTex) {
     const slope = vec2(0.0, 0.0).toVar();
     const variance = energy.mul(energy).mul(0.0022).toVar(); // capillary ripples, always below a pixel
     const crest = float(0.0).toVar();
-    for (const [L, rot, sigma] of LAYERS) {
-      const c = Math.cos(rot);
-      const s = Math.sin(rot);
+    LAYERS.forEach(([L, , sigma], i) => {
+      // (the layer's turn: its own angle, or live round the wind's direction)
+      const c = S.turns[i].x;
+      const s = S.turns[i].y;
       const speed = (0.8 * Math.sqrt(L / 9)) / L; // ~phase speed of the tile's dominant waves, in tiles per second
-      const drift = vec2(Math.cos(0.3) * speed, Math.sin(0.3) * speed).mul(t);
+      const drift = vec2(Math.cos(TEXTURE_AXIS) * speed, Math.sin(TEXTURE_AXIS) * speed).mul(t);
       const layerUV = (at) => vec2(at.x.mul(c).sub(at.y.mul(s)), at.x.mul(s).add(at.y.mul(c))).div(L).add(drift);
       const smp = L < 10
         ? mix(texture(waveTex, layerUV(q.sub(offB))), texture(waveTex, layerUV(q.sub(offA))), weightA)
@@ -385,16 +452,33 @@ function createWaterMaterial(terrain, fieldsTex) {
       slope.addAssign(vec2(smp.x.mul(c).add(smp.y.mul(s)), smp.y.mul(c).sub(smp.x.mul(s))).mul(amp));
       variance.addAssign(max(smp.z.sub(dot(smp.xy, smp.xy)), 0.0).mul(amp.mul(amp)));
       crest.addAssign(smp.w.mul(sigma));
-    }
+    });
+
+    // Live: the open sea's swell, long crests running in from its direction in sets, fading into the bay (what
+    // rounds Santa Klara is the breakers' business) and gone in the port
+    If(S.swell.greaterThan(0.0), () => {
+      const reach = mix(float(0.12), float(1.0), surf).mul(float(1.0).sub(sheltered.mul(0.95))).mul(float(1.0).sub(river))
+        .mul(S.swell).mul(0.5);
+      const sets = noise2D(q.mul(0.0021).add(vec2(t.mul(0.004), t.mul(-0.003)))).mul(0.9).add(0.55);
+      SWELL_TRAINS.forEach(([, , weight, phase0], i) => {
+        const tr = S.trains[i];
+        const ph = dot(tr.xy, q).mul(tr.z).sub(tr.w.mul(t)).add(phase0);
+        slope.addAssign(tr.xy.mul(tr.z.mul(cos(ph)).mul(reach.mul(sets).mul(weight))));
+      });
+    });
     return vec4(slope, variance, crest.mul(4.0));
   })();
 
   // Surf: breaker lines along the depth contours. Shoaling waves keep their period T while slowing to sqrt(g h), so on
   // a beach of slope s the crests sit at equal steps of 2 sqrt(h) / (s T sqrt(g)) (s = 1:40 here); they travel
-  // shoreward, break once the depth falls below ~1.3 times the breaker height and leave foam trailing seaward.
+  // shoreward, break once the depth falls below ~1.3 times the breaker height and leave foam trailing seaward. Live,
+  // the breakers scale with the swell (S.surf: 1 the swell they were drawn for) and keep its period; a big swell
+  // breaks all along the shore and trails its foam further.
   const foam = Fn(() => {
-    const breaker = surf.mul(1.5).add(0.12).toVar(); // m: ~1.4 m on Zurriola, ~0.3 m in La Concha, a ripple in the port
-    const period = mix(float(7.0), float(11.0), surf);
+    // m: ~1 m on Zurriola, ~0.3 m in La Concha, a ripple in the port
+    const breaker = surf.mul(1.5).add(0.12).mul(S.surf).toVar();
+    const period = mix(S.periodA, S.periodB, surf);
+    const big = smoothstep(1.5, 3.0, S.surf).toVar();
     const breakDepth = breaker.mul(1.3);
     const warp = noise2D(p.xz.mul(0.011)).sub(0.5).mul(0.9).add(noise2D(p.xz.mul(0.043).add(5.2)).sub(0.5).mul(0.35));
     const crestPhase = sqrt(depth).mul(25.5).div(period).add(warp).add(time.div(period)).toVar();
@@ -402,18 +486,36 @@ function createWaterMaterial(terrain, fieldsTex) {
     const aa = smoothstep(0.25, 0.7, fwidth(crestPhase)).toVar();
     // a white line at each crest, crisp on its shoreward side, and the foam it leaves behind fading seaward; once the
     // lines crowd below a pixel (steep rock, quay walls, distance) only their pulsing average remains
-    const line = max(exp(u.mul(-22.0)), smoothstep(0.965, 1.0, u)).add(exp(u.mul(-3.2)).mul(0.45));
+    const line = max(exp(u.mul(-22.0)), smoothstep(0.965, 1.0, u)).add(exp(u.mul(float(-3.2).div(big.add(1.0)))).mul(big.mul(0.3).add(0.45)));
     const pulse = sin(time.mul(6.2832).div(period).add(warp.mul(6.0))).mul(0.25).add(0.4);
     const pattern = mix(line, pulse, aa);
     const breaking = smoothstep(breakDepth, breakDepth.mul(0.45), depth);
     // crests break in sections that come and go along the shore
-    const sections = smoothstep(0.2, 0.65, noise2D(p.xz.mul(0.03).add(vec2(time.mul(0.031), time.mul(-0.017)))));
+    const sections = smoothstep(float(0.2).sub(big.mul(0.25)), float(0.65).sub(big.mul(0.35)),
+      noise2D(p.xz.mul(0.03).add(vec2(time.mul(0.031), time.mul(-0.017)))));
     const surfFoam = pattern.mul(breaking).mul(sections.mul(0.65).add(0.35));
     // swash: the thin sheet of foam running up & back at the water's edge
     const runup = sin(time.mul(6.2832).div(period).add(warp.mul(5.0))).mul(0.5).add(0.5);
     const swashDepth = breaker.mul(0.07).add(0.03).mul(runup.mul(0.8).add(0.4));
     const swash = exp(depth.div(swashDepth).negate()).mul(float(0.85).mul(float(1.0).sub(river)));
     const density = clamp(max(surfFoam, swash), 0.0, 1.0).mul(float(1.0).sub(harbour)).toVar();
+
+    // Live: whitecaps on the open water from a fresh breeze: patches drawn out downwind that break, drift and fade
+    // within seconds, a light sheen of their share once they shrink below a few pixels; fewer where the bay's fetch is
+    // short, none in the port or the river (a uniform branch: derivatives are allowed in it)
+    If(S.whitecaps.greaterThan(0.0), () => {
+      const wind = S.windDrift.div(max(S.windDrift.length(), 0.001));
+      const rel = p.xz.sub(S.windDrift.mul(time));
+      const w2 = vec2(dot(rel, wind).mul(0.5), dot(rel, vec2(wind.y.negate(), wind.x)));
+      const n = mx_noise_float(vec3(w2.mul(0.2), time.mul(0.3))).add(noise2D(w2.mul(1.1)).sub(0.5).mul(0.3));
+      const threshold = float(0.6).sub(S.whitecaps.mul(0.28));
+      const local = float(1.0).sub(harbour).mul(float(1.0).sub(river)).mul(mix(float(0.35), float(1.0), surf));
+      // (a cap is densest at its breaking front, downwind, and thins out behind)
+      const near = smoothstep(threshold, threshold.add(0.12), n).mul(smoothstep(threshold.add(0.4), threshold.add(0.1), n).mul(0.35).add(0.35));
+      const share = S.whitecaps.mul(0.1);
+      const far = smoothstep(0.4, 3.0, fwidth(p.x).add(fwidth(p.z)));
+      density.assign(max(density, mix(near, share, far).mul(local)));
+    });
 
     // Lace: foam breaks up into a web of bubbles and holes, densest at the crest. The noise only runs near the shore
     // (no derivatives or texture reads inside the branch, so it stays legal in non-uniform control flow)
@@ -581,7 +683,7 @@ export async function createWater(terrain) {
   // Tide: Donostia's mean range is ~2.8 m (4.5 m at springs); a 1.6 m amplitude sits between the two
   const tide = { enabled: false, level: 0, amplitude: 1.6, period: 720 };
   let seaLevel = 0, tideTime = 0;
-  const uSeaLevel = uniform(0);
+  const { uSeaLevel, uTideMark, uTideLive } = seaUniforms;
   const setSeaLevel = (y) => {
     seaLevel = y;
     uSeaLevel.value = y;
@@ -591,13 +693,56 @@ export async function createWater(terrain) {
   group.userData.tide = tide;
   group.userData.seaLevel = uSeaLevel;
   group.userData.getSeaLevel = () => seaLevel;
+
+  // Real time: the live sea (sea-state.js seaParams of the live snapshot, read four times a second) eased towards
+  // over SEA_EASE s, and the whole of it blended in from the fixed sea over BLEND s as the switch goes on (and back out
+  // as it goes off, after which nothing runs). The tide's level and the bands' mark follow the snapshot directly.
+  const S = material.userData.seaState;
+  const live = { ...FIXED_SEA, windSpeed: 3 }, shown = { ...FIXED_SEA };
+  let blend = 0, target = null, readAt = 0, clock = 0;
+  const SEA_EASE = 4, BLEND = 1.5, READ = 0.25;
+  const EASED = ['surf', 'surfPeriodA', 'surfPeriodB', 'swell', 'swellPeriod', 'chop', 'calm', 'whitecaps', 'spray', 'windSpeed'];
+  group.userData.seaState = () => ({ ...shown, blend });
   group.userData.update = (dt) => {
     let y = tide.level;
     if (tide.enabled) {
       tideTime += dt;
       y += tide.amplitude * Math.sin((2 * Math.PI * tideTime) / tide.period);
     }
+    let mark = y;
+    const on = liveEnabled();
+    if (on || blend > 0) {
+      clock += dt;
+      if (on && (!target || clock - readAt >= READ)) {
+        const first = !target;
+        target = seaParams(liveSnapshot());
+        readAt = clock;
+        if (first && blend === 0) Object.assign(live, target);
+      }
+      const k = 1 - Math.exp(-dt / SEA_EASE);
+      for (const key of EASED) live[key] += (target[key] - live[key]) * k;
+      Object.assign(live, { level: target.level, mark: target.mark, chopFrom: target.chopFrom, swellFrom: target.swellFrom });
+      blend = Math.min(1, Math.max(0, blend + (on ? dt : -dt) / BLEND));
+      const b = blend * blend * (3 - 2 * blend);
+      for (const key of [...EASED, 'level', 'mark']) shown[key] = (FIXED_SEA[key] ?? 0) + ((live[key] ?? 0) - (FIXED_SEA[key] ?? 0)) * b;
+      shown.level = y + (live.level - y) * b;
+      shown.mark = y + (live.mark - y) * b;
+      shown.chopFrom = blend > 0 ? live.chopFrom : null;
+      shown.swellFrom = live.swellFrom;
+      if (blend === 0) {
+        // back to the fixed sea, exactly
+        Object.assign(shown, FIXED_SEA);
+        target = null;
+        shown.level = y;
+        shown.mark = y;
+      }
+      applySeaState(S, shown);
+      uTideLive.value = b;
+      y = shown.level;
+      mark = shown.mark;
+    }
     if (y !== seaLevel) setSeaLevel(y);
+    if (mark !== uTideMark.value) uTideMark.value = mark;
   };
   return group;
 }
