@@ -57,8 +57,10 @@ ChangeLog
   the build fails on overlapping or wrongly turning contours anywhere on a wght x CURV grid, not only at the masters.
   Family-wide Windows metrics (944 / 296), one underline thickness, fsSelection REGULAR wherever nameID 2 is
   Regular, advances rounded once (so the maths signs share one width).
-- HUD switches in build.py: HUD_CURV (the HUD subset's curvature, 0 as committed) and HUD_SS01 (bake the dotted i
-  into the HUD subset as a required feature, off as committed).
+- The app's cuts, as Slop Donostia's owner chose them on the 0.200 playground (APP_SUBSETS in build.py): the HUD
+  (Ateburu-HUD.woff2) is the SemiBold at CURV 50 and the titles (Ateburu-Title.woff2, new) the Bold at CURV 80, both
+  with the dotted i baked in as a required feature (rclt): the short serifed stem with the round dot. The curved
+  Basque K stays the default; no other feature is on.
 - No case feature: the punctuation already sits on the capitals.
 
 Known, left as they are in 0.200 (fontbakery check-googlefonts 0.12.10):

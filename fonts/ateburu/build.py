@@ -78,12 +78,16 @@ MASTERS = [G.Master('HUD', 0.0, 600, 0.0), G.Master('Black', 1.0, 900, 0.0),
 WGHT = (600, 900)
 CURV = (0, 100)
 INSTANCES = [('SemiBold', 600), ('Bold', 700), ('ExtraBold', 800), ('Black', 900)]
-# The HUD subset (webfonts/Ateburu-HUD.woff2) is the SemiBold at this curvature (CURV 0-100). 0 keeps the HUD as it
-# has been; the app's owner picks a value (see FONTLOG), and only this number changes.
-HUD_CURV = 0
-# True bakes the dotted i (ss01) into the HUD subset as a required contextual feature (rclt), so it applies with no
-# CSS, through the HUD's letter-spacing (which turns calt off) and in the minimap's canvas text. False: as before.
-HUD_SS01 = False
+# The app's two subsets, as its owner chose them on 0.200's playground (see FONTLOG): the HUD's place names
+# (webfonts/Ateburu-HUD.woff2, 11-17 px) and its titles (webfonts/Ateburu-Title.woff2: the loading screen, the brand,
+# the full map's heading), each a static cut at its weight and curvature (CURV 0-100). `dotted_i` (stem, dot from
+# glyphs.I_STEMS and I_DOTS) bakes the dotted i (ss01, with that stem and dot) in as a required contextual feature
+# (rclt), so it applies with no CSS, through the HUD's letter-spacing (which turns calt off) and in the minimap's canvas
+# text; None leaves the i a capital.
+APP_SUBSETS = [
+    {'name': 'HUD', 'style': 'SemiBold', 'weight': 600, 'curv': 50, 'dotted_i': ('short', 'round')},
+    {'name': 'Title', 'style': 'Bold', 'weight': 700, 'curv': 80, 'dotted_i': ('short', 'round')},
+]
 # What the HUD sets in Ateburu: place names only, in Basque, Spanish, Catalan, Galician, Portuguese and French. Their
 # letters and the punctuation names take; anything else falls back to the next font in the CSS stack.
 HUD_UNICODES = sorted(ord(ch) for ch in set(
@@ -525,6 +529,51 @@ def finish_static(font, style):
     font['head'].macStyle = 0x01 if style == 'Bold' else 0
 
 
+def app_subset(spec, drawn, outl, sb, kern):
+    """One of APP_SUBSETS: the static cut at its weight and curvature, the dotted i baked in as rclt with its stem and
+    dot, trimmed to the place names' characters (HUD_UNICODES), unhinted, as webfonts/<FAMILY>-<name>.woff2"""
+    t = (spec['weight'] - WGHT[0]) / (WGHT[1] - WGHT[0])
+    font = build_font((t, spec['curv'] / CURV[1]), spec['weight'], names_for(spec['style'], spec['weight']),
+                      drawn, outl, sb, kern)
+    finish_static(font, spec['style'])
+    font.recalcTimestamp = False
+    if spec['dotted_i']:
+        stem, dot = spec['dotted_i']
+        assert stem in G.I_STEMS and dot in G.I_DOTS, spec['dotted_i']
+        # ss01 turns i (and I after a letter) into i.short.lozenge and the accented ones into i<acc>.short; cv01 and
+        # cv02 then swap the stem and the dot. Baked in: ss01 points straight at the chosen forms, and becomes rclt
+        # before the subsetter runs, so the other forms (and cv01, cv02) are dropped
+        gsub = font['GSUB'].table
+        targets = {'i.short.lozenge': f'i.{stem}.{dot}'}
+        for acc in ('acute', 'grave', 'dieresis', 'circumflex'):
+            targets[f'i{acc}.short'] = {'short': f'i{acc}.short', 'tall': 'I' + acc,
+                                        'shortplain': f'i{acc}.shortplain', 'tallplain': f'i{acc}.tallplain'}[stem]
+        for rec in gsub.FeatureList.FeatureRecord:
+            if rec.FeatureTag == 'ss01':
+                rec.FeatureTag, rec.Feature.FeatureParams = 'rclt', None
+        for lookup in gsub.LookupList.Lookup:
+            if lookup.LookupType != 1:
+                continue
+            for st in lookup.SubTable:
+                for src, dst in list(st.mapping.items()):
+                    if dst in targets and src.lower().startswith('i') and len(src) <= len('icircumflex'):
+                        st.mapping[src] = targets[dst]
+        gsub.FeatureList.FeatureRecord.sort(key=lambda r: r.FeatureTag)
+    options = subset.Options()
+    options.flavor = 'woff2'
+    options.layout_features = ['kern'] + (['rclt'] if spec['dotted_i'] else [])
+    options.name_IDs = ['*']
+    options.name_languages = ['*']
+    options.notdef_outline = True
+    options.recalc_timestamp = False
+    options.hinting = False          # the app's text is drawn by browsers that need no hints
+    sub = subset.Subsetter(options)
+    sub.populate(unicodes=[u for u in HUD_UNICODES if u in font.getBestCmap()])
+    sub.subset(font)
+    font.flavor = 'woff2'
+    font.save(os.path.join(OUT_WEB, f'{FAMILY}-{spec["name"]}.woff2'))
+
+
 def hint_static(path):
     """Autohint a static with ttfautohint, reproducibly: no version info in the name table, and head.modified put back
     to TIMESTAMP (ttfautohint stamps the time of the run)"""
@@ -671,29 +720,8 @@ def main():
     web.flavor = 'woff2'
     web.save(os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'))
 
-    if HUD_CURV:
-        hud = build_font((0.0, HUD_CURV / CURV[1]), 600, names_for('SemiBold', 600), drawn, outl, sb, kern)
-        finish_static(hud, 'SemiBold')
-    else:
-        hud = TTFont(os.path.join(OUT_STATIC, f'{FAMILY}-SemiBold.ttf'))
-    hud.recalcTimestamp = False
-    options = subset.Options()
-    options.flavor = 'woff2'
-    options.layout_features = ['kern'] + (['ss01'] if HUD_SS01 else [])
-    options.name_IDs = ['*']
-    options.name_languages = ['*']
-    options.notdef_outline = True
-    options.recalc_timestamp = False
-    options.hinting = False          # the app's text is drawn by browsers that need no hints
-    sub = subset.Subsetter(options)
-    sub.populate(unicodes=[u for u in HUD_UNICODES if u in hud.getBestCmap()])
-    sub.subset(hud)
-    if HUD_SS01:
-        for rec in hud['GSUB'].table.FeatureList.FeatureRecord:
-            if rec.FeatureTag == 'ss01':
-                rec.FeatureTag, rec.Feature.FeatureParams = 'rclt', None
-    hud.flavor = 'woff2'
-    hud.save(os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2'))
+    for spec in APP_SUBSETS:
+        app_subset(spec, drawn, outl, sb, kern)
 
     report = {
         'glyphs': len(glyph_order()),
@@ -706,7 +734,7 @@ def main():
         json.dump(report, f, indent=1, sort_keys=True)
         f.write('\n')
     for p in [*master_paths, OUT_VF, *statics, os.path.join(OUT_WEB, f'{FAMILY}-Variable.woff2'),
-              os.path.join(OUT_WEB, f'{FAMILY}-HUD.woff2')]:
+              *[os.path.join(OUT_WEB, f'{FAMILY}-{s["name"]}.woff2') for s in APP_SUBSETS]]:
         print(f'{os.path.relpath(p, HERE)}: {os.path.getsize(p)} bytes')
 
 

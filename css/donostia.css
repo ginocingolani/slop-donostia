@@ -8,11 +8,19 @@
    two, both taken from the stones themselves rather than from folklore: the compass-drawn rosette of the discoidal
    stelae, and the inner rule of a carved cartouche
    ------------------------------------------------------------------------------------------------------------------ */
-/* Ateburu (fonts/ateburu, SIL OFL), drawn for this HUD: its SemiBold, the cut made for light text on these panels at
-   12-20 px, answers every weight the HUD asks for, so the browser never fakes a bold */
+/* Ateburu (fonts/ateburu, SIL OFL), drawn for this HUD, in two static cuts with the dotted i of the shop signs
+   (DONOSTiA) and the round dot baked in: the HUD's SemiBold at curvature 50, made for light text on these panels at
+   12-20 px, and the titles' Bold at curvature 80 (the loading screen, the brand, the full map's heading). Each answers
+   every weight asked of it, so the browser never fakes a bold */
 @font-face {
   font-family: 'Ateburu';
   src: url('../fonts/ateburu/webfonts/Ateburu-HUD.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Ateburu Title';
+  src: url('../fonts/ateburu/webfonts/Ateburu-Title.woff2') format('woff2');
   font-weight: 100 900;
   font-display: swap;
 }
@@ -47,6 +55,7 @@
 
   /* Ateburu first; Donostia Display (Marcellus with the crowned A) for anything Ateburu does not cover yet */
   --font-display: 'Ateburu', 'Donostia Display', Georgia, serif;
+  --font-title: 'Ateburu Title', 'Ateburu', 'Donostia Display', Georgia, serif;
 }
 
 /* The display lettering is always capitals (as Ateburu is drawn), opened up, and never set under 12 px */
@@ -89,7 +98,7 @@
 }
 
 .loader-title {
-  font-family: var(--font-display);
+  font-family: var(--font-title);
   font-size: 44px;
   font-weight: 400;
   letter-spacing: 0.08em;
@@ -112,7 +121,7 @@
 }
 
 .brand-titles h1 {
-  font-family: var(--font-display);
+  font-family: var(--font-title);
   font-size: 17px;
   font-weight: 400;
   line-height: 1.15;
@@ -415,7 +424,7 @@ body[data-mode='god'] .gauge-alt {
 }
 
 .fullmap-title h2 {
-  font-family: var(--font-display);
+  font-family: var(--font-title);
   font-size: 17px;
   font-weight: 400;
   letter-spacing: 0.08em;

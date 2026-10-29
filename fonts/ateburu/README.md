@@ -20,7 +20,8 @@ Open [`specimen.html`](specimen.html) in a browser to see it at work.
 | `variable/Ateburu[CURV,wght].ttf` | The variable font: `wght` 600–900, `CURV` 0–100 |
 | `static/Ateburu-SemiBold.ttf` … `-Black.ttf` | Static instances at CURV 0, autohinted: SemiBold 600 (the HUD weight), Bold 700, ExtraBold 800, Black 900 |
 | `webfonts/Ateburu-Variable.woff2` | The variable font for the web (about 57 KB) |
-| `webfonts/Ateburu-HUD.woff2` | SemiBold, subset to the letters and punctuation of place names, for Slop Donostia's HUD (about 7.5 KB) |
+| `webfonts/Ateburu-HUD.woff2` | SemiBold at CURV 50 with the dotted i, subset to the letters and punctuation of place names, for Slop Donostia's HUD (about 8 KB) |
+| `webfonts/Ateburu-Title.woff2` | Bold at CURV 80 with the dotted i, the same subset, for Slop Donostia's titles (about 8 KB) |
 | `source/*.py` | The source: every glyph is drawn in code (see "How it is made") |
 | `source/Ateburu.designspace`, `source/masters/` | Four masters: HUD (600) and Black (900), each straight (CURV 0) and curved (CURV 100) |
 | `source/qa.py`, `source/build-report.json` | Outline checks; the spacing, kerning and check results of the last build |
@@ -89,12 +90,18 @@ same way where another element sets `font-feature-settings` on the same word (se
 `cv03`). The font is right (HarfBuzz shapes every feature as it should); pages that compare a word with and without a
 feature can declare a second `@font-face` family over the same file for the "with" side, as `specimen.html` does.
 
-### The HUD subset
+### The app's subsets
 
-`webfonts/Ateburu-HUD.woff2` is the SemiBold at CURV 0 with kerning only. Two switches at the top of `build.py`
-change it without touching anything else: `HUD_CURV` (0–100) builds it at that curvature, and `HUD_SS01 = True`
-bakes the dotted i in as a required feature, so it applies with no CSS, under letter-spacing (which turns `calt` off)
-and in canvas text.
+Slop Donostia loads two small static cuts, subset to the letters and punctuation of place names, each described by
+one entry of `APP_SUBSETS` at the top of `build.py` (name, style, weight, CURV and the dotted i's stem and dot):
+
+- `webfonts/Ateburu-HUD.woff2`: the SemiBold at CURV 50, for the HUD's place names at 11–17 px;
+- `webfonts/Ateburu-Title.woff2`: the Bold at CURV 80, for the titles (the loading screen, the brand, the full map's
+  heading).
+
+Both bake the dotted i in as a required feature (`rclt`, the short serifed stem with the round dot), so it applies
+with no CSS, under letter-spacing (which turns `calt` off) and in canvas text: DONOSTiA, IBAiA. Changing an entry
+and rebuilding changes nothing else.
 
 ## The tradition, and an honest note on it
 
