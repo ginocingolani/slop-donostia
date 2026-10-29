@@ -502,11 +502,14 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     const weather = snap.weather;
     const wind = windVector(weather);
     const p = precipitation(weather);
-    if (!s.on) {
-      // switched on: start as the weather stands (the streets as wet as it leaves them), no easing in
+    if (!s.on || s.snap) {
+      // switched on: start as the weather stands (the streets as wet as it leaves them), no easing in; a debug snap
+      // does the same but keeps the wetness
+      if (!s.snap) s.wet = wetnessTarget(weather);
       s.on = true;
-      s.wet = wetnessTarget(weather);
+      s.snap = false;
       s.density = p.density;
+      s.rainfall = p.particle === 'rain' ? p.density : 0;
       s.windX = wind.x; s.windZ = wind.z; s.speed = wind.speed; s.gust = wind.gust;
       if (p.kind !== 'none') Object.assign(s, { fall: p.fall, length: p.length, width: p.width, alpha: p.alpha, snow: p.particle === 'snow' ? 1 : 0 });
     }
@@ -612,7 +615,8 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     return () => thunderListeners.delete(fn);
   };
   // Debug (slopDebug.weather in ?debug): strike({ distance, bearing, bolt }) now (a bolt is put at that bearing from the
-  // camera, clockwise from north), hold(f) a flash of f (null lets go), setWetness(w) the streets' wetness now, state()
+  // camera, clockwise from north), hold(f) a flash of f (null lets go), snap() the eased rain & wind to the weather now,
+  // setWetness(w) the streets' wetness now, state()
   group.userData.debug = {
     strike(options = {}) {
       const st = lightning.strike(clock, options);
@@ -621,6 +625,7 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
       return st;
     },
     hold(f = 1) { s.hold = f; return f; },
+    snap() { s.snap = true; return true; },
     setWetness(w) { wetOverride = w; s.wet = w; return w; },
     state: () => ({ on: s.on, wet: s.wet, density: s.density, drops: rain.visible ? rain.geometry.instanceCount : 0, snow: s.snow,
       wind: { x: W.uWindDir.value.x, z: W.uWindDir.value.y, sway: W.uWindSway.value, lean: W.uWindLean.value }, flash: s.flash })
