@@ -14,7 +14,7 @@ const inside = (x, z, ring) => {
 };
 
 test('the marina data keeps its shape', () => {
-  const strides = { decks: 10, piles: 5, gangways: 7, cleats: 3, pedestals: 3, lamps: 2, bollards: 4, rings: 4, ladders: 5, strakes: 5 };
+  const strides = { decks: 10, piles: 5, gangways: 9, cleats: 3, pedestals: 3, lamps: 2, bollards: 4, rings: 4, ladders: 5, strakes: 5 };
   for (const [key, stride] of Object.entries(strides)) {
     assert.ok(Array.isArray(MARINA[key]), key);
     assert.equal(MARINA[key].length % stride, 0, `${key} in records of ${stride}`);
@@ -35,11 +35,15 @@ test('the pontoons float inside the harbour and the gangways reach them', () => 
     for (let c = 0; c < 8; c += 2) assert.ok(inside(D[k + c], D[k + c + 1], ring), `deck ${k / 10} corner in the harbour`);
   }
   const G = MARINA.gangways;
-  for (let k = 0; k < G.length; k += 7) {
-    const [hx, hz, hy, fx, fz, L] = G.slice(k, k + 6);
+  for (let k = 0; k < G.length; k += 9) {
+    const [hx, hz, hy, fx, fz, L, W, ex, ez] = G.slice(k, k + 9);
     const run = Math.hypot(fx - hx, fz - hz), drop = hy - MARINA.level.freeboard;
-    // the foot rests on the deck at mean sea level: the gangway's length covers the run & drop, no steeper than 1 in 1.5
-    assert.ok(Math.abs(Math.hypot(run, drop) - L) < 0.2, `gangway ${k / 7} reaches its pontoon`);
-    assert.ok(drop / run < 0.67, `gangway ${k / 7} not too steep`);
+    // its hinge on a landing out from the wall's face, no further than the gangway's width (and its quay end on the
+    // quay); at mean sea level its rollers a little short of its length out, no steeper than 1 in 2
+    const out = Math.hypot(hx - ex, hz - ez);
+    assert.ok(out > 0.05 && out < W, `gangway ${k / 9}'s hinge ${out.toFixed(2)} m out from the quay`);
+    assert.ok(inside(ex, ez, ring) || inside(ex + (hx - ex) / out, ez + (hz - ez) / out, ring), `gangway ${k / 9} hangs over the harbour`);
+    assert.ok(run < L && run > L * 0.85, `gangway ${k / 9} reaches its pontoon`);
+    assert.ok(drop / run < 0.5, `gangway ${k / 9} not too steep`);
   }
 });

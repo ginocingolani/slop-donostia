@@ -215,9 +215,13 @@ map.
   each fitted with a rectangle and run on to its walkway's edge; the pontoons neither map has are read off the
   orthophoto (`ORTHO_PONTOONS`). An OSM end drawn onto the quay stops a quarter of a metre off the wall. The decks float
   at 0.45 m freeboard and ride the tide (the water's `getSeaLevel()`), settling no lower than mean sea level, since the
-  basins' LiDAR bed lies only 0.3 m down. Gangways hang from the quay at the municipal ramps that end by a pontoon, at
-  the quay steps whose bottom step does, and where an OSM walkway meets the wall, pitched to the pontoons' level every
-  frame the tide moves them; each has a gate at its head. Guide piles stand along the walkways (one every ~14 m,
+  basins' LiDAR bed lies only 0.3 m down. Gangways hang from the quay at the municipal ramps that end by a pontoon
+  (`ARRAPALA`, whose length they take where it fits), at the one the orthophoto shows, beside the quay steps whose
+  bottom step does and where an OSM walkway meets the wall: hinged at the quay's edge on a steel landing flush with the
+  quay (a low gate on its quay side, the hinge set out from the face as far as a gangway running along the wall needs),
+  never steeper than 33° with the pontoons on the bed, slid along the quay until their rollers and toe plate stay on
+  the walkway's deck and they clear the walls and piles at every level up to the highest tide; pitched to the pontoons'
+  level every frame the tide moves them. Guide piles stand along the walkways (one every ~14 m,
   alternately either side, never under another deck or against a wall), cleats every 3 m along the berths' edges,
   service pedestals every 11 m. On the harbour's quay walls (the walls inside `port.mjs`'s `HARBOUR` ring, over water
   in front and with no pontoon, steps or gangway alongside): a bollard every 12 m, iron rings between them on the old
