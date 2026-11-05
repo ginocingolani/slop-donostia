@@ -24,7 +24,7 @@
 // its outer facets and the half-round court between it and the block. The terrain there keeps its LiDAR level (the
 // passages run through at the plazas' level; the terrain's wall runs on round the gatehouse's front without a step) and
 // js/donostia/landmarks/harresia.js builds them.
-// Returns { walls (hidden, for GEO.terrain.walls), data (js/donostia/data-harresia.js) }.
+// Returns { walls (hidden, for GEO.terrain.walls), data (js/donostia/data-harresia.js), inner (its inner faces) }.
 
 import { WALL } from '../../js/donostia/shore-walls.js';
 import { smooth, simplify } from './walls.mjs';
@@ -324,7 +324,8 @@ export function cityWall({ dtm, loadLayer, lonLatToLocal, log = () => {} }) {
     walls.push({ t: WALL.harresia, b: 0, p, h: [0, p.length / 4 - 1] });
   }
   for (const run of port) faces.push({ t: WALL.harresia, b: 0, p: wallLine(run, (s) => Math.max(s.walk, s.back), (s) => s.out) });
-  for (const run of inner) faces.push({ t: WALL.harresia, b: 0, p: wallLine(run, (s) => s.walk, (s) => s.out) });
+  const innerFaces = inner.map((run) => ({ t: WALL.harresia, b: 0, p: wallLine(run, (s) => s.walk, (s) => s.out) }));
+  faces.push(...innerFaces);
 
   // the walk's top along the inner face: sections from the inner edge across to the port face (or the gatehouse's front)
   const outerEdges = [];
@@ -367,5 +368,5 @@ export function cityWall({ dtm, loadLayer, lonLatToLocal, log = () => {} }) {
   log(`harresia: the walk ${spots.map((s) => s.y).join(', ')} m; port face ${port.length} runs, ${metres(port)} m; ` +
     `inner face ${inner.length} runs, ${metres(inner)} m; walk top ${walk.length} strips; the Portaletas' gatehouse ` +
     `${front.length} vertices, court ${court.length}, gate ${G.L.toFixed(1)} x ${G.D.toFixed(1)} m, terrace ${data.gate.terrace} m`);
-  return { walls, data };
+  return { walls, data, inner: innerFaces };
 }

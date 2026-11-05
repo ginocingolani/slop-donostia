@@ -352,9 +352,10 @@ map.
   street's level, the bank the LiDAR leaves before it levelled out to 4.5 m, and the samples by the gatehouse's corners
   brought down, where the chord across the square turn stood out as a fin), faced by `js/donostia/shore.js` with masonry
   up to the walk (`WALL.harresia`: coursed rubble under a sandstone kerb); on the town's side, where the street lies
-  0.4 m or more below the walk, its edge is the inner face, masonry only. The port face runs on up Mari kalea's steps
-  along their parapet wall (`HORMA`). Along the inner face the landmark lays the walk's flagstones between the two faces,
-  and both faces carry black iron railings on their kerb. The Portaletas (after Wikimedia Commons photographs, looked at
+  0.4 m or more below the walk, its edge is the inner face, masonry only (the lip of the walk the LiDAR leaves on the
+  street along it, up to half a metre by the gate, comes down to 0.2 m over its foot). The port face runs on up Mari
+  kalea's steps along their parapet wall (`HORMA`). Along the inner face the landmark lays the walk's flagstones between
+  the two faces, and both faces carry black iron railings on their kerb. The Portaletas (after Wikimedia Commons photographs, looked at
   only): the gate's block is the map's pedestrian piece under the inner arch (10.4 x 2.3 m: a round arch between two
   doors, its cornice 2.45 m over the terrace), the gatehouse the walk's outline in front of it (half an octagon of buff
   ashlar, a wide opening in its front and a door in each oblique side, passages through it into the half-round court,

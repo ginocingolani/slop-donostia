@@ -1170,9 +1170,9 @@ function buildingPreview(buildings, file) {
 // steps there as at the shore walls (stepAtWalls; hidden walls, js/donostia/shore.js faces them with masonry from
 // js/donostia/data-harresia.js) from the plazas up to the street's level behind the walk, keeping the ground's classes,
 // and nothing under the walk's top stands over it. `walls` grows. Returns data-harresia.js's data.
-const HARRESIA_REACH = 4.5, CORNER_R = 2.6; // m
+const HARRESIA_REACH = 4.5, CORNER_R = 2.6, INNER_REACH = 2; // m
 function harresiaWalls(dtm, walls, grid, classes) {
-  const { walls: added, data } = cityWall({ dtm, loadLayer, lonLatToLocal, log });
+  const { walls: added, data, inner } = cityWall({ dtm, loadLayer, lonLatToLocal, log });
   const first = walls.length;
   walls.push(...added);
   const kept = classes.slice();
@@ -1206,6 +1206,17 @@ function harresiaWalls(dtm, walls, grid, classes) {
       if (q && q.d < 0 && grid.data[c] > q.foot + 0.1) { grid.data[c] = q.foot; cornered++; }
     }
   }
+  // along the inner face the LiDAR leaves a lip of the walk on the street, up to half a metre over it by the gate: the
+  // samples within INNER_REACH of the face (in front, and behind it under the walk's top) no higher than its foot + 0.2
+  const innerIndex = wallIndex(inner, 16, INNER_REACH + 1);
+  let lip = 0;
+  for (let j = 0; j < grid.h; j++) for (let i = 0; i < grid.w; i++) {
+    const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+    if (!innerIndex.near(x, z).length) continue;
+    const q = nearestWall(inner, x, z, INNER_REACH, innerIndex);
+    const c = j * grid.w + i;
+    if (q && !q.end && grid.data[c] > q.foot + 0.2) { grid.data[c] = q.foot + 0.2; lip++; }
+  }
   // (the walk's top: sections [port face x, z, inner edge x, z, level, ...], quads between them)
   let under = 0;
   for (const s of data.walk) {
@@ -1220,7 +1231,7 @@ function harresiaWalls(dtm, walls, grid, classes) {
   const onto = [...snaps.values()].filter((sn) => sn.wall >= first).length;
   log(`harresia: ${added.length} walls; ${onto} terrain samples onto them, ${lowered} in front dropped to the plazas, ` +
     `${banked} more of the bank before them, ${raised} behind levelled with the street (${cornered} down by the gatehouse's ` +
-    `corners), ${under} kept under the walk's top`);
+    `corners), ${lip} of the walk's lip on the street along the inner face, ${under} kept under the walk's top`);
   return data;
 }
 
