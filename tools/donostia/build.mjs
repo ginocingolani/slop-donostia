@@ -8,6 +8,8 @@
 //                                      teleports
 //   js/donostia/data-beach-access.js  the stairs & ramps down to the beaches (tools/donostia/beach-access.mjs)
 //   js/donostia/data-tunnels.js        the tunnels' portals (tools/donostia/tunnels.mjs)
+//   js/donostia/data-harresia.js       the old city wall along the port: its faces, its walk's top and the Portaletas
+//                                      (tools/donostia/harresia.mjs)
 // --preview writes debug images (hillshade, building heights) into the given folder.
 // Needs the raw cache: raw/dtm/*.asc and raw/bathy/isobaths.json, which extract.py writes (build-all.sh --fetch).
 
@@ -20,6 +22,7 @@ import {
 import { detectWalls, detectStairs, stairWalls, joinPortWalls, quayEdges, buildingFaces, shoreGuides, wallExclusions } from './walls.mjs';
 import { beachAccesses, carveTerrain } from './beach-access.mjs';
 import { tunnelPortals } from './tunnels.mjs';
+import { cityWall } from './harresia.mjs';
 import { WALL, wallSnaps, wallIndex, nearestWall } from '../../js/donostia/shore-walls.js';
 
 const ROOT = path.join(HERE, '..', '..');
@@ -27,6 +30,7 @@ const OUT_DATA = path.join(ROOT, 'data', 'donostia');
 const OUT_JS = path.join(ROOT, 'js', 'donostia', 'geodata.js');
 const OUT_ACCESS = path.join(ROOT, 'js', 'donostia', 'data-beach-access.js');
 const OUT_TUNNELS = path.join(ROOT, 'js', 'donostia', 'data-tunnels.js');
+const OUT_HARRESIA = path.join(ROOT, 'js', 'donostia', 'data-harresia.js');
 const PREVIEW = previewDir();
 const t0 = performance.now();
 const lap = (label) => log(`${label} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
@@ -1160,6 +1164,78 @@ function buildingPreview(buildings, file) {
   fs.writeFileSync(file, encodePNG(px, w, h, 3));
 }
 
+// --- 4g. The old city wall along the port ------------------------------------------------------------------------------
+
+// tools/donostia/harresia.mjs finds the port face of the wall under the Parte Vieja's wall walk (from Mari kalea's steps
+// past the Portaletas to Lasta plaza), which the 2 m grid smeared into a slope 3-6 m high over the plazas: the terrain
+// steps there as at the shore walls (stepAtWalls; hidden walls, js/donostia/shore.js faces them with masonry from
+// js/donostia/data-harresia.js) from the plazas up to the street's level behind the walk, keeping the ground's classes,
+// and nothing under the walk's top stands over it. `walls` grows. Returns data-harresia.js's data.
+const HARRESIA_REACH = 4.5, CORNER_R = 2.6, INNER_REACH = 2; // m
+function harresiaWalls(dtm, walls, grid, classes) {
+  const { walls: added, data, inner } = cityWall({ dtm, loadLayer, lonLatToLocal, log });
+  const first = walls.length;
+  walls.push(...added);
+  const kept = classes.slice();
+  const { snaps, lowered, raised } = stepAtWalls(walls, grid, classes, new Set(added.map((_, k) => first + k)));
+  classes.set(kept);
+  // the smear before the face levelled with the plaza out to HARRESIA_REACH (the walk's edge stands up to 1.5 m behind
+  // the face's foot in the LiDAR by Mari kalea's steps, so stepAtWalls' band leaves a bank there)
+  const index = wallIndex(added, 16, HARRESIA_REACH + 1);
+  let banked = 0;
+  for (let j = 0; j < grid.h; j++) for (let i = 0; i < grid.w; i++) {
+    const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+    if (!index.near(x, z).length) continue;
+    const q = nearestWall(added, x, z, HARRESIA_REACH, index);
+    if (!q || q.end || q.d <= 0) continue;
+    const c = j * grid.w + i;
+    if (grid.data[c] > q.foot + 0.1) { grid.data[c] = q.foot; banked++; }
+  }
+  // at the gatehouse's two corners with the wall the line turns square towards the plaza, and the terrain's face across
+  // the corner (the chord between two samples on the line) stood out of the plaza as a fin: the samples behind the line
+  // within CORNER_R come down to the plaza (under the walk's end and the gatehouse, out of sight)
+  const house = data.gate.house, corners = [[house[0], house[1]], [house[house.length - 2], house[house.length - 1]]];
+  let cornered = 0;
+  for (const [cx, cz] of corners) {
+    const i0 = Math.floor((cx - CORNER_R - grid.x0) / grid.res), i1 = Math.ceil((cx + CORNER_R - grid.x0) / grid.res);
+    const j0 = Math.floor((cz - CORNER_R - grid.z0) / grid.res), j1 = Math.ceil((cz + CORNER_R - grid.z0) / grid.res);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+      if (Math.hypot(x - cx, z - cz) > CORNER_R) continue;
+      const q = nearestWall(added, x, z, CORNER_R + 1);
+      const c = j * grid.w + i;
+      if (q && q.d < 0 && grid.data[c] > q.foot + 0.1) { grid.data[c] = q.foot; cornered++; }
+    }
+  }
+  // along the inner face the LiDAR leaves a lip of the walk on the street, up to half a metre over it by the gate: the
+  // samples within INNER_REACH of the face (in front, and behind it under the walk's top) no higher than its foot + 0.2
+  const innerIndex = wallIndex(inner, 16, INNER_REACH + 1);
+  let lip = 0;
+  for (let j = 0; j < grid.h; j++) for (let i = 0; i < grid.w; i++) {
+    const x = grid.x0 + (i + 0.5) * grid.res, z = grid.z0 + (j + 0.5) * grid.res;
+    if (!innerIndex.near(x, z).length) continue;
+    const q = nearestWall(inner, x, z, INNER_REACH, innerIndex);
+    const c = j * grid.w + i;
+    if (q && !q.end && grid.data[c] > q.foot + 0.2) { grid.data[c] = q.foot + 0.2; lip++; }
+  }
+  // (the walk's top: sections [port face x, z, inner edge x, z, level, ...], quads between them)
+  let under = 0;
+  for (const s of data.walk) {
+    for (let k = 0; k + 9 < s.length; k += 5) {
+      const y = Math.min(s[k + 4], s[k + 9]) - 0.15;
+      scanRings([[s[k], s[k + 1], s[k + 2], s[k + 3], s[k + 7], s[k + 8], s[k + 5], s[k + 6]]], grid.x0, grid.z0, grid.res, grid.w, grid.h, (i, j) => {
+        const c = j * grid.w + i;
+        if (grid.data[c] > y) { grid.data[c] = y; under++; }
+      });
+    }
+  }
+  const onto = [...snaps.values()].filter((sn) => sn.wall >= first).length;
+  log(`harresia: ${added.length} walls; ${onto} terrain samples onto them, ${lowered} in front dropped to the plazas, ` +
+    `${banked} more of the bank before them, ${raised} behind levelled with the street (${cornered} down by the gatehouse's ` +
+    `corners), ${lip} of the walk's lip on the street along the inner face, ${under} kept under the walk's top`);
+  return data;
+}
+
 // --- main --------------------------------------------------------------------------------------------------------------
 
 const landmarkObjs = landmarkObjects();
@@ -1179,6 +1255,7 @@ const { walls, access, faces } = shoreWalls(dtm, core.grid, coreClasses);
 const stairs = shoreStairs(dtm, walls, core.grid, coreClasses, access, faces);
 harbourBed(core.grid, core.kind, walls);
 const portals = tunnelWalls(dtm, walls, stairs, core.grid, coreClasses, access);
+const harresia = harresiaWalls(dtm, walls, core.grid, coreClasses);
 // heights: LiDAR & isobaths, water from OSM; the core's classes from the municipal map
 writeTerrainPNG(core.grid, coreClasses, path.join(OUT_DATA, 'terrain-core.png'), pngText('geoeuskadi', 'c500', 'osm'));
 writeTerrainPNG(context.grid, context.wet.map((w) => (w > 127 ? GROUND.water : GROUND.natural)),
@@ -1236,6 +1313,18 @@ const tunnelsJs = `// js/donostia/data-tunnels.js — generated by tools/donosti
   `export const TUNNELS = ${JSON.stringify({ portals })};\n`;
 fs.writeFileSync(OUT_TUNNELS, tunnelsJs);
 log(`${path.relative(ROOT, OUT_TUNNELS)}: ${(tunnelsJs.length / 1e3).toFixed(1)} kB`);
+
+const harresiaJs = `// js/donostia/data-harresia.js — generated by tools/donostia/build.mjs (tools/donostia/harresia.mjs); do not edit.\n` +
+  `// Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (CC BY-SA 3.0) · © OpenStreetMap ` +
+  `contributors (ODbL) · Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi (LiDAR, CC BY 4.0)\n` +
+  licenceComment('c500', 'osm', 'geoeuskadi') +
+  `// faces: the wall's masonry, as GEO.terrain.walls' (js/donostia/shore-walls.js): its port face (deck: the walk) and its\n` +
+  `//   inner face over the street; walk: per stretch of the inner face, its top's sections [port face x, z, inner edge x,\n` +
+  `//   z, level, ...]; gate: the Portaletas, its block [x, z] x 4 (the inner arch's), the gatehouse's front (house) and the\n` +
+  `//   court's curve [x, z, ...], the terrace's and the court's levels (m)\n` +
+  `export const HARRESIA = ${JSON.stringify(harresia)};\n`;
+fs.writeFileSync(OUT_HARRESIA, harresiaJs);
+log(`${path.relative(ROOT, OUT_HARRESIA)}: ${(harresiaJs.length / 1e3).toFixed(1)} kB`);
 
 if (PREVIEW) {
   fs.mkdirSync(PREVIEW, { recursive: true });

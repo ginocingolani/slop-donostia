@@ -19,7 +19,7 @@ The steps it runs, in order:
 |---|---|---|
 | `fetch.sh` | the web | `tools/donostia/raw/` (gitignored); `tools/donostia/data/osm_*.json` & `osm_queries.sha256` (committed) |
 | `extract.py` (Python stdlib) | `raw/` | `tools/donostia/data/*.json` in the local frame (committed); `raw/bathy/isobaths.json` and the unzipped `raw/dtm/*.asc` (bake-only) |
-| `build.mjs` (with `walls.mjs`, `beach-access.mjs`, `tunnels.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls and the tunnels' walls), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps), `js/donostia/data-tunnels.js` (the tunnels' portals) |
+| `build.mjs` (with `walls.mjs`, `beach-access.mjs`, `tunnels.mjs`, `harresia.mjs`) | `raw/dtm/*.asc`, `raw/bathy/isobaths.json`, `tools/donostia/data/` | `data/donostia/terrain-*.png`, `water.png`, `js/donostia/geodata.js` (with the shore walls, the tunnels' walls and the old city wall's), `js/donostia/data-beach-access.js` (the beaches' stairs & ramps), `js/donostia/data-tunnels.js` (the tunnels' portals), `js/donostia/data-harresia.js` (the old city wall along the port: its faces, its walk, the Portaletas) |
 | `bake-ground.mjs` | `tools/donostia/data/`, the terrain, the beaches' stairs & ramps | `data/donostia/ground-*.png` (surfaces, kerbs, crossings) |
 | `bake-bridges.mjs` | OSM bridges, the terrain | `js/donostia/data-bridges.js` |
 | `bake-shore.mjs` | the shore walls, the terrain, OSM breakwaters, bare rock & coastline, municipal buildings & beaches, the port's quays (`port.mjs`) | `js/donostia/data-shore.js` (the rocks) |
@@ -90,6 +90,7 @@ mixes them carries each licence for the part that comes from its source.
 | `js/donostia/data-marina.js` | OSM, municipal map, the terrain, the 2025 orthophoto | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 & geoEuskadi credits |
 | `js/donostia/data-beach-access.js` | municipal map (stairs, ramps, spot heights, beaches, buildings), the LiDAR, read against the 2025 orthophoto and OSM | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-tunnels.js` | OSM (the tunnels' ways), the LiDAR (the portals' faces & levels), municipal map (the walls round them) | ODbL 1.0 + CC BY-SA 3.0, CC BY 4.0 credit |
+| `js/donostia/data-harresia.js` | municipal map (the wall walk, the steps' parapet, the gate's block, spot heights), OSM (the walk's line), the LiDAR (the faces' feet, the street's level) | CC BY-SA 3.0 + ODbL 1.0, CC BY 4.0 credit |
 | `js/donostia/data-funicular.js` | OSM | ODbL 1.0 |
 | `js/donostia/data-seamarks.js` | OSM, checked against NGA Pub. 113 and "Costa Cantábrica"'s list of lights | ODbL 1.0 |
 | `js/donostia/data-alderdi.js` | municipal map, OSM | CC BY-SA 3.0 + ODbL 1.0 |
@@ -341,6 +342,30 @@ map.
   parapet and a thin wall the LiDAR does not step at), the port's and the Paseo Nuevo's portals (a shore wall stands
   there already). The Pico del Loro's curved flight (the beach access) climbs from the rocks to the terrace at the
   end of Ondarreta's promenade, which leads to the footway's west portal: the east one is reached along the walk.
+- The old city wall along the port (`harresia.mjs`, run by `build.mjs`; `js/donostia/landmarks/harresia.js`): the stretch
+  of the Parte Vieja's sea wall between the foot of Mari kalea's steps and Lasta plaza, with the Portaletas in it. The
+  municipal map draws its wall walk as a sidewalk (`ESPALOIA`) 2-3 m wide (OSM's footway on layer 1, ways 23843734 &
+  230520365, and the bridge round the gate, 230520369), its spot heights at 10.2 m from the steps to the gate, 9.3 m by
+  Migel Muñoa plaza and 6.2 m at its far end, over Kaimingaintxo and Lasta plazas (4.1-5 m) and, inside, over Mari kalea
+  where it goes down to Portu kalea (up to 4 m below the walk). The bare-earth LiDAR keeps nothing of the walk and has
+  the port face as a step a metre or two wide, which the 2 m grid smeared into a slope 3-6 m high over the plazas, the
+  paving stretched down it: the curtain at the foot of the Parte Vieja seen from the port. No shoreline, quay, building
+  or municipal wall runs there, so the search above never looked. The walk's outline is walked every 0.5 m with a LiDAR
+  profile square to it: on the port's side of the walk's line, where the plaza outside lies a metre or more below the
+  street across the walk, its edge is the port face, a hidden wall (the terrain steps there from the plaza to the
+  street's level, the bank the LiDAR leaves before it levelled out to 4.5 m, and the samples by the gatehouse's corners
+  brought down, where the chord across the square turn stood out as a fin), faced by `js/donostia/shore.js` with masonry
+  up to the walk (`WALL.harresia`: coursed rubble under a sandstone kerb); on the town's side, where the street lies
+  0.4 m or more below the walk, its edge is the inner face, masonry only (the lip of the walk the LiDAR leaves on the
+  street along it, up to half a metre by the gate, comes down to 0.2 m over its foot). The port face runs on up Mari
+  kalea's steps along their parapet wall (`HORMA`). Along the inner face the landmark lays the walk's flagstones between
+  the two faces, and both faces carry black iron railings on their kerb. The Portaletas (after Wikimedia Commons photographs, looked at
+  only): the gate's block is the map's pedestrian piece under the inner arch (10.4 x 2.3 m: a round arch between two
+  doors, its cornice 2.45 m over the terrace), the gatehouse the walk's outline in front of it (half an octagon of buff
+  ashlar, a wide opening in its front and a door in each oblique side, passages through it into the half-round court,
+  the walk's terrace on it at its spot height, 10.15 m). The terrain there keeps its level (the passages run through
+  at the plazas'; the terrain's wall runs on round the gatehouse's front without a step). Left as it was: Kanpandegi
+  kalea's bridge over Portu kalea (OSM way 37701262), inside the Parte Vieja.
 - Bridges over land (`bake-bridges.mjs`): an OSM bridge way often stops a few metres short of where its road lands, over
   the slope of the cutting it spans. That would leave the deck's end in mid-air, its level taken from the slope. So a
   road or railway bridge runs on past an end, along its heading, while the bare-earth ground beyond still climbs faster
