@@ -5,7 +5,9 @@ import * as THREE from 'three/webgpu';
 // Space / E climbs, Q / C descends, Shift boosts, dragging looks around (arrow keys too) and the wheel scales the speed.
 // On touch screens one finger looks, a pinch flies along the view and hud.js feeds its virtual stick & buttons into
 // `touch`. Speed grows with the height above the ground; the camera never goes under the terrain or the sea, nor
-// further out than a little past the context grid's horizon hills.
+// further out than a little past the context grid's horizon hills. With `colliders` set (js/donostia/colliders.js) the
+// buildings are solid: it slides along their walls and lands on their roofs, its moves cut into steps shorter than its
+// radius wherever it flies low enough to meet one, so no speed takes it through a wall.
 
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 // Keys a focused control acts on itself (Space & Enter press a button, the arrows scroll a list): left to it
@@ -16,6 +18,8 @@ const onControl = (e) => e.target instanceof Element &&
 const BOUNDS_MARGIN = 500; // m past the context grid
 const CEILING = 5000; // m
 const EYE = 1.7; // m above the ground or the sea
+const RADIUS = 0.8; // m: how near a wall the camera may come (the near plane, 0.3 m, stays clear of it)
+const MAX_STEPS = 48; // a frame's move cut into at most this many collision steps
 
 export class GodCamera {
   constructor(dom, terrain) {
@@ -40,6 +44,8 @@ export class GodCamera {
     this._right = new THREE.Vector3();
     this.flight = null;
     this.enabled = true;
+    this.colliders = null; // js/donostia/colliders.js, set by main.js once the buildings are in
+    this._prev = new THREE.Vector3();
     this._bind();
     this._apply();
   }
@@ -135,7 +141,11 @@ export class GodCamera {
       this.position.lerpVectors(f.p0, f.p1, s).y += lift;
       this.yaw = THREE.MathUtils.lerp(f.yaw0, f.yaw1, s);
       this.pitch = THREE.MathUtils.lerp(f.pitch0, f.pitch1, s);
-      if (f.t >= 1) this.flight = null;
+      if (f.t >= 1) {
+        // flights arc over the roofs; one that ends inside a building comes out on its roof
+        this.flight = null;
+        this.colliders?.resolve(this.position, this.velocity, null, RADIUS, EYE);
+      }
       this._apply();
       return;
     }
@@ -156,7 +166,8 @@ export class GodCamera {
     const right = this._right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     // a pinch moves the camera itself along the view, further per pixel the higher it flies
     if (this._pinch) {
-      this.position.addScaledVector(forward, this._pinch * THREE.MathUtils.clamp(0.2 + agl * 0.012, 0.2, 12) * this.speedScale);
+      const d = this._pinch * THREE.MathUtils.clamp(0.2 + agl * 0.012, 0.2, 12) * this.speedScale;
+      this._move(forward.x * d, forward.y * d, forward.z * d);
       this._pinch = 0;
     }
     const wish = forward.multiplyScalar(fwd).addScaledVector(right, side);
@@ -164,9 +175,25 @@ export class GodCamera {
     if (wish.lengthSq() > 1) wish.normalize();
     wish.multiplyScalar(speed);
     this.velocity.lerp(wish, 1 - Math.exp(-6 * dt));
-    this.position.addScaledVector(this.velocity, dt);
+    const v = this.velocity;
+    this._move(v.x * dt, v.y * dt, v.z * dt);
     this._confine();
     this._apply();
+  }
+
+  // Moves the camera by (dx, dy, dz), through the colliders when it is low enough to meet a building: in steps no
+  // longer than 3/4 of its radius, each one slid along the walls or set on the roofs it meets
+  _move(dx, dy, dz) {
+    const p = this.position, col = this.colliders;
+    if (!col) { p.x += dx; p.y += dy; p.z += dz; return; }
+    const roofs = Math.max(col.clearance(p.x, p.z), col.clearance(p.x + dx, p.z + dz)) + EYE + RADIUS;
+    const low = Math.min(p.y, p.y + dy) <= roofs;
+    const n = low ? Math.min(MAX_STEPS, Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (RADIUS * 0.75)))) : 1;
+    for (let i = 0; i < n; i++) {
+      this._prev.copy(p);
+      p.x += dx / n; p.y += dy / n; p.z += dz / n;
+      if (low) col.resolve(p, this.velocity, this._prev, RADIUS, EYE);
+    }
   }
 
   // Keeps the camera above the ground or the sea, under the ceiling and over the world: past its edges there is only
@@ -216,6 +243,8 @@ export class GodCamera {
     this.yaw = THREE.MathUtils.euclideanModulo(s.yaw + Math.PI, 2 * Math.PI) - Math.PI;
     this.pitch = THREE.MathUtils.clamp(s.pitch, -1.5, 1.5);
     this.flight = null;
+    // a view saved inside a building (before the buildings were solid) comes out on its roof
+    this.colliders?.resolve(this.position, this.velocity, null, RADIUS, EYE);
     this._confine();
     this._apply();
     return true;

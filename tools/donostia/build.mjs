@@ -1090,7 +1090,8 @@ const TELEPORTS = [
   ['udaletxea', 'Alderdi Eder', 'Alderdi Eder', [-1.9876, 43.3207], 10, [-1.98578, 43.32160], 12],
   ['alde-zaharra', 'Konstituzio plaza', 'Plaza de la Constitución', [-1.985080, 43.323413], 1.7, [-1.98470, 43.32380], 6],
   ['kursaal', 'Kursaal eta Zurriola', 'Kursaal y Zurriola', [-1.9792, 43.3225], 8, [-1.97836, 43.32448], 10],
-  ['artzain-ona', 'Artzain Onaren katedrala', 'Catedral del Buen Pastor', [-1.98169, 43.31790], 2, [-1.98169, 43.31689], 30],
+  // down Loiola kalea, the cathedral's axis (due north of the tower is inside the block: the Centro's grid is turned)
+  ['artzain-ona', 'Artzain Onaren katedrala', 'Catedral del Buen Pastor', [-1.98244, 43.31797], 2, [-1.98169, 43.31689], 30],
   ['orrazia', 'Haizearen orrazia', 'Peine del Viento', [-2.00470, 43.32110], 5, [-2.00555, 43.32169], 3],
   ['miramar', 'Miramar jauregia', 'Palacio de Miramar', [-1.9958, 43.3152], 6, [-1.99831, 43.31464], 10],
   ['santa-klara', 'Santa Klara', 'Isla de Santa Clara', [-1.9925, 43.3192], 40, [-1.99948, 43.32139], 10],
