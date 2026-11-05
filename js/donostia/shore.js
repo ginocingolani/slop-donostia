@@ -7,6 +7,7 @@ import { WALL, COPING, visibleWalls } from './shore-walls.js';
 import { SHORE } from './data-shore.js';
 import { accessGeometry } from './beach-access.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
+import { HARRESIA } from './data-harresia.js';
 import { seaUniforms } from './sea-uniforms.js';
 
 // js/donostia/shore.js
@@ -15,8 +16,11 @@ import { seaUniforms } from './sea-uniforms.js';
 // - Walls: each wall's face from its crest down below the ground at its foot (leaning back by its batter), capped by a
 //   coping: La Concha's & Ondarreta's buff sandstone ashlar under a dressed stone kerb, the Paseo Nuevo's grey-brown
 //   rubble with its parapet round Urgull, the Urumea's dark rubble quays under light coping stones, the port's grey
-//   ashlar, Zurriola's concrete. Swept along the wall lines into one mesh; the masonry (courses, blocks, mortar joints,
-//   wobbly rubble) is worked out in the shader from metres along the wall and the height, per wall from its vertices.
+//   ashlar, Zurriola's concrete; and the old city wall along the port under the Parte Vieja's wall walk, its port face
+//   over Kaimingaintxo & Lasta plazas and its inner face over Mari kalea (js/donostia/data-harresia.js, from
+//   tools/donostia/harresia.mjs: the terrain steps at the port face's hidden wall). Swept along the wall lines into one
+//   mesh; the masonry (courses, blocks, mortar joints, wobbly rubble) is worked out in the shader from metres along the
+//   wall and the height, per wall from its vertices.
 // - Rocks: the flysch sandstone of Urgull's foot (fallen blocks, bedded slabs), the Zurriola dike's concrete cubes, the
 //   riprap at the foot of the river walls and boulders along the rocky coast; a few procedural geometries, instanced
 //   per kind and per 1 km tile so whole tiles drop out of view, and each kind culled by distance.
@@ -66,6 +70,13 @@ const STYLE = {
   [WALL.garden]: {
     colour: 0x6e6a63, course: 0.34, block: 0.62, joint: 0.02, rubble: 0.85, mortar: 0.74,
     coping: { w: 0.5, h: COPING[WALL.garden], d: 0.32, over: 0.04, colour: 0xaaa69c, block: 1.1 }
+  },
+  // the old city wall along the port (tools/donostia/harresia.mjs): coursed rubble of buff sandstone and grey limestone
+  // under a dressed sandstone kerb that carries the walk's railings (Wikimedia Commons photographs of the Portaletas,
+  // «Portaleta - San Sebastian 01-05», looked at only)
+  [WALL.harresia]: {
+    colour: 0x857a68, course: 0.3, block: 0.55, joint: 0.022, rubble: 0.8, mortar: 0.72,
+    coping: { w: 0.45, h: COPING[WALL.harresia], d: 0.3, over: 0.05, colour: 0xb0a48a, block: 0.9 }
   }
 };
 const PARAPET_MAX_X = 560; // m: the parapet runs round Urgull, not along the river mouth
@@ -345,7 +356,7 @@ function mergeInto(a, b) {
 }
 
 function wallMesh(GEO, terrain) {
-  const walls = wallGeometry(visibleWalls(GEO.terrain.walls || []), (x, z) => terrain.heightAt(x, z));
+  const walls = wallGeometry([...visibleWalls(GEO.terrain.walls || []), ...HARRESIA.faces], (x, z) => terrain.heightAt(x, z));
   const g = mergeInto(walls || { pos: [], nrm: [], col: [], u: [], mason: [], mortar: [], foot: [], arc: [], idx: [] }, accessGeometry(BEACH_ACCESS));
   if (!g.idx.length) return null;
   const geo = new THREE.BufferGeometry();
