@@ -18,12 +18,14 @@
 //
 // Wall types (masonry): La Concha & Ondarreta's sandstone ashlar, the Paseo Nuevo's rubble with a parapet, the Urumea's
 // dark quay walls, the port's dressed stone, Zurriola's concrete-and-stone promenade wall, the gardens' retaining walls
-// round the tunnels' portals (tools/donostia/tunnels.mjs)
-export const WALL = { concha: 0, paseo: 1, river: 2, quay: 3, zurriola: 4, garden: 5 };
+// round the tunnels' portals (tools/donostia/tunnels.mjs), the old city wall along the port under the Parte Vieja's wall
+// walk (tools/donostia/harresia.mjs: hidden in GEO.terrain.walls, its masonry in js/donostia/data-harresia.js)
+export const WALL = { concha: 0, paseo: 1, river: 2, quay: 3, zurriola: 4, garden: 5, harresia: 6 };
 // How far the coping (js/donostia/shore.js) stands above the promenade on each type of wall (m): La Concha's railing
-// stands on it; the Paseo Nuevo's is the parapet's
+// stands on it; the Paseo Nuevo's is the parapet's; the old wall's railings stand on its kerb along the walk
 export const COPING = {
-  [WALL.concha]: 0.14, [WALL.paseo]: 0.95, [WALL.river]: 0.16, [WALL.quay]: 0.05, [WALL.zurriola]: 0.08, [WALL.garden]: 0.3
+  [WALL.concha]: 0.14, [WALL.paseo]: 0.95, [WALL.river]: 0.16, [WALL.quay]: 0.05, [WALL.zurriola]: 0.08, [WALL.garden]: 0.3,
+  [WALL.harresia]: 0.12
 };
 
 // The walls with masonry: every wall split where it runs hidden (h), as { t, b, p } (shore.js draws these, the railing

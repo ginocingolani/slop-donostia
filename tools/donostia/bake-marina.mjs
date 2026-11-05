@@ -8,9 +8,9 @@
 //   fingers and T-heads cut out of the municipal map's pontoons (PANTALANA: what is left once the walkways are taken
 //   out, fitted with rectangles); the pontoons neither map has from the orthophoto (ORTHO below).
 // - On them: guide piles through hoops on the walkways' edges, cleats along the berths, service pedestals, a few lamp
-//   posts. Gangways down from the quay: the municipal map's ramps onto a pontoon, and the quay steps (walls.mjs's
-//   flights, GEO.terrain.stairs) that end by a pontoon, where a gangway carries on from the bottom step; an access gate
-//   at the head of each.
+//   posts. Gangways down from the quay's edge, on a landing with a low gate: the municipal map's ramps onto a pontoon
+//   (ARRAPALA), the orthophoto's, where an OSM walkway meets the wall, and beside the quay steps (walls.mjs's flights,
+//   GEO.terrain.stairs) that end by a pontoon; never steeper than 33° at the lowest tides.
 // - Quays: bollards and, on the old port's masonry, iron mooring rings along the harbour's quay walls (GEO.terrain.walls)
 //   where no pontoon lies alongside, iron ladders down their faces, the fishing quay's timber strakes.
 // - The old port's slipway: the notch the municipal quays (KAIA) leave at the foot of Kaiarriba, down into the water.
@@ -403,12 +403,39 @@ for (let i = cleats.length - 1; i >= 0; i--) {
   if (lamps.some((q) => Math.hypot(q.x - c.x, q.z - c.z) < 0.5)) cleats.splice(i, 1);
 }
 
+// --- the floating level ----------------------------------------------------------------------------------------------------
+
+// Pontoons ride the tide down to the bed: at low water they sit on their floats on the bottom (the median bed under them).
+// The bed build.mjs lays in the basins (no isobaths there) lies only 0.3 m under mean sea level, too shallow for the
+// floats: they settle no higher than mean sea level, so with the tide off they float as built
+const beds = decks.map((d) => terrain.heightAt((d.q[0] + d.q[4]) / 2, (d.q[1] + d.q[5]) / 2)).sort((a, b) => a - b);
+const ground = Math.min(0, r2(beds[beds.length >> 1] + DRAFT + 0.05));
+
 // --- gangways ----------------------------------------------------------------------------------------------------------------
 
-// A gangway: hinged on the quay at (hx, hy, hz), its foot rolling on a pontoon's walkway; its length gives a slope of
-// about 1 in 3 at mean sea level. { hx, hz, hy, fx, fz, L, W }
+// A gangway: an aluminium ramp hinged at the quay's edge, its deck flush with the quay, its foot on two rollers that roll
+// on a walkway's deck as the tide lifts & lowers the pontoon, a toe plate down from its end onto the deck
+// (js/donostia/marina.js). The hinge stands on a steel landing at the coping, set out from the wall's face as far as the
+// way the gangway leaves the wall needs (one running down along the wall clears it); a low gate closes the landing on the
+// quay side. Its length is the municipal map's where the map draws the gangway (a ramp, ARRAPALA, from the quay to a
+// pontoon) or the orthophoto's where it shows one the maps lack, but never shorter than keeps it within MAX_PITCH when the
+// pontoons sit on the bed at the lowest tides. It is laid so that its rollers and toe plate stay on the walkway's deck
+// and it clears the walls and the guide piles at every level from there up to the highest tide (HIGH_WATER).
+// { ex, ez (the landing on the wall's face), hx, hz, hy (the hinge, on the landing at the quay's height), fx, fz (where
+// the rollers rest at mean sea level), L (from the hinge to the end, over the rollers), W }
 const gangways = [];
-const SLOPE = 3.2;
+// (as js/donostia/sea-state.js: GANGWAY_FOOT, its rollers' axle under the deck's end, their radius and the toe plate's
+// length; HIGH_WATER)
+const GANGWAY_W = 1.2, FOOT = { axle: 0.14, roller: 0.08, toe: 0.6 }, HIGH_WATER = 2.2;
+const MAX_PITCH = (33 * Math.PI) / 180;
+// its pitch (rad, + down to the pontoon) with the rollers on the deck at a level (sea-state.js gangwayPitch)
+const gangwayPitch = (hy, L, level) => {
+  const drop = hy - (Math.max(level, ground) + FREEBOARD + FOOT.roller), R = Math.hypot(L, FOOT.axle);
+  return Math.asin(Math.max(-0.95, Math.min(0.95, drop / R))) - Math.atan2(FOOT.axle, L);
+};
+// how far out from the hinge, at a pitch, the rollers rest and its toe plate's lip reaches
+const rollersAt = (L, p) => L * Math.cos(p) - FOOT.axle * Math.sin(p);
+const lipAt = (L, p) => L * Math.cos(p) + FOOT.toe;
 const deckWalkway = (x, z) => {
   let best = null;
   for (const w of walkways) {
@@ -418,28 +445,118 @@ const deckWalkway = (x, z) => {
   }
   return best;
 };
-// the foot: on the walkway's centre line, as far from the hinge as the gangway's length needs, away from the walkway's
-// nearer end
-function gangwayTo(hx, hz, hy, hint = null) {
-  // the walkway by the hinge, or by the hint (the pontoon end of a ramp)
-  let host = deckWalkway(...(hint || [hx, hz]));
-  if (host && hint) host = { ...host, q: lineNear(host.w.pts, hx, hz) };
-  if (!host || (!hint && host.gap > 4)) return null;
-  const drop = hy - FREEBOARD;
-  const L = Math.min(14, Math.max(3.5, drop * SLOPE));
-  const run = Math.sqrt(Math.max(0.5, L * L - drop * drop));
-  const len = lineLength(host.w.pts);
-  const dirs = hint ? [Math.sign(lineNear(host.w.pts, hint[0], hint[1]).s - host.q.s) || 1] : host.q.s < len / 2 ? [1, -1] : [-1, 1];
-  for (const dir of dirs) {
-    for (let s = Math.min(len - 0.3, Math.max(0.3, host.q.s)); s >= 0.3 && s <= len - 0.3; s += dir * 0.1) {
-      const p = lineAt(host.w.pts, s);
-      if (Math.hypot(p.x - hx, p.z - hz) >= run) return { hx, hz, hy, fx: p.x, fz: p.z, L, W: 1.2, walkway: host.w };
+const onWalkway = (x, z) => decks.some((d) => !d.kind && quadHas(d.q, x, z, 0.01));
+// A gangway from the wall at q (nearestWall's shape: the face's point, its normal towards the water, the quay's deck)
+// down to a walkway (host: deckWalkway's); L0: the length the maps give it (0: none), aim: where they put its foot (null:
+// none). Its foot where the maps put it if it fits there, else on the walkway's centre line, as close to the landing as
+// the gangway's length allows, away from the walkway's nearer end first; null if it fits nowhere.
+function gangwayTo(q, host, L0 = 0, aim = null) {
+  const { x: ex, z: ez, nx, nz, deck: hy } = q;
+  // the drop to the rollers with the pontoons on the bed
+  const lowest = hy - (ground + FREEBOARD + FOOT.roller);
+  if (lowest < 0.5) return null;
+  const L = r2(Math.max(L0, (lowest - FOOT.axle * Math.cos(MAX_PITCH)) / Math.sin(MAX_PITCH)));
+  const pitches = [gangwayPitch(hy, L, ground), gangwayPitch(hy, L, 0), gangwayPitch(hy, L, HIGH_WATER)];
+  const near = Math.min(...pitches.map((p) => rollersAt(L, p)));
+  const far = Math.max(...pitches.map((p) => lipAt(L, p)), pitches[0] * pitches[2] < 0 ? lipAt(L, 0) : 0);
+  const reach = Math.max(...pitches.map((p) => L * Math.cos(p)));
+  const run0 = rollersAt(L, pitches[1]);
+  // the hinge for a gangway leaving the wall towards (px, pz): out from the face so that its edge on the wall's side
+  // clears it by 10 cm (none for one turned into the wall)
+  const hingeFor = (px, pz) => {
+    const l = Math.hypot(px - ex, pz - ez), c = ((px - ex) * nx + (pz - ez) * nz) / l;
+    if (c < -0.02) return null;
+    const out = 0.1 + (GANGWAY_W / 2) * Math.sqrt(1 - Math.min(1, c * c));
+    return [ex + nx * out, ez + nz * out];
+  };
+  const fits = (hx, hz, ux, uz) => {
+    // the rollers & the toe plate on the walkway's deck at every level, across the gangway's width
+    for (let r = near; r <= far + 1e-6; r += 0.2) {
+      for (const side of [-1, 0, 1]) {
+        const off = side * (GANGWAY_W / 2 - 0.1);
+        if (!onWalkway(hx + ux * r - uz * off, hz + uz * r + ux * off)) return false;
+      }
+    }
+    // its edges on the water's side of the walls, the guide piles clear of it
+    for (let r = 0.3; r <= reach; r += 0.3) {
+      for (const side of [-1, 1]) {
+        const x = hx + ux * r - uz * side * (GANGWAY_W / 2), z = hz + uz * r + ux * side * (GANGWAY_W / 2);
+        const w = nearestWall(walls, x, z, 3, wallsIndex);
+        if (w && w.d < 0.05) return false;
+      }
+    }
+    return !piles.some((p) => segNear(p.x, p.z, hx, hz, hx + ux * reach, hz + uz * reach).d < PILE_R + GANGWAY_W / 2 + 0.08);
+  };
+  const toward = (px, pz) => {
+    const h = hingeFor(px, pz);
+    if (!h) return null;
+    const l = Math.hypot(px - h[0], pz - h[1]), ux = (px - h[0]) / l, uz = (pz - h[1]) / l;
+    if (ux * nx + uz * nz < -0.02 || !fits(h[0], h[1], ux, uz)) return null;
+    return { ex, ez, hx: h[0], hz: h[1], hy, fx: h[0] + ux * run0, fz: h[1] + uz * run0, L, W: GANGWAY_W, walkway: host.w };
+  };
+  if (aim) {
+    const g = toward(...aim);
+    if (g) return g;
+  }
+  // (on a wide walkway also either side of its centre line, its rollers still on the deck)
+  const len = lineLength(host.w.pts), s0 = lineNear(host.w.pts, ex, ez).s;
+  const first = aim ? Math.sign(lineNear(host.w.pts, aim[0], aim[1]).s - s0) || 1 : s0 < len / 2 ? 1 : -1;
+  const sideways = [0, 0.5, -0.5, 1, -1].filter((o) => Math.abs(o) <= (host.w.W - GANGWAY_W) / 2 - 0.1 || !o);
+  for (const dir of [first, -first]) {
+    for (let s = Math.min(len - 0.3, Math.max(0.3, s0)); s >= 0.3 && s <= len - 0.3; s += dir * 0.1) {
+      const c = lineAt(host.w.pts, s);
+      let beyond = 0;
+      for (const o of sideways) {
+        const px = c.x - c.uz * o, pz = c.z + c.ux * o, h = hingeFor(px, pz);
+        const d = h ? Math.hypot(px - h[0], pz - h[1]) : 0;
+        if (d > 2 * run0) { beyond++; continue; }
+        if (d < run0) continue;
+        const g = toward(px, pz);
+        if (g) return g;
+      }
+      if (beyond === sideways.length) break;
     }
   }
   return null;
 }
-const keep = (g) => {
-  if (!g || gangways.some((o) => Math.hypot(o.hx - g.hx, o.hz - g.hz) < (o.walkway === g.walkway ? 20 : 12))) return;
+// The quays' walls within r of (x, z) every half metre, nearest first (nearestWall's shape, with dist)
+function wallPoints(x, z, r) {
+  const out = [];
+  for (const w of walls) {
+    const p = w.p, n = p.length / 4;
+    for (let k = 0; k + 1 < n; k++) {
+      const ax = p[4 * k], az = p[4 * k + 1], bx = p[4 * k + 4], bz = p[4 * k + 5], len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-3 || segNear(x, z, ax, az, bx, bz).d > r) continue;
+      const dx = (bx - ax) / len, dz = (bz - az) / len;
+      for (let s = 0; s <= len; s += 0.5) {
+        const px = ax + dx * s, pz = az + dz * s, f = s / len, dist = Math.hypot(px - x, pz - z);
+        if (dist > r) continue;
+        out.push({ x: px, z: pz, nx: -dz, nz: dx, dist, deck: p[4 * k + 2] + (p[4 * k + 6] - p[4 * k + 2]) * f, foot: p[4 * k + 3] + (p[4 * k + 7] - p[4 * k + 3]) * f });
+      }
+    }
+  }
+  return out.sort((a, b) => a.dist - b.dist);
+}
+// A gangway from the quay by `at` to the walkway host: from the quay wall's point nearest to it first (with the maps'
+// aim), else from the next along the quay within SLIDE m, nearest first, the wall's face turned towards the walkway; at
+// the maps' length, or if that fits nowhere at the shortest the lowest tides allow
+const SLIDE = 12;
+function gangwayNear(at, host, L0 = 0, aim = null) {
+  if (!host) return null;
+  const to = lineNear(host.w.pts, at[0], at[1]);
+  const from = wallPoints(at[0], at[1], SLIDE).filter((q) => q.deck - q.foot > 1.5 && (to.x - q.x) * q.nx + (to.z - q.z) * q.nz > 0.1);
+  for (const length of L0 ? [L0, 0] : [0]) {
+    for (const q of from) {
+      const g = gangwayTo(q, host, length, q.dist < 1.5 ? aim : null);
+      if (g) return g;
+    }
+  }
+  return null;
+}
+const dropped = [];
+const keep = (g, what) => {
+  if (!g) { dropped.push(what); return; }
+  if (gangways.some((o) => Math.hypot(o.ex - g.ex, o.ez - g.ez) < (o.walkway === g.walkway ? 20 : 12))) return;
   gangways.push(g);
 };
 // the municipal map's ramps that end by a pontoon: the gangway along its long axis, hinged at its quay end
@@ -466,23 +583,24 @@ for (const f of loadLayer('c500_ARRAPALA.json').features) {
     const rise0 = terrain.heightAt(e0[0] - ux * 1.5, e0[1] - uz * 1.5), rise1 = terrain.heightAt(e1[0] + ux * 1.5, e1[1] + uz * 1.5);
     const [quayEnd, padEnd] = rise0 > rise1 ? [e0, e1] : [e1, e0];
     const q = nearestWall(walls, quayEnd[0], quayEnd[1], 6, wallsIndex);
-    const hy = q ? q.deck : terrain.heightAt(...quayEnd);
-    keep(gangwayTo(quayEnd[0], quayEnd[1], hy, padEnd));
+    // its length as drawn (the map's outline lies at about mean sea level)
+    if (q) keep(gangwayNear(quayEnd, deckWalkway(...padEnd), Math.hypot(fd, q.deck - FREEBOARD - FOOT.roller), padEnd), `the ramp at ${quayEnd.map(r2)}`);
   }
 }
 for (const [hx, hz, fx, fz] of ORTHO_GANGWAYS) {
   const q = nearestWall(walls, hx, hz, 6, wallsIndex);
-  keep(gangwayTo(hx, hz, q ? q.deck : terrain.heightAt(hx, hz), [fx, fz]));
+  if (q) keep(gangwayNear([hx, hz], deckWalkway(fx, fz), Math.hypot(Math.hypot(fx - hx, fz - hz), q.deck - FREEBOARD - FOOT.roller), [fx, fz]), `the orthophoto's at ${[hx, hz]}`);
 }
-// OSM walkways drawn onto the quay: the gangway lands where the line meets the wall
+// OSM walkways drawn onto the quay: the gangway hangs from the wall where the line meets it
 for (const w of walkways.filter((o) => o.source !== 'ortho')) {
   for (const key of ['quayA', 'quayB']) {
     if (!w[key]) continue;
     const q = nearestWall(walls, w[key][0], w[key][1], 6, wallsIndex);
-    if (q) keep(gangwayTo(q.x - q.nx * 0.3, q.z - q.nz * 0.3, q.deck));
+    const host = q && deckWalkway(q.x, q.z);
+    if (host && host.gap <= 4) keep(gangwayNear([q.x, q.z], host), `${w.source}'s end at ${w[key].map(r2)}`);
   }
 }
-// quay steps that end by a pontoon: the gangway carries on from the bottom step
+// quay steps that end by a pontoon: a gangway from the quay's edge beside them (the steps' foot drowns at high water)
 for (const st of stairs) {
   if (!inPort(st.p[0], st.p[1])) continue;
   let cx = 0, cz = 0, s1 = -Infinity;
@@ -494,8 +612,9 @@ for (const st of stairs) {
   const bx = cx + st.ux * (s1 - s), bz = cz + st.uz * (s1 - s);
   const host = deckWalkway(bx, bz);
   if (!host || host.gap > 3.5 || st.bot - FREEBOARD < 0.6) continue;
-  keep(gangwayTo(bx, bz, st.bot));
+  keep(gangwayNear([bx, bz], host), `the steps at ${[bx, bz].map(r2)}`);
 }
+if (dropped.length) log(`gangways: none fits from ${dropped.join(', ')}`);
 
 // --- quays: bollards, rings, ladders, strakes ------------------------------------------------------------------------------------
 
@@ -509,7 +628,7 @@ const nearStairs = (x, z, r) => stairs.some((st) => {
   }
   return false;
 });
-const nearGangway = (x, z, r) => gangways.some((g) => segNear(x, z, g.hx, g.hz, g.fx, g.fz).d < r);
+const nearGangway = (x, z, r) => gangways.some((g) => segNear(x, z, g.ex, g.ez, g.fx, g.fz).d < r);
 walls.forEach((wall) => {
   const p = wall.p, nv = p.length / 4;
   if (!inPort(p[0], p[1])) return;
@@ -597,14 +716,6 @@ const slipway = (() => {
   return { ring, origin: [ox, oz], surface: coef.map((c) => Math.round(c * 1e6) / 1e6) };
 })();
 
-// --- the floating level ----------------------------------------------------------------------------------------------------
-
-// Pontoons ride the tide down to the bed: at low water they sit on their floats on the bottom (the median bed under them).
-// The bed build.mjs lays in the basins (no isobaths there) lies only 0.3 m under mean sea level, too shallow for the
-// floats: they settle no higher than mean sea level, so with the tide off they float as built
-const beds = decks.map((d) => terrain.heightAt((d.q[0] + d.q[4]) / 2, (d.q[1] + d.q[5]) / 2)).sort((a, b) => a - b);
-const ground = Math.min(0, r2(beds[beds.length >> 1] + DRAFT + 0.05));
-
 log(`marina: ${walkways.length} walkways (${walkways.filter((w) => w.source === 'ortho').length} from the orthophoto), ${pieces.filter((p) => p.role === 'finger').length + walkways.filter((w) => w.finger).length} fingers, ${pieces.filter((p) => p.role === 'head').length} T-heads, ${decks.length} deck pieces; ${piles.length} piles, ${gangways.length} gangways, ${cleats.length} cleats, ${pedestals.length} pedestals, ${lamps.length} lamps; quays: ${bollards.length} bollards, ${rings.length} rings, ${ladders.length} ladders, ${strakes.length} strakes; slipway ${slipway ? slipway.ring.length / 2 : 0} vertices; grounding at ${ground} m`);
 
 // --- output ------------------------------------------------------------------------------------------------------------------
@@ -618,8 +729,9 @@ const DATA_OUT = {
   decks: decks.flatMap((d) => [...d.q.map(r2), d.kind, d.deck]),
   // x, z, top, bottom, yaw (deg, towards the pontoon)
   piles: piles.flatMap((p) => [r2(p.x), r2(p.z), p.top, r2(p.bottom), deg(yawOf(p.ux, p.uz))]),
-  // hinge x, z, y (on the quay), foot x, z (on the walkway at mean sea level), length, width
-  gangways: gangways.flatMap((g) => [r2(g.hx), r2(g.hz), r2(g.hy), r2(g.fx), r2(g.fz), r2(g.L), g.W]),
+  // hinge x, z, y (on its landing, at the quay's height), where the rollers rest at mean sea level x, z, length (hinge
+  // to rollers), width, the landing's quay end x, z (on the wall's face)
+  gangways: gangways.flatMap((g) => [r2(g.hx), r2(g.hz), r2(g.hy), r2(g.fx), r2(g.fz), r2(g.L), g.W, r2(g.ex), r2(g.ez)]),
   // x, z, yaw (deg)
   cleats: cleats.flatMap((c) => [r2(c.x), r2(c.z), deg(c.yaw)]),
   pedestals: pedestals.flatMap((c) => [r2(c.x), r2(c.z), deg(c.yaw)]),
@@ -658,7 +770,7 @@ if (PREVIEW) {
   const dot = (x, z, r, col) => paint([[x - r, z - r, x + r, z - r, x + r, z + r, x - r, z + r]], col);
   if (slipway) paint([slipway.ring], [150, 150, 140]);
   for (const d of decks) paint([d.q], d.kind ? [230, 190, 120] : d.deck ? [200, 200, 200] : [200, 140, 70]);
-  for (const g of gangways) paint([rectQuad(g.hx, g.hz, g.fx, g.fz, g.W)], [255, 255, 255]);
+  for (const g of gangways) paint([rectQuad(g.hx, g.hz, g.fx, g.fz, g.W), rectQuad(g.ex, g.ez, g.hx, g.hz, g.W)], [255, 255, 255]);
   for (const p of piles) dot(p.x, p.z, 0.3, [255, 255, 255]);
   for (const b of bollards) dot(b.x, b.z, 0.3, [255, 60, 60]);
   for (const b of ladders) dot(b.x, b.z, 0.3, [60, 255, 60]);

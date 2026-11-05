@@ -20,6 +20,7 @@ import { buildSeamarks } from './seamarks.js';
 import { buildFerries } from './ferries.js';
 import { buildWeather } from './weather.js';
 import { GodCamera } from './god-camera.js';
+import { createColliders } from './colliders.js';
 import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
@@ -340,6 +341,9 @@ async function initApp() {
   const { scene, lighting, terrain, updaters } = world;
 
   const god = new GodCamera(renderer.domElement, terrain);
+  // the buildings are solid to the camera: it slides along their walls and lands on their roofs
+  god.colliders = createColliders(GEO.buildings);
+  markInit('colliders');
   const camera = god.camera;
   let saved = null;
   try {

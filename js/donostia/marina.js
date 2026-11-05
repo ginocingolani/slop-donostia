@@ -6,7 +6,7 @@ import {
 import { cityUniforms } from '../city-uniforms.js';
 import { MARINA } from './data-marina.js';
 import { seaUniforms } from './sea-uniforms.js';
-import { LOW_WATER, pontoonLevel, gangwayPitch } from './sea-state.js';
+import { LOW_WATER, GANGWAY_FOOT, pontoonLevel, gangwayPitch } from './sea-state.js';
 
 // js/donostia/marina.js
 // The port's moorings, from tools/donostia/bake-marina.mjs (js/donostia/data-marina.js):
@@ -14,9 +14,11 @@ import { LOW_WATER, pontoonLevel, gangwayPitch } from './sea-state.js';
 //   their edges, riding the tide (the water's userData.getSeaLevel()) down to the bed, where they settle on their floats.
 //   On them: aluminium cleats along the berths, service pedestals (water & power) with a light on top, a few lamp
 //   posts, and the steel hoops round the guide piles.
-// - Fixed: the guide piles (white steel tubes under conical caps), the aluminium gangways hinged on the quay
-//   (their pitch follows the pontoons), an access gate at the head of each, the quays' cast-iron bollards, mooring
-//   rings, galvanised ladders down the walls and the fishing quay's timber strakes, the old port's concrete slipway.
+// - Fixed: the guide piles (white steel tubes under conical caps), the aluminium gangways hinged at the quay's edge,
+//   their deck flush with the quay, on a steel landing at the coping with a low gate on its quay side (rails down both
+//   sides; their pitch follows the pontoons, their foot on two rollers on the walkway's deck and a toe plate down onto
+//   it), the quays' cast-iron bollards, mooring rings, galvanised ladders down the walls and the fishing quay's timber
+//   strakes, the old port's concrete slipway.
 // The tidal band (wet stone, then weed under half tide) darkens the piles, ladders, floats and the slipway: on what
 // floats after the sea's level (seaLevel: the water's userData.seaLevel uniform), on what stands fixed after the tidal
 // bands' mark (js/donostia/sea-uniforms.js uTideMark: the same level with the real-time switch off, the last high
@@ -35,7 +37,6 @@ const FINGER_DROP = 0.015; // m: a finger's deck under its walkway's
 // Paints: linear rgb + roughness
 const PILE_WHITE = [0.62, 0.63, 0.61, 0.5];
 const CAP_GREY = [0.2, 0.21, 0.21, 0.5];
-const SIGN_BLUE = [0.015, 0.09, 0.32, 0.45];
 const ALU = [0.5, 0.51, 0.51, 0.38];
 const STEEL = [0.3, 0.31, 0.3, 0.5];
 const CAST_IRON = [0.03, 0.032, 0.03, 0.55];
@@ -44,7 +45,6 @@ const PEDESTAL_WHITE = [0.76, 0.76, 0.74, 0.45];
 const SOCKET = [0.05, 0.05, 0.055, 0.6];
 const GATE_GREY = [0.06, 0.075, 0.075, 0.55];
 const GALVANISED = [0.38, 0.39, 0.38, 0.45];
-const MESH = [0.2, 0.21, 0.2, 0.6]; // a wire mesh panel, seen as its mean tone
 const STRAKE_TIMBER = [0.09, 0.06, 0.04, 0.85];
 // deck surfaces (linear rgb)
 const TIMBER = [0.23, 0.15, 0.085];
@@ -407,9 +407,15 @@ function ringGeometry() {
 
 // --- gangways, gates & ladders: merged, the gangways re-laid when the pontoons move ----------------------------------------------
 
-// A gangway in its own frame: x across, y up, z along from the hinge (0) to the foot (L); the deck's top at y = 0
+// The gangways' records (tools/donostia/bake-marina.mjs): hinge x, z, y, rollers at mean sea level x, z, length, width,
+// the landing's quay end x, z
+const GANGWAY_STRIDE = 9;
+
+// A gangway in its own frame: x across, y up, z along from the hinge (0) to its end (L); the deck's top at y = 0. The deck
+// between two stringers, the handrail & knee rail on posts down both sides, the hinge's barrel, and under the end the
+// rollers it rests on (sea-state.js GANGWAY_FOOT)
 function gangwayLocal(b, L, W) {
-  const h = W / 2;
+  const h = W / 2, { axle, roller } = GANGWAY_FOOT;
   b.box(W, 0.06, L, 0, -0.06, L / 2, ALU);
   for (const s of [-1, 1]) {
     b.box(0.06, 0.28, L, s * (h + 0.03), -0.2, L / 2, ALU); // the stringers
@@ -418,22 +424,59 @@ function gangwayLocal(b, L, W) {
     const posts = Math.max(2, Math.round(L / 1.5));
     for (let i = 0; i <= posts; i++) b.box(0.045, 1.0, 0.045, s * (h + 0.03), 0, (L * i) / posts, ALU);
   }
-  // the foot's rollers and the hinge plate
-  b.add(new THREE.CylinderGeometry(0.08, 0.08, W + 0.1, 8).rotateZ(Math.PI / 2), STEEL, 0, M4().makeTranslation(0, -0.16, L - 0.12));
-  b.box(W + 0.2, 0.03, 0.5, 0, -0.03, -0.25, STEEL);
+  b.add(new THREE.CylinderGeometry(0.05, 0.05, W + 0.12, 8).rotateZ(Math.PI / 2), STEEL, 0, M4().makeTranslation(0, -0.06, 0));
+  b.add(new THREE.CylinderGeometry(roller, roller, W - 0.12, 8).rotateZ(Math.PI / 2), STEEL, 0, M4().makeTranslation(0, -axle, L - 0.02));
 }
 
-// The gate at a gangway's head: two posts, a lintel with a sign and a mesh door, across the way (+z
-// down the gangway); m: its frame
-function gate(b, W, m) {
-  const h = W / 2 + 0.12;
-  for (const s of [-1, 1]) b.box(0.1, 2.3, 0.1, s * h, 0, -0.3, GATE_GREY, 0, m);
-  b.box(2 * h + 0.1, 0.1, 0.1, 0, 2.2, -0.3, GATE_GREY, 0, m);
-  b.box(2 * h - 0.3, 0.3, 0.04, 0, 2.3, -0.3, SIGN_BLUE, 0, m);
-  // the door: a galvanised frame round a mesh panel
-  for (const y of [0.1, 1.95]) b.box(2 * h - 0.14, 0.05, 0.04, 0, y, -0.3, GALVANISED, 0, m);
-  for (const s of [-1, 1]) b.box(0.05, 1.9, 0.04, s * (h - 0.1), 0.1, -0.3, GALVANISED, 0, m);
-  b.box(2 * h - 0.24, 1.8, 0.012, 0, 0.15, -0.3, MESH, 0, m);
+// The toe plate hinged on a gangway's end, in its own frame: z from the hinge (0) to its lip on the pontoon's deck
+function toeLocal(b, W) {
+  b.box(W - 0.04, 0.025, GANGWAY_FOOT.toe, 0, -0.025, GANGWAY_FOOT.toe / 2, ALU);
+}
+
+// 2D convex hull of [x, z] points (monotone chain), counter-clockwise in x-z
+function hull(points) {
+  const p = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, c) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0]);
+  const half = (list) => {
+    const out = [];
+    for (const q of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], q) <= 1e-9) out.pop();
+      out.push(q);
+    }
+    return out.slice(0, -1);
+  };
+  return half(p).concat(half(p.slice().reverse()));
+}
+
+// A gangway's landing at the coping and the low gate closing it on the quay side: a steel plate flush with the quay
+// from the hinge's line back as wide as the gangway & onto the quay (e: the wall's face, h: the hinge, its normal from
+// one to the other; u: the gangway's heading), the gate across it just inside the face
+function landing(b, ex, ez, hx, hz, hy, u, W) {
+  const nl = Math.hypot(hx - ex, hz - ez) || 1, nx = (hx - ex) / nl, nz = (hz - ez) / nl;
+  const px = -u[1], pz = u[0], w = W / 2 + 0.05;
+  const across = [[hx + px * w, hz + pz * w], [hx - px * w, hz - pz * w]];
+  const corners = across.concat(across.map(([x, z]) => [x - u[0] * W, z - u[1] * W]));
+  // ... and each pushed back along the wall's normal to 0.3 m inside its face
+  const onQuay = corners.map(([x, z]) => { const d = (x - ex) * nx + (z - ez) * nz + 0.3; return [x - nx * d, z - nz * d]; });
+  const ring = hull(corners.concat(onQuay));
+  const depth = 0.16;
+  const shape = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const plate = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, hy + 0.01 - depth, 0);
+  b.add(plate, STEEL);
+  // the gate: where the plate crosses the line 0.15 m inside the face, a post either end and a barred leaf between
+  const cut = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], c = ring[(i + 1) % ring.length];
+    const da = (a[0] - ex) * nx + (a[1] - ez) * nz + 0.15, dc = (c[0] - ex) * nx + (c[1] - ez) * nz + 0.15;
+    if ((da < 0) !== (dc < 0)) { const t = da / (da - dc); cut.push([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t]); }
+  }
+  if (cut.length !== 2) return;
+  const [g0, g1] = cut, span = Math.hypot(g1[0] - g0[0], g1[1] - g0[1]);
+  const m = M4().makeTranslation((g0[0] + g1[0]) / 2, hy, (g0[1] + g1[1]) / 2).multiply(M4().makeRotationY(Math.atan2(g1[0] - g0[0], g1[1] - g0[1]) - Math.PI / 2));
+  const h = span / 2 - 0.05, bars = Math.max(3, Math.round((2 * h) / 0.12));
+  for (const s of [-1, 1]) b.box(0.08, 1.1, 0.08, s * h, 0, 0, GATE_GREY, 0, m);
+  for (const y of [0.1, 0.98]) b.box(2 * h - 0.1, 0.04, 0.04, 0, y, 0, GALVANISED, 0, m);
+  for (let i = 1; i < bars; i++) b.box(0.02, 0.86, 0.02, -h + (2 * h * i) / bars, 0.12, 0, GALVANISED, 0, m);
 }
 
 // A galvanised ladder down a quay wall (+z: out of the wall), from the coping to below low water, its grab bars arched
@@ -465,9 +508,10 @@ function fittingsGeometry(data) {
   const b = new Builder(), feet = new Builder();
   const yaw = (deg) => (deg * Math.PI) / 180;
   const G = data.gangways;
-  for (let k = 0; k < G.length; k += 7) {
-    const [hx, hz, hy, fx, fz, , W] = G.slice(k, k + 7);
-    gate(b, W, M4().makeTranslation(hx, hy, hz).multiply(M4().makeRotationY(Math.atan2(fx - hx, fz - hz))));
+  for (let k = 0; k < G.length; k += GANGWAY_STRIDE) {
+    const [hx, hz, hy, fx, fz, , W, ex, ez] = G.slice(k, k + GANGWAY_STRIDE);
+    const l = Math.hypot(fx - hx, fz - hz) || 1;
+    landing(b, ex, ez, hx, hz, hy, [(fx - hx) / l, (fz - hz) / l], W);
   }
   const low = LOW_WATER - 0.2;
   const L = data.ladders;
@@ -487,18 +531,20 @@ function fittingsGeometry(data) {
   return { fittings: b, feet };
 }
 
-// The gangways: local geometry per gangway with its hinge & heading; lay(level) pitches each so its foot rests on the
-// pontoon at level + FREEBOARD
+// The gangways: local geometry per gangway (its body, then its toe plate) with its hinge & heading; lay(level) pitches
+// each so its rollers rest on the pontoon's deck at level + FREEBOARD, its toe plate's lip on the deck
 function gangwayMesh(data, material) {
   const G = data.gangways;
   if (!G.length) return null;
   const parts = [];
   const local = new Builder();
-  for (let k = 0; k < G.length; k += 7) {
-    const [hx, hz, hy, fx, fz, L, W] = G.slice(k, k + 7);
+  for (let k = 0; k < G.length; k += GANGWAY_STRIDE) {
+    const [hx, hz, hy, fx, fz, L, W] = G.slice(k, k + GANGWAY_STRIDE);
     const start = local.pos.length / 3;
     gangwayLocal(local, L, W);
-    parts.push({ hx, hz, hy, L, heading: Math.atan2(fx - hx, fz - hz), start, end: local.pos.length / 3 });
+    const toe = local.pos.length / 3;
+    toeLocal(local, W);
+    parts.push({ hx, hz, hy, L, heading: Math.atan2(fx - hx, fz - hz), start, toe, end: local.pos.length / 3 });
   }
   const geo = local.build();
   const lp = Float32Array.from(local.pos), ln = Float32Array.from(local.nrm);
@@ -507,18 +553,26 @@ function gangwayMesh(data, material) {
   mesh.name = 'Marina_gangways';
   mesh.castShadow = mesh.receiveShadow = true;
   mesh.matrixAutoUpdate = false;
-  const m = M4(), nm = new THREE.Matrix3(), v = V3();
+  const m = M4(), turn = M4(), nm = new THREE.Matrix3(), v = V3();
+  const place = (from, to) => {
+    nm.getNormalMatrix(m);
+    for (let i = from; i < to; i++) {
+      v.set(lp[3 * i], lp[3 * i + 1], lp[3 * i + 2]).applyMatrix4(m);
+      pos.setXYZ(i, v.x, v.y, v.z);
+      v.set(ln[3 * i], ln[3 * i + 1], ln[3 * i + 2]).applyMatrix3(nm).normalize();
+      nrm.setXYZ(i, v.x, v.y, v.z);
+    }
+  };
   mesh.userData.lay = (level) => {
+    const deck = pontoonLevel(level) + FREEBOARD;
     for (const g of parts) {
       const pitch = gangwayPitch(g.hy, g.L, level);
-      m.makeTranslation(g.hx, g.hy, g.hz).multiply(M4().makeRotationY(g.heading)).multiply(M4().makeRotationX(pitch));
-      nm.getNormalMatrix(m);
-      for (let i = g.start; i < g.end; i++) {
-        v.set(lp[3 * i], lp[3 * i + 1], lp[3 * i + 2]).applyMatrix4(m);
-        pos.setXYZ(i, v.x, v.y, v.z);
-        v.set(ln[3 * i], ln[3 * i + 1], ln[3 * i + 2]).applyMatrix3(nm).normalize();
-        nrm.setXYZ(i, v.x, v.y, v.z);
-      }
+      m.makeTranslation(g.hx, g.hy, g.hz).multiply(turn.makeRotationY(g.heading)).multiply(turn.makeRotationX(pitch));
+      place(g.start, g.toe);
+      // the toe plate from the end's height down to the deck
+      const toe = Math.asin(Math.min(0.95, Math.max(-0.95, (g.hy - g.L * Math.sin(pitch) - deck) / GANGWAY_FOOT.toe)));
+      m.multiply(turn.makeTranslation(0, 0, g.L)).multiply(turn.makeRotationX(toe - pitch));
+      place(g.toe, g.end);
     }
     pos.needsUpdate = true;
     nrm.needsUpdate = true;

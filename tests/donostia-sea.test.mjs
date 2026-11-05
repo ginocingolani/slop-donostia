@@ -131,18 +131,47 @@ test('the pontoons float from the lowest to the highest tide and their gangways 
   assert.equal(sea.pontoonLevel(-2.4), -2.4); // the lowest spring tides: still afloat over the basins' -3 m bed
   assert.equal(sea.pontoonLevel(-2.7), ground); // below that they would sit on the bed
   assert.ok(ground < -2.4 && sea.LOW_WATER < ground);
-  const G = MARINA.gangways;
-  for (const level of [-2.4, 0, 1.6]) {
-    for (let k = 0; k < G.length; k += 7) {
-      const [, , hy, , , L] = G.slice(k, k + 7);
+  const G = MARINA.gangways, S = 9, { axle, roller, toe } = sea.GANGWAY_FOOT;
+  const deg = (r) => (r * 180) / Math.PI;
+  // the walkways' decks (convex quads), and whether a point lies on one
+  const walkways = [];
+  for (let k = 0; k < MARINA.decks.length; k += 10) if (MARINA.decks[k + 8] === 0) walkways.push(MARINA.decks.slice(k, k + 8));
+  const onDeck = (x, z) => walkways.some((q) => {
+    let pos = 0, neg = 0;
+    for (let i = 0; i < 4; i++) {
+      const ax = q[2 * i], az = q[2 * i + 1], bx = q[(2 * i + 2) % 8], bz = q[(2 * i + 3) % 8];
+      const c = (bx - ax) * (z - az) - (bz - az) * (x - ax);
+      if (c > -1e-3) pos++;
+      if (c < 1e-3) neg++;
+    }
+    return pos === 4 || neg === 4;
+  });
+  for (const level of [ground, -2.4, -1.3, 0, 1.6, sea.HIGH_WATER]) {
+    for (let k = 0; k < G.length; k += S) {
+      const [hx, hz, hy, fx, fz, L, W] = G.slice(k, k + S);
       const pitch = sea.gangwayPitch(hy, L, level);
-      // the foot rests on the deck: the drop along the gangway is the hinge's height over it
-      assert.ok(near(Math.sin(pitch) * L, hy - (level + freeboard), 1e-6), `gangway ${k / 7} at ${level}`);
-      assert.ok(Math.abs(pitch) < (75 * Math.PI) / 180);
+      // the rollers rest on the deck: down the gangway, then the axle under its end and the rollers' radius, the
+      // hinge's height over the deck
+      assert.ok(near(L * Math.sin(pitch) + axle * Math.cos(pitch) + roller, hy - (sea.pontoonLevel(level) + freeboard), 1e-6), `gangway ${k / S} at ${level}`);
+      // never steeper than 33° (with the pontoons on the bed), sloping up no more than 15° at the highest tide
+      assert.ok(deg(pitch) <= 33.05 && deg(pitch) > -15, `gangway ${k / S} pitched ${deg(pitch).toFixed(1)}° at ${level} m`);
+      // its rollers and the toe plate's lip on a walkway's deck, across the gangway's width
+      const ux = (fx - hx) / Math.hypot(fx - hx, fz - hz), uz = (fz - hz) / Math.hypot(fx - hx, fz - hz);
+      const end = hy - L * Math.sin(pitch) - (sea.pontoonLevel(level) + freeboard);
+      const lip = Math.sqrt(Math.max(0, toe * toe - end * end));
+      for (const r of [L * Math.cos(pitch) - axle * Math.sin(pitch), L * Math.cos(pitch) + lip]) {
+        for (const side of [-0.5, 0, 0.5]) {
+          const x = hx + ux * r - uz * side * (W - 0.2), z = hz + uz * r + ux * side * (W - 0.2);
+          assert.ok(onDeck(x, z), `gangway ${k / S} off the deck at ${level} m (${r.toFixed(2)} m out)`);
+        }
+      }
     }
   }
-  // at mean sea level, as the bake hung them
-  assert.ok(near(sea.gangwayPitch(G[2], G[5], 0), Math.asin((G[2] - freeboard) / G[5])));
+  // at mean sea level, with its rollers where the bake put them
+  for (let k = 0; k < G.length; k += S) {
+    const [hx, hz, hy, fx, fz, L] = G.slice(k, k + S), p = sea.gangwayPitch(hy, L, 0);
+    assert.ok(Math.abs(L * Math.cos(p) - axle * Math.sin(p) - Math.hypot(fx - hx, fz - hz)) < 0.02, `gangway ${k / S} as baked`);
+  }
 });
 
 // The baked 2 m terrain (terrain-core.png: R/G heights), sampled at points
