@@ -222,7 +222,10 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15, gunwale = WOOD
       }
     }
   }
-  // the transom: a fan from its middle
+  // the transom: a fan from its middle round its whole outline, up either side from the keel and across its top, under
+  // the deck's cambered after edge or the open boat's gunwale (without the top the transom gaped between the corners of
+  // the sheer, and the sea inside the hull showed through it)
+  const camber = h.B * 0.025;
   const t0 = grid[0], mid = V(0, (keel(0) + sheer(0)) / 2, z(0));
   const back = V(0, 0, -1);
   for (let j = 0; j < sec.length - 1; j++) {
@@ -232,9 +235,12 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15, gunwale = WOOD
       else b.tri(mid, p, q, back, back, back, HULL, [sheer(0) - mid.y, sheer(0) - p.y, sheer(0) - q.y]);
     }
   }
+  const corner = t0[sec.length - 1], crown = V(0, sheer(0) + (open ? 0 : camber * (halfBeam(0) / (h.B / 2))), z(0));
+  for (const side of [1, -1]) {
+    b.tri(mid, V(corner.x * side, corner.y, corner.z), crown, back, back, back, HULL, [sheer(0) - mid.y, 0, 0]);
+  }
   if (!open) {
     // the deck, cambered
-    const camber = h.B * 0.025;
     for (let i = 0; i < ts.length - 1; i++) {
       const row = (k) => {
         const t = ts[k], hb = halfBeam(t), s = sheer(t);
@@ -264,9 +270,10 @@ function addHull(b, h, { open = false, wall = 0.05, floor = 0.15, gunwale = WOOD
     }
     b.quad(V(-fl[0], floor, zz[0]), V(-fl[1], floor, zz[1]), V(fl[1], floor, zz[1]), V(fl[0], floor, zz[0]), NONSLIP, INSIDE);
   }
-  // the inside of the transom
+  // the inside of the transom, and the gunwale across its top
   const hb0 = halfBeam(0), in0 = Math.max(0, hb0 - wall), z0 = z(0) + wall;
   b.quad(V(-in0, sheer(0), z0), V(-hb0 * 0.72, floor, z0), V(hb0 * 0.72, floor, z0), V(in0, sheer(0), z0), DECK, INSIDE);
+  b.quad(V(-hb0, sheer(0), z(0)), V(-in0, sheer(0), z0), V(in0, sheer(0), z0), V(hb0, sheer(0), z(0)), gunwale);
   return { halfBeam, sheer, keel, z };
 }
 

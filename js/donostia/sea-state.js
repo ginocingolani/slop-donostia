@@ -324,8 +324,18 @@ export function pontoonLevel(level) {
   return Math.max(level, MARINA.level.ground);
 }
 
-/** A gangway's pitch (rad, + down to the pontoon) hinged at hingeY on the quay, its foot on the deck at `level`. */
+/**
+ * A gangway's foot (m): the axle of the rollers it rests on, under its deck's end, their radius, and the toe plate hinged
+ * on its end, its lip on the pontoon's deck (tools/donostia/bake-marina.mjs lays the gangways for these).
+ */
+export const GANGWAY_FOOT = Object.freeze({ axle: 0.14, roller: 0.08, toe: 0.6 });
+
+/**
+ * A gangway's pitch (rad, + down to the pontoon) hinged at hingeY on the quay, `length` from the hinge to its end, with
+ * its rollers on the deck at `level`: length sin(pitch) + axle cos(pitch) + roller is the hinge's height over the deck.
+ */
 export function gangwayPitch(hingeY, length, level) {
-  const drop = hingeY - (pontoonLevel(level) + MARINA.level.freeboard);
-  return Math.asin(clamp(drop / length, -0.95, 0.95));
+  const { axle, roller } = GANGWAY_FOOT;
+  const drop = hingeY - (pontoonLevel(level) + MARINA.level.freeboard + roller);
+  return Math.asin(clamp(drop / Math.hypot(length, axle), -0.95, 0.95)) - Math.atan2(axle, length);
 }
