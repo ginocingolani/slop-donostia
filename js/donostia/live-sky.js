@@ -28,6 +28,11 @@ import { cityUniforms } from '../city-uniforms.js';
 //                            the moonlight and the eased sky weather: see `state` below
 // The tide, the waves and the precipitation themselves are the sea's and the weather's: this module reads only what
 // the sky shows of the weather (cloud, overcast, rain's gloom, visibility).
+//
+// The streets stay dry: the presets' wet look at dusk and by night (roadWetness 0.55 & 0.62: puddles & damp stains,
+// js/donostia/ground.js) is a mood, not the weather, and on a dry evening it laid blotches over the big flat squares.
+// Here the time of day's share is held at the dry midday's, so only real rain wets them (js/donostia/weather.js's
+// cityUniforms.uRainWetness, on top of it).
 
 const FADE = 2.0; // s: the switch fading in from the preset
 const EASE = 1.5; // s: the weather's time constant (98% of a change in 6 s)
@@ -38,6 +43,7 @@ const BAKE_ANGLE = Math.cos(0.75 * Math.PI / 180);
 const EASED = ['cover', 'coverLow', 'overcast', 'precip', 'fog'];
 
 export function createLiveSky({ lighting, presets }) {
+  const dryRoad = presets.midday?.roadWetness ?? 0.08; // the streets' wetness on a dry day (js/lighting.js)
   let grade = null, on = false, fade = 1, fadeFrom = null, current = null;
   let sky = null, logVis = 0;
   let baked = null, bakedAt = -Infinity, clock = 0;
@@ -108,6 +114,7 @@ export function createLiveSky({ lighting, presets }) {
         const weights = look.weights, night = look.night, moonlight = look.moonlight;
         look = Object.assign(mixLooks(fadeFrom, look, smoothstep(0, 1, fade)), { weights, night, moonlight, sky });
       }
+      look.roadWetness = Math.min(look.roadWetness, dryRoad);
       current = look;
       lighting.applyLook(look);
       grade.applyLook(look.grade);
