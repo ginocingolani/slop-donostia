@@ -711,3 +711,76 @@ body.touch-enabled .hud-bottom-left { bottom: calc(max(var(--edge), env(safe-are
   body.touch-enabled .location-place { font-size: 13px; }
   body.touch-enabled .location-poi { display: none; }
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+   The cookie choice (index.html #consent-card, js/donostia/consent.js): a small card over the controls hint, in the
+   HUD's glass with the carved hairline, while the choice is pending; "Bai" in the sandstone
+   ------------------------------------------------------------------------------------------------------------------ */
+.hud-consent {
+  left: 50%;
+  bottom: calc(var(--edge) + 60px);
+  transform: translateX(-50%);
+}
+
+body.hud-minimized .hud-consent { transform: translate(-50%, 12px); }
+
+.consent {
+  width: min(400px, calc(100vw - 2 * var(--edge)));
+  padding: 4px 12px 12px;
+  outline: 1px solid var(--carve);
+  outline-offset: -5px;
+}
+
+.consent .pop-title {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.consent-text {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.consent-en {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.consent-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.consent-btn {
+  flex: 1;
+  justify-content: center;
+  background: var(--hover);
+}
+
+.consent-btn:hover { background: rgba(244, 236, 220, 0.16); }
+
+.consent-btn.is-primary {
+  background: var(--harri);
+  color: var(--harri-ink);
+}
+
+.consent-btn.is-primary:hover { background: #e6c385; }
+
+/* the popover's "choose again" */
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .hud-consent { bottom: calc(var(--edge) + 48px); }
+}

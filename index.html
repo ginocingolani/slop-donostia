@@ -164,7 +164,20 @@
     <p>Real time (Orain): weather &amp; sea data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>), its forecast and marine models; the sun's and the moon's places after the Astronomical Almanac and Meeus' <i>Astronomical Algorithms</i></p>
     <p>Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
     <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
-    <p>Usage: a few anonymous events (the loading steps and their times, the frame rate, the viewpoints and the 100 m cells flown to, the switches used) go to <a href="https://posthog.com/eu" target="_blank" rel="noopener noreferrer">PostHog Cloud EU</a> without cookies, identifiers or recordings: one visitor is one person for one day. Off with Do Not Track or Global Privacy Control (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#analytics" target="_blank" rel="noopener noreferrer">details</a>)</p>
+    <p>Usage: a few events (the loading steps and their times, the frame rate, the viewpoints and the 100 m cells flown to, the switches used) go to <a href="https://posthog.com/eu" target="_blank" rel="noopener noreferrer">PostHog Cloud EU</a>. Without cookies unless you say so: a daily server-side hash, counted, never recognised. With your OK, one first-party cookie, so the same visitor is the same person tomorrow. No ads, no identifiers, no recordings. Off with Do Not Track or Global Privacy Control (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#analytics" target="_blank" rel="noopener noreferrer">details</a>)</p>
+    <p id="consent-line" hidden>Cookies: <span id="consent-state"></span> · <button id="consent-change" class="link-btn" type="button">aldatu · cambiar</button></p>
+  </div>
+
+  <!-- The cookie choice (js/donostia/consent.js): over the controls hint once the city shows, while it is pending -->
+  <div class="hud hud-consent">
+    <aside id="consent-card" class="panel consent" role="dialog" aria-labelledby="consent-title" aria-describedby="consent-text" hidden>
+      <div id="consent-title" class="pop-title">Cookie bat · Una cookie</div>
+      <p id="consent-text" class="consent-text">Erabilera neurtzeko bakarrik. · Solo para medir el uso: cuánto tarda en cargar, a dónde vuela la gente. Nada de ads, ni spam, ni nada más. Sin ella también contamos, pero sin reconocerte mañana.<span class="consent-en">One cookie, to measure use only. No ads, no spam. Without it you are counted, never recognised.</span></p>
+      <div class="consent-actions">
+        <button id="consent-accept" class="tool-btn consent-btn is-primary" type="button">Bai · Vale</button>
+        <button id="consent-decline" class="tool-btn consent-btn" type="button">Ez · Sin cookie</button>
+      </div>
+    </aside>
   </div>
 
   <!-- Bottom left: the street-name plaques, over a card that reads where you are (auzoa, place) above the radar -->
