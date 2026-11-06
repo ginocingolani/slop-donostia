@@ -70,91 +70,116 @@ test('the SDK is pinned, cookieless unless the cookie is accepted, and captures 
   assert.equal(SDK_CONFIG.disable_surveys, true);
   assert.equal(SDK_CONFIG.advanced_disable_flags, true);
   assert.equal(SDK_CONFIG.disable_external_dependency_loading, true);
-  assert.equal(SDK_CONFIG.capture_pageview, false, "the SDK's own page view would be dropped while the choice is pending: main.js queues one");
+  assert.equal(SDK_CONFIG.capture_pageview, false, "the SDK's own page view goes before it is told the choice, and is dropped: main.js queues one");
   assert.equal(SDK_CONFIG.capture_pageleave, true);
   assert.equal(SDK_CONFIG.respect_dnt, true);
 });
 
-test('nothing goes until the visitor chooses; then the queue goes, with the choice', async () => {
-  const sdk = fakeSdk('pending');
+// the answer as the page remembers it (localStorage)
+const fakeStorage = (choice = null) => {
+  const items = new Map(choice ? [[analytics.CHOICE_KEY, choice]] : []);
+  return { getItem: (k) => items.get(k) ?? null, setItem: (k, v) => items.set(k, String(v)), items };
+};
+
+test('cookieless from the first event, before the card is answered; the cookie on a yes', async () => {
+  const sdk = fakeSdk('pending'); // (the SDK has no choice stored: a first visit)
+  const storage = fakeStorage();
   const c = clocks();
   const statuses = [];
-  const tracker = createTracker({ loadSdk: () => sdk, ...c });
+  const tracker = createTracker({ loadSdk: () => sdk, storage, ...c });
   tracker.onConsent((s) => statuses.push(s));
   assert.equal(tracker.consentStatus, 'none', 'no SDK yet');
   tracker.track('$pageview');
   tracker.track('app_start', { webgpu: true });
   await tracker.loading;
-  assert.equal(tracker.consentStatus, 'pending');
+  assert.deepEqual(sdk.calls.slice(0, 3).map((call) => call[0]), ['init', 'register', 'opt_out'], 'the SDK is told "rejected" as it loads: cookieless, and capturing');
+  assert.deepEqual(captured(sdk), ['$pageview', 'app_start'], 'the queue goes at once');
+  assert.equal(tracker.consentStatus, 'pending', 'not asked yet');
   assert.deepEqual(statuses, ['pending']);
-  assert.equal(tracker.queued, 2, 'held until the choice');
-  assert.deepEqual(captured(sdk), []);
+  assert.equal(storage.items.size, 0, 'nothing stored without an answer');
   c.advance(5000);
   tracker.ready();
   tracker.track('teleport', { id: 'urgull' });
-  assert.equal(tracker.queued, 4);
+  assert.deepEqual(captured(sdk), ['$pageview', 'app_start', 'app_ready', 'teleport'], 'straight through, cookieless');
   tracker.decide(true);
   assert.deepEqual(sdk.calls.find((call) => call[0] === 'opt_in'), ['opt_in', { captureEventName: null }], 'the SDK sets its cookie, without an event of its own');
-  assert.deepEqual(captured(sdk), ['$pageview', 'app_start', 'app_ready', 'teleport', 'cookie_consent'], 'the queue in order, then the choice');
-  assert.deepEqual(sdk.calls.at(-1)[2], { cookies: true, changed: false });
-  assert.equal(sdk.calls.find((call) => call[0] === 'capture')[3].timestamp.getTime(), 1_700_000_000_000 + 1000, 'the held events keep their time');
+  assert.deepEqual(sdk.calls.at(-1).slice(1, 3), ['cookie_consent', { cookies: true, changed: false }]);
+  assert.equal(storage.getItem(analytics.CHOICE_KEY), 'yes');
   assert.equal(tracker.consentStatus, 'granted');
   assert.deepEqual(statuses, ['pending', 'granted']);
-  assert.equal(tracker.queued, 0);
-  tracker.track('map_open');
-  assert.equal(captured(sdk).at(-1), 'map_open', 'straight through from now on');
-  // changed later, from the data popover: the SDK goes cookieless, and the change is an event
+  // changed later, from the data popover: the SDK goes cookieless again, and the change is an event
   tracker.decide(false);
-  assert.equal(sdk.calls.filter((call) => call[0] === 'opt_out').length, 1);
+  assert.equal(sdk.calls.filter((call) => call[0] === 'opt_out').length, 2);
   assert.deepEqual(sdk.calls.at(-1).slice(1, 3), ['cookie_consent', { cookies: false, changed: true }]);
+  assert.equal(storage.getItem(analytics.CHOICE_KEY), 'no');
   assert.deepEqual(statuses, ['pending', 'granted', 'denied']);
-  // the same choice again changes nothing
+  // the same answer again changes nothing
   tracker.decide(false);
   assert.equal(captured(sdk).filter((name) => name === 'cookie_consent').length, 2);
+  assert.equal(sdk.calls.filter((call) => call[0] === 'opt_out').length, 2);
 });
 
-test('a visitor who chose before is not asked again: the queue goes as the SDK loads', async () => {
-  for (const choice of ['granted', 'denied']) {
-    const sdk = fakeSdk(choice);
-    const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+test('a visitor who answered is not asked again, and the SDK is told only what it does not hold', async () => {
+  // the usual case: the SDK remembers the same answer
+  for (const [choice, held, status] of [['yes', 'granted', 'granted'], ['no', 'denied', 'denied']]) {
+    const sdk = fakeSdk(held);
+    const tracker = createTracker({ loadSdk: () => sdk, storage: fakeStorage(choice), ...clocks() });
     tracker.track('$pageview');
     await tracker.loading;
-    assert.equal(tracker.consentStatus, choice);
+    assert.equal(tracker.consentStatus, status);
     assert.deepEqual(captured(sdk), ['$pageview']);
-    assert.ok(!sdk.calls.some((call) => call[0] === 'opt_in' || call[0] === 'opt_out'), 'nothing asked of the SDK');
+    assert.ok(!sdk.calls.some((call) => call[0] === 'opt_in' || call[0] === 'opt_out'), 'nothing to tell the SDK');
   }
-  // the choice is the SDK's to remember: a listener added late hears it at once
-  const sdk = fakeSdk('denied');
-  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+  // the SDK's storage gone but ours not (or the reverse): the SDK is told again
+  const sdk = fakeSdk('pending');
+  const tracker = createTracker({ loadSdk: () => sdk, storage: fakeStorage('yes'), ...clocks() });
   await tracker.loading;
+  assert.equal(sdk.calls.filter((call) => call[0] === 'opt_in').length, 1);
+  assert.equal(tracker.consentStatus, 'granted');
+  const sdk2 = fakeSdk('granted');
+  const tracker2 = createTracker({ loadSdk: () => sdk2, storage: fakeStorage(), ...clocks() });
+  await tracker2.loading;
+  assert.equal(sdk2.calls.filter((call) => call[0] === 'opt_out').length, 1, 'no answer of ours: cookieless until asked');
+  assert.equal(tracker2.consentStatus, 'pending');
+  // a listener added late hears the answer at once
   const heard = [];
   tracker.onConsent((s) => heard.push(s));
-  assert.deepEqual(heard, ['denied']);
-  // decide() before the SDK is there, or after the SDK failed, does nothing
-  const early = createTracker({ loadSdk: () => new Promise(() => {}), ...clocks() });
+  assert.deepEqual(heard, ['granted']);
+  // no storage at all: asked every visit, still cookieless
+  const bare = createTracker({ loadSdk: () => fakeSdk('pending'), ...clocks() });
+  await bare.loading;
+  assert.equal(bare.consentStatus, 'pending');
+  bare.decide(true);
+  assert.equal(bare.consentStatus, 'granted');
+  // decide() before the SDK is there, or after it failed, does nothing
+  const early = createTracker({ loadSdk: () => new Promise(() => {}), storage: fakeStorage(), ...clocks() });
   early.decide(true);
   assert.equal(early.consentStatus, 'none');
+  assert.equal(analytics.readChoice({ getItem: () => 'maybe' }), null, 'only yes or no count');
+  assert.equal(analytics.readChoice({ getItem: () => { throw new Error('blocked'); } }), null);
 });
 
-test('the queue is bounded while the choice is pending', async () => {
+test('the queue is bounded while the SDK loads', async () => {
   const sdk = fakeSdk('pending');
-  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
-  await tracker.loading;
-  tracker.ready();
+  let resolve;
+  const pending = new Promise((r) => { resolve = r; });
+  const tracker = createTracker({ loadSdk: () => pending, ...clocks() });
   for (let i = 0; i < analytics.QUEUE_MAX + 50; i++) tracker.track('cell_visit', { cell_x: i, cell_z: 0 });
   assert.equal(tracker.queued, analytics.QUEUE_MAX);
-  tracker.decide(false);
-  assert.equal(captured(sdk).length, analytics.QUEUE_MAX + 1, 'the queue and the choice');
+  resolve(sdk);
+  await tracker.loading;
+  assert.equal(captured(sdk).length, analytics.QUEUE_MAX);
 });
 
 // the consent card (js/donostia/consent.js) against a bare DOM stand-in
-test('the card shows once the city shows and the choice is pending, and the popover offers to change it', async () => {
+test('the card shows once the city shows until it is answered, and the popover offers to change the answer', async () => {
   const { initConsent } = await import(pathToFileURL(`${root}js/donostia/consent.js`).href);
   const elements = {};
   const el = (id) => (elements[id] ??= { id, hidden: true, textContent: '', handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, click() { this.handlers.click?.(); }, hidePopover() { this.popoverHidden = true; } });
   const doc = { getElementById: (id) => el(id) };
   const sdk = fakeSdk('pending');
-  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+  const storage = fakeStorage();
+  const tracker = createTracker({ loadSdk: () => sdk, storage, ...clocks() });
   const consent = initConsent(tracker, doc);
   assert.equal(el('consent-card').hidden, true, 'nothing before the SDK');
   assert.equal(el('consent-line').hidden, true);
@@ -163,11 +188,11 @@ test('the card shows once the city shows and the choice is pending, and the popo
   consent.setReady();
   assert.equal(consent.shown, true);
   assert.equal(el('consent-line').hidden, false);
-  assert.match(el('consent-state').textContent, /sin responder/);
+  assert.match(el('consent-state').textContent, /sin responder \(sin cookie\)/);
   el('consent-decline').click();
   assert.equal(consent.shown, false);
   assert.equal(tracker.consentStatus, 'denied');
-  assert.match(el('consent-state').textContent, /sin cookie/);
+  assert.match(el('consent-state').textContent, /^ez .*sin cookie\)$/);
   // choose again from the data popover
   el('consent-change').click();
   assert.equal(el('credits-popover').popoverHidden, true);
@@ -175,9 +200,9 @@ test('the card shows once the city shows and the choice is pending, and the popo
   el('consent-accept').click();
   assert.equal(consent.shown, false);
   assert.equal(tracker.consentStatus, 'granted');
-  assert.match(el('consent-state').textContent, /cookie\)$/);
-  // a returning visitor never sees the card
-  const back = initConsent(createTracker({ loadSdk: () => fakeSdk('granted'), ...clocks() }), { getElementById: (id) => el(`back-${id}`) });
+  assert.match(el('consent-state').textContent, /^bai .*\(cookie\)$/);
+  // a visitor who answered never sees the card again
+  const back = initConsent(createTracker({ loadSdk: () => fakeSdk('granted'), storage: fakeStorage('yes'), ...clocks() }), { getElementById: (id) => el(`back-${id}`) });
   await new Promise((r) => setTimeout(r, 0));
   back.setReady();
   assert.equal(back.shown, false);
@@ -207,7 +232,7 @@ test('events before the SDK is there wait with their timestamps, then go in orde
   const c = clocks();
   let resolve;
   const pending = new Promise((r) => { resolve = r; });
-  const tracker = createTracker({ loadSdk: () => pending, ...c });
+  const tracker = createTracker({ loadSdk: () => pending, storage: fakeStorage('yes'), ...c }); // (answered before: the SDK is told nothing)
   tracker.track('app_start', { webgpu: true });
   c.advance(1500);
   tracker.mark('renderer', 1500);
@@ -228,7 +253,7 @@ test('events before the SDK is there wait with their timestamps, then go in orde
   assert.equal(sdk.calls[3][3].timestamp.getTime(), 1_700_000_000_000 + 2500);
   // the module may hand the instance over as its default export or as `posthog`
   const sdk2 = fakeSdk();
-  const t2 = createTracker({ loadSdk: () => ({ default: sdk2 }), ...clocks() });
+  const t2 = createTracker({ loadSdk: () => ({ default: sdk2 }), storage: fakeStorage('yes'), ...clocks() });
   t2.track('app_start');
   await t2.loading;
   assert.deepEqual(captured(sdk2), ['app_start']);

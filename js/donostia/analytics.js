@@ -2,16 +2,18 @@
 // Usage analytics for Slop Donostia: a few hand-picked events to PostHog Cloud EU, with no cookies, no identifiers
 // and nothing stored in the browser. Nothing of this loads on the New York page.
 //
-// The visitor chooses (js/donostia/consent.js, a small card once the city shows): with a cookie, PostHog's
-// first-party one, the same visitor is the same person tomorrow; without, PostHog's cookieless mode, where who a
-// visitor is comes from a hash of the IP, the user agent and a salt of the day, computed on PostHog's servers and
-// never stored (the IP is dropped there), so one visitor is one "person" for one day and nobody can be followed from
-// a day to the next. Until the choice is made the SDK sends nothing (cookieless_mode 'on_reject'): the events wait in
-// the queue, as they do while the SDK loads, and go with their timestamps once it is made. PostHog remembers the
-// choice (its cookie, or the refusal in localStorage); the data popover shows it and lets it change. No autocapture,
-// no session replay, no heatmaps of the page, no feature flags, no surveys: only the events below. The SDK (its slim
-// bundle, which loads no extras) is pinned from jsDelivr and imported off the critical path once the app's own module
-// runs.
+// Cookieless unless the visitor accepts the cookie (js/donostia/consent.js, a small card once the city shows).
+// Cookieless is PostHog's mode where who a visitor is comes from a hash of the IP, the user agent and a salt of the
+// day, computed on PostHog's servers and never stored (the IP is dropped there), so one visitor is one "person" for
+// one day and nobody can be followed from a day to the next; it holds from the first event, before the card is
+// answered and after a "no". A "yes" sets PostHog's first-party cookie: the same visitor is the same person tomorrow
+// (the events before it stay under that day's hash). The SDK runs in cookieless_mode 'on_reject', which sends nothing
+// until it is told the choice, so the tracker tells it "rejected" as it loads and "accepted" on a yes; the answer
+// itself (yes, no, or none yet) is ours, in localStorage under CHOICE_KEY, so the card knows whether to ask. The data
+// popover shows it and lets it change. No autocapture, no session replay, no heatmaps of the page, no feature flags,
+// no surveys: only the events below. The SDK (its slim bundle, which loads no extras) is pinned from jsDelivr and
+// imported off the critical path once the app's own module runs; the events before it is there wait in a queue with
+// their timestamps.
 //
 // Off on localhost, file: and *.local, with ?debug, under a WebDriver harness (the headless renders), and for a browser
 // that says Do Not Track or Global Privacy Control. ?analytics=1 forces it on (to test from localhost; DNT/GPC still
@@ -19,11 +21,11 @@
 //
 // The events (every one also carries the SDK's coarse device fields, $browser, $os, $device_type, $screen_*, and ours,
 // deviceInfo(): the GPU's vendor and architecture as WebGPU reports them, cores, memory, pixel ratio, touch):
-// - the load funnel: $pageview (ours, queued like the rest: the SDK's own would be dropped while the choice is
-//   pending) → app_start { webgpu } → world_built → shaders_compiled → app_ready { ms_<step>…, ms_total: the init
+// - the load funnel: $pageview (ours, queued like the rest: the SDK's own goes before it is told the choice, and is
+//   dropped) → app_start { webgpu } → world_built → shaders_compiled → app_ready { ms_<step>…, ms_total: the init
 //   timings main.js logs } → first_move { after_s }; app_error { after, message } and gpu_lost { after, reason } where
 //   it breaks (`after`: the last init step that completed);
-// - the choice: cookie_consent { cookies, changed };
+// - the answer: cookie_consent { cookies, changed } (`changed`: from the popover, after a first answer);
 // - flying: fps_sample every minute (fps, fps_min, fps_bucket, altitude) and cell_visit when the camera has dwelt
 //   DWELL_S in a cell of the CELL_SIZE grid (cell_x, cell_z: where people fly, for a heatmap of the map);
 // - the HUD: teleport { id }, time_preset { id }, live_toggle { on }, map_open, hud_hide { hidden };
@@ -41,7 +43,16 @@ export const CELL_SIZE = 100; // m: the grid of the flight heatmap
 export const DWELL_S = 2; // s in a cell before it counts as visited
 export const FPS_SAMPLE_S = 60; // s between fps samples
 export const MOVE_SPEED = 0.5; // m/s: the camera is being flown (a flight to a viewpoint is not a move)
-export const QUEUE_MAX = 400; // events held while the SDK loads or the choice is pending; past it the newest are dropped
+export const QUEUE_MAX = 400; // events held while the SDK loads; past it the newest are dropped
+export const CHOICE_KEY = 'donostia-cookies'; // localStorage: 'yes' or 'no' once the card is answered
+
+// the answer as stored: 'yes' | 'no' | null
+export function readChoice(storage) {
+  try {
+    const v = storage?.getItem(CHOICE_KEY);
+    return v === 'yes' || v === 'no' ? v : null;
+  } catch { return null; }
+}
 
 // The SDK's configuration (https://posthog.com/docs/libraries/js/config): cookieless unless the visitor accepts the
 // cookie, and every automatic capture but the page leave off (the page view is ours, see above)
@@ -152,18 +163,18 @@ export function createSession() {
 }
 
 /**
- * The tracker. loadSdk() resolves to the posthog-js module (or its default export); until it has, and until the
- * visitor's choice is made, track() queues. clock() is a monotonic ms time (performance.now), now() the wall clock
- * (Date.now) for the queued events' timestamps.
+ * The tracker. loadSdk() resolves to the posthog-js module (or its default export); until it has, track() queues.
+ * storage holds the answer (localStorage; anything with getItem/setItem). clock() is a monotonic ms time
+ * (performance.now), now() the wall clock (Date.now) for the queued events' timestamps.
  */
-export function createTracker({ enabled = true, loadSdk = null, clock = () => performance.now(), now = () => Date.now(), onError = () => {} } = {}) {
+export function createTracker({ enabled = true, loadSdk = null, storage = null, clock = () => performance.now(), now = () => Date.now(), onError = () => {} } = {}) {
   const t0 = clock();
   const session = createSession();
   const device = {};
   const marks = {};
   const listeners = [];
-  // ph: the SDK once loaded; sdk: the same once events may go to it (the choice made)
-  let ph = null, sdk = null, failed = false, ended = false, queue = [], lastMark = 'start';
+  let sdk = null, failed = false, ended = false, queue = [], lastMark = 'start';
+  let choice = readChoice(storage);
   const capture = (name, props, options) => {
     if (sdk) sdk.capture(name, props, options);
     else if (queue.length < QUEUE_MAX) queue.push([name, props, { ...options, timestamp: new Date(now()) }]);
@@ -173,21 +184,26 @@ export function createTracker({ enabled = true, loadSdk = null, clock = () => pe
     session.count(name);
     capture(name, props);
   };
-  const status = () => (ph && !failed ? ph.get_explicit_consent_status() : 'none');
+  // ours, from the answer; the SDK's own consent is what it is told below
+  const status = () => (sdk && !failed ? (choice === 'yes' ? 'granted' : choice === 'no' ? 'denied' : 'pending') : 'none');
   const notify = () => { const s = status(); for (const fn of listeners) fn(s); };
-  // the SDK drops what is captured while the choice is pending: the queue goes once it is made
-  const flush = () => {
-    sdk = ph;
-    for (const [name, props, options] of queue) sdk.capture(name, props, options);
-    queue = [];
+  // The SDK is told the answer, or "rejected" without one, so it captures (cookieless) from the start: in 'on_reject'
+  // it drops everything until told. Told only what it doesn't already hold (it remembers across visits).
+  const tell = (ph) => {
+    const wanted = choice === 'yes' ? 'granted' : 'denied';
+    if (ph.get_explicit_consent_status() === wanted) return;
+    if (wanted === 'granted') ph.opt_in_capturing({ captureEventName: null });
+    else ph.opt_out_capturing();
   };
   const loading = enabled && loadSdk
     ? Promise.resolve().then(loadSdk).then((mod) => {
-      const instance = mod?.posthog ?? mod?.default ?? mod;
-      instance.init(PROJECT_TOKEN, { ...SDK_CONFIG });
-      instance.register(device);
-      ph = instance;
-      if (status() !== 'pending') flush();
+      const ph = mod?.posthog ?? mod?.default ?? mod;
+      ph.init(PROJECT_TOKEN, { ...SDK_CONFIG });
+      ph.register(device);
+      tell(ph);
+      sdk = ph;
+      for (const [name, props, options] of queue) sdk.capture(name, props, options);
+      queue = [];
       notify();
     }).catch((e) => { failed = true; queue = []; onError(e); })
     : Promise.resolve();
@@ -196,22 +212,23 @@ export function createTracker({ enabled = true, loadSdk = null, clock = () => pe
     get queued() { return queue.length; },
     loading,
     track,
-    // 'pending' | 'granted' | 'denied', or 'none' without an SDK (off, loading, or failed)
+    // the answer: 'pending' (not asked yet: cookieless), 'granted' (the cookie) or 'denied' (cookieless), or 'none'
+    // without an SDK (off, loading, or failed)
     get consentStatus() { return status(); },
-    // fn(status) when the SDK is there and whenever the choice changes (at once if it already is)
-    onConsent(fn) { listeners.push(fn); if (ph && !failed) fn(status()); },
-    // the visitor's choice: the cookie (true) or the cookieless hash (false); again later to change it
+    // fn(status) when the SDK is there and whenever the answer changes (at once if it already is)
+    onConsent(fn) { listeners.push(fn); if (sdk && !failed) fn(status()); },
+    // the answer: the cookie (true) or cookieless (false); again later to change it
     decide(cookies) {
-      if (!ph || failed || ended) return;
+      if (!sdk || failed || ended) return;
       const before = status();
-      if (cookies) ph.opt_in_capturing({ captureEventName: null });
-      else ph.opt_out_capturing();
-      if (!sdk) flush();
-      if (before === 'pending' || before !== status()) track('cookie_consent', { cookies: Boolean(cookies), changed: before !== 'pending' });
+      choice = cookies ? 'yes' : 'no';
+      try { storage?.setItem(CHOICE_KEY, choice); } catch { /* storage unavailable */ }
+      tell(sdk);
+      if (before !== status()) track('cookie_consent', { cookies: Boolean(cookies), changed: before !== 'pending' });
       notify();
     },
     // the device's coarse description, on every event from now on
-    setDevice(props) { Object.assign(device, props); if (ph && !failed) ph.register(device); },
+    setDevice(props) { Object.assign(device, props); if (sdk) sdk.register(device); },
     // an init step done, in ms (main.js's markInit)
     mark(label, ms) { marks[label] = Math.round(ms); lastMark = label; },
     get after() { return lastMark; },
@@ -245,7 +262,8 @@ export function initAnalytics({ loadSdk = () => import(/* webpackIgnore: true */
     doNotTrack: nav.doNotTrack ?? (typeof window !== 'undefined' ? window.doNotTrack : null),
     gpc: nav.globalPrivacyControl === true
   });
-  current = createTracker({ enabled, loadSdk, onError: (e) => console.warn('[analytics] off:', e?.message ?? e), ...options });
+  const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+  current = createTracker({ enabled, loadSdk, storage, onError: (e) => console.warn('[analytics] off:', e?.message ?? e), ...options });
   return current;
 }
 

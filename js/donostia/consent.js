@@ -1,15 +1,15 @@
 // js/donostia/consent.js
 // The cookie choice for the usage analytics (js/donostia/analytics.js): a small card over the controls hint once the
-// city shows, while PostHog's consent is pending. "Bai" sets PostHog's first-party cookie, so the same visitor is the
-// same person tomorrow; "Ez" keeps the cookieless hash: counted, never recognised. Nothing is sent until the choice is
-// made. PostHog remembers it (its cookie, or the refusal in localStorage), and the data popover (ⓘ) shows it with a
-// button to choose again, which brings the card back.
+// city shows, until it is answered. "Bai" sets PostHog's first-party cookie, so the same visitor is the same person
+// tomorrow; "Ez" keeps the cookieless hash: counted, never recognised, which is also how it is until the card is
+// answered. The answer is remembered (localStorage), and the data popover (ⓘ) shows it with a button to choose again,
+// which brings the card back.
 //
 // initConsent(tracker, doc) -> { setReady() }: main.js calls setReady() as the loading screen lifts (the card never
 // shows over it). The elements: #consent-card with #consent-accept and #consent-decline; in the popover #consent-line
 // with #consent-state and #consent-change.
 
-const STATE = { granted: 'bai · sí (cookie)', denied: 'ez · no (sin cookie)', pending: 'galdetu gabe · sin responder' };
+const STATE = { granted: 'bai · sí (cookie)', denied: 'ez · no (sin cookie)', pending: 'galdetu gabe · sin responder (sin cookie)' };
 
 export function initConsent(tracker, doc = document) {
   const card = doc.getElementById('consent-card');
