@@ -108,6 +108,36 @@ described above. Every generated file names its sources and licences: the extrac
 `Copyright` and `Comment` text chunks. The app credits the sources in its data popover (the ⓘ button) and on the full
 map.
 
+## Analytics
+
+The app sends a few usage events to PostHog Cloud EU (`js/donostia/analytics.js`; nothing on the New York page), to
+know whether it loads, how it runs and where people fly. It is cookieless: PostHog stores nothing in the browser (no
+cookie, no local storage, no identifier), and who a visitor is comes from a hash of the IP, the user agent and a salt
+of the day computed on PostHog's servers and never stored, the IP dropped there; so one visitor is one "person" for
+one day, and nobody can be followed from a day to the next or across devices. No autocapture, no session replay, no
+heatmaps of the page, no feature flags, no surveys; the SDK's slim bundle, pinned on jsDelivr, is imported off the
+critical path once the app's own module runs. Off on localhost, `file:` and `*.local`, with `?debug`, under a
+WebDriver harness (the headless renders; a harness that drives Chrome by CDP alone should pass `?debug` or
+`?analytics=0`), and for a browser that says Do Not Track or Global Privacy Control; `?analytics=1` forces it on to
+test from localhost (DNT/GPC still win). The data popover says so.
+
+The events, each with the SDK's coarse device fields (`$browser`, `$os`, `$device_type`, `$screen_*`) and ours (the
+GPU's vendor and architecture as WebGPU reports them, cores, memory, pixel ratio, touch):
+
+- the load funnel: `$pageview` → `app_start { webgpu }` → `world_built` → `shaders_compiled` → `app_ready { ms_<step>…,
+  ms_total }` (the init timings `main.js` logs) → `first_move { after_s }`; `app_error { after, message }` and
+  `gpu_lost { after, reason }` where it breaks (`after`: the last init step that completed);
+- flying: `fps_sample` every minute (`fps`, `fps_min`, `fps_bucket`, `altitude`) and `cell_visit { cell_x, cell_z,
+  altitude }` once the camera has dwelt 2 s in a cell of a 100 m grid of the frame (`cellOf()`: the heatmap of where
+  people fly, `cell_x * 100` is the cell's west edge in frame metres);
+- the HUD: `teleport { id }`, `time_preset { id }`, `live_toggle { on }`, `map_open`, `hud_hide { hidden }`;
+- leaving: `session_end { seconds, fps_avg, fps_min, teleports, time_presets, live_toggles, map_opens, cells, moved }`
+  by beacon on `pagehide`, and `$pageleave`.
+
+The PostHog project ("Default project", EU, id 337682) has cookieless tracking enabled in its settings; without it the
+events are discarded at ingestion. The project token in `analytics.js` is public by design (it can only write events).
+`tests/donostia-analytics.test.mjs` covers the switch, the queue, the session's figures and the page's wiring.
+
 ## Notes
 
 - The LiDAR terrain stores the sea surface as exactly 0 m; `build.mjs` floods it from the open sea and lays the

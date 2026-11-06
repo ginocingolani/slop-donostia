@@ -25,6 +25,7 @@ import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
+import { initAnalytics, deviceInfo, MOVE_SPEED } from './analytics.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -283,8 +284,15 @@ export function createView(renderer, world, camera) {
 // --- the page --------------------------------------------------------------------------------------------------------------
 
 let deviceLost = false; // (its message outranks the "Could not start" of a load it breaks)
+let analytics = null; // the usage analytics (js/donostia/analytics.js), from initApp() on
 
 async function initApp() {
+  // The usage analytics: a few events to PostHog, cookieless; nothing on localhost, with ?debug, under a harness or
+  // for a browser that asks not to be tracked. The load funnel starts here, with whether WebGPU is there at all.
+  analytics = initAnalytics();
+  window.addEventListener('pagehide', () => analytics.end());
+  analytics.track('app_start', { webgpu: Boolean(navigator.gpu) });
+
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
   const loadingStatus = document.getElementById('loading-status');
@@ -305,12 +313,15 @@ async function initApp() {
   renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
   await renderer.init();
+  // the coarse device on every event: the GPU's vendor & architecture as WebGPU reports them, cores, memory, pixel ratio
+  analytics.setDevice(deviceInfo({ navigator, devicePixelRatio: window.devicePixelRatio, adapterInfo: renderer.backend.device?.adapterInfo }));
   // A lost GPU device (a driver reset, the GPU process crashing...) leaves three drawing nothing: the view would freeze
   // on its last frame under a HUD that still moves. Stop, and say so over the loading screen.
   const threeDeviceLost = renderer.onDeviceLost;
   renderer.onDeviceLost = (info) => {
     threeDeviceLost.call(renderer, info); // (logs it, stops rendering)
     deviceLost = true;
+    analytics.track('gpu_lost', { after: analytics.after, reason: String(info.reason || info.message || 'device lost').slice(0, 100) });
     renderer.setAnimationLoop(null);
     loadingOverlay?.removeAttribute('aria-busy');
     loadingOverlay?.classList.remove('hidden');
@@ -335,10 +346,16 @@ async function initApp() {
 
   const timings = [];
   let mark = performance.now();
-  const markInit = (label) => { const now = performance.now(); timings.push(`${label} ${Math.round(now - mark)}ms`); mark = now; };
+  const markInit = (label) => {
+    const now = performance.now();
+    timings.push(`${label} ${Math.round(now - mark)}ms`);
+    analytics.mark(label, now - mark);
+    mark = now;
+  };
 
   const world = await buildWorld(renderer, { status, mark: markInit });
   const { scene, lighting, terrain, updaters } = world;
+  analytics.track('world_built');
 
   const god = new GodCamera(renderer.domElement, terrain);
   // the buildings are solid to the camera: it slides along their walls and lands on their roofs
@@ -436,6 +453,7 @@ async function initApp() {
   });
   markInit('compile');
   if (deviceLost) return;
+  analytics.track('shaders_compiled');
 
   renderer.setAnimationLoop((now) => {
     const raw = (now - last) / 1000;
@@ -464,12 +482,16 @@ async function initApp() {
         loadingOverlay?.removeAttribute('aria-busy');
         loadingOverlay?.classList.add('hidden');
         hud.setReady();
+        analytics.ready();
       });
     }
     frames++;
     fpsTime += raw;
     if (fpsTime >= 0.25) {
-      hud.update(Math.round(frames / fpsTime));
+      const fps = Math.round(frames / fpsTime);
+      hud.update(fps);
+      // (under the full map nothing renders: that rate is not the city's)
+      analytics.tick({ fps: hud.mapOpen ? NaN : fps, x: god.position.x, z: god.position.z, altitude: god.position.y, moving: !god.flight && god.velocity.length() > MOVE_SPEED });
       frames = 0;
       fpsTime = 0;
     }
@@ -482,6 +504,7 @@ if (typeof window !== 'undefined') {
   initApp().catch((e) => {
     console.error(e);
     if (deviceLost) return; // (already explained)
+    analytics?.error(e);
     document.getElementById('loading-overlay')?.removeAttribute('aria-busy');
     const s = document.getElementById('loading-status');
     if (s) s.textContent = `Could not start: ${e.message}`;

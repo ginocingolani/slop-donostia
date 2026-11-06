@@ -1,6 +1,7 @@
 import { STREETS } from './data-streets.js';
 import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
 import * as live from './live-state.js';
+import { track } from './analytics.js';
 
 // js/donostia/hud.js
 // HUD wiring for index.html: time of day and the real-time switch (Orain) with its readout, the fly-to list, clean
@@ -39,6 +40,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   };
   // picking a time turns real time off and shows that look, as it always has
   const selectTime = (id) => {
+    track('time_preset', { id });
     if (liveShown) {
       time = id; // (the look real time hands back to)
       setLive(false);
@@ -75,7 +77,12 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     if (ready) live.setLiveEnabled(on);
     else showLive(on);
   };
-  liveButton?.addEventListener('click', () => setLive(!liveShown));
+  // (the switch itself, by the button or key 5; a preset turning it off is a time_preset)
+  const toggleLive = () => {
+    track('live_toggle', { on: !liveShown });
+    setLive(!liveShown);
+  };
+  liveButton?.addEventListener('click', toggleLive);
   // the state may change from elsewhere too (slopDebug.live): the switch follows it, and real time turned off brings
   // back the preset picked last
   live.onLive((snap) => {
@@ -100,6 +107,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     sub.textContent = t.name_es;
     btn.append(name, sub);
     btn.addEventListener('click', () => {
+      track('teleport', { id: t.id });
       god.flyTo(t);
       document.getElementById('teleport-popover')?.hidePopover?.();
     });
@@ -115,6 +123,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   hudToggle?.addEventListener('click', () => {
     const min = document.body.classList.toggle('hud-minimized');
     hudToggle.setAttribute('aria-pressed', String(min));
+    track('hud_hide', { hidden: min });
   });
 
   // --- Where am I ------------------------------------------------------------------------------------------------------
@@ -254,6 +263,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   const fullMap = new FullMap({
     layers, index, god, describe, onFly: flyToGround,
     onToggle(open) {
+      if (open) track('map_open');
       god.enabled = !open;
       touch.setEnabled(!open);
       if (radar) { radar.hidden = open; radar.invalidate(); }
@@ -283,7 +293,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     else if (key === 'm') fullMap.toggle();
     else if (e.key === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
     const digit = /^Digit([1-5])$/.exec(e.code);
-    if (digit?.[1] === '5') setLive(!liveShown);
+    if (digit?.[1] === '5') toggleLive();
     else if (digit) selectTime(TIMES[digit[1] - 1]);
   });
 
