@@ -111,12 +111,16 @@ map.
 ## Analytics
 
 The app sends a few usage events to PostHog Cloud EU (`js/donostia/analytics.js`; nothing on the New York page), to
-know whether it loads, how it runs and where people fly. It is cookieless: PostHog stores nothing in the browser (no
-cookie, no local storage, no identifier), and who a visitor is comes from a hash of the IP, the user agent and a salt
-of the day computed on PostHog's servers and never stored, the IP dropped there; so one visitor is one "person" for
-one day, and nobody can be followed from a day to the next or across devices. No autocapture, no session replay, no
-heatmaps of the page, no feature flags, no surveys; the SDK's slim bundle, pinned on jsDelivr, is imported off the
-critical path once the app's own module runs. Off on localhost, `file:` and `*.local`, with `?debug`, under a
+know whether it loads, how it runs and where people fly. The visitor chooses, on a small card over the controls hint
+once the city shows (`js/donostia/consent.js`, PostHog's `cookieless_mode: 'on_reject'`): with the cookie, PostHog's
+first-party one, the same visitor is the same person tomorrow; without, PostHog is cookieless: it stores nothing in
+the browser, and who a visitor is comes from a hash of the IP, the user agent and a salt of the day computed on
+PostHog's servers and never stored, the IP dropped there, so one visitor is one "person" for one day and nobody can
+be followed from a day to the next or across devices. Until the choice is made nothing is sent: the events wait in a
+queue (bounded, `QUEUE_MAX`) and go with their timestamps once it is. PostHog remembers the choice (its cookie, or the
+refusal in `localStorage`); the data popover (ⓘ) shows it and offers to choose again. No autocapture, no session
+replay, no heatmaps of the page, no feature flags, no surveys; the SDK's slim bundle, pinned on jsDelivr, is imported
+off the critical path once the app's own module runs. Off on localhost, `file:` and `*.local`, with `?debug`, under a
 WebDriver harness (the headless renders; a harness that drives Chrome by CDP alone should pass `?debug` or
 `?analytics=0`), and for a browser that says Do Not Track or Global Privacy Control; `?analytics=1` forces it on to
 test from localhost (DNT/GPC still win). The data popover says so.
@@ -124,9 +128,11 @@ test from localhost (DNT/GPC still win). The data popover says so.
 The events, each with the SDK's coarse device fields (`$browser`, `$os`, `$device_type`, `$screen_*`) and ours (the
 GPU's vendor and architecture as WebGPU reports them, cores, memory, pixel ratio, touch):
 
-- the load funnel: `$pageview` → `app_start { webgpu }` → `world_built` → `shaders_compiled` → `app_ready { ms_<step>…,
-  ms_total }` (the init timings `main.js` logs) → `first_move { after_s }`; `app_error { after, message }` and
-  `gpu_lost { after, reason }` where it breaks (`after`: the last init step that completed);
+- the load funnel: `$pageview` (ours, queued like the rest: the SDK's own would be dropped while the choice is
+  pending) → `app_start { webgpu }` → `world_built` → `shaders_compiled` → `app_ready { ms_<step>…, ms_total }` (the
+  init timings `main.js` logs) → `first_move { after_s }`; `app_error { after, message }` and `gpu_lost { after,
+  reason }` where it breaks (`after`: the last init step that completed);
+- the choice: `cookie_consent { cookies, changed }` (`changed`: from the popover, after a first choice);
 - flying: `fps_sample` every minute (`fps`, `fps_min`, `fps_bucket`, `altitude`) and `cell_visit { cell_x, cell_z,
   altitude }` once the camera has dwelt 2 s in a cell of a 100 m grid of the frame (`cellOf()`: the heatmap of where
   people fly, `cell_x * 100` is the cell's west edge in frame metres);

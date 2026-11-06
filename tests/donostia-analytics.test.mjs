@@ -10,14 +10,18 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const analytics = await import(pathToFileURL(`${root}js/donostia/analytics.js`).href);
 const { analyticsAllowed, createTracker, createSession, cellOf, fpsBucket, deviceInfo, SDK_CONFIG, SDK_URL, CELL_SIZE, DWELL_S, FPS_SAMPLE_S } = analytics;
 
-// a posthog-js stand-in that records its calls
-function fakeSdk() {
+// a posthog-js stand-in that records its calls; `consent` is the choice it remembers ('granted' for a returning
+// visitor who accepted the cookie, 'denied', or 'pending' for a first visit)
+function fakeSdk(consent = 'granted') {
   const calls = [];
   const sdk = {
     calls,
     init: (token, config) => calls.push(['init', token, config]),
     register: (props) => calls.push(['register', { ...props }]),
-    capture: (name, props, options) => calls.push(['capture', name, { ...props }, options])
+    capture: (name, props, options) => calls.push(['capture', name, { ...props }, options]),
+    get_explicit_consent_status: () => consent,
+    opt_in_capturing: (options) => { consent = 'granted'; calls.push(['opt_in', options]); },
+    opt_out_capturing: () => { consent = 'denied'; calls.push(['opt_out']); }
   };
   return sdk;
 }
@@ -55,9 +59,9 @@ test('a browser that asks not to be tracked is not, whatever the page says', () 
   assert.equal(analyticsAllowed({ ...live, doNotTrack: 'unspecified' }), true);
 });
 
-test('the SDK is pinned, cookieless, and captures nothing of its own but the page view and the page leave', () => {
+test('the SDK is pinned, cookieless unless the cookie is accepted, and captures nothing of its own but the page leave', () => {
   assert.match(SDK_URL, /^https:\/\/cdn\.jsdelivr\.net\/npm\/posthog-js@\d+\.\d+\.\d+\/dist\/module\.slim\.no-external\.js$/);
-  assert.equal(SDK_CONFIG.cookieless_mode, 'always');
+  assert.equal(SDK_CONFIG.cookieless_mode, 'on_reject');
   assert.equal(SDK_CONFIG.person_profiles, 'never');
   assert.equal(SDK_CONFIG.api_host, 'https://eu.i.posthog.com', 'EU cloud');
   assert.match(SDK_CONFIG.defaults, /^\d{4}-\d{2}-\d{2}$/, 'the SDK defaults are a dated snapshot');
@@ -66,9 +70,123 @@ test('the SDK is pinned, cookieless, and captures nothing of its own but the pag
   assert.equal(SDK_CONFIG.disable_surveys, true);
   assert.equal(SDK_CONFIG.advanced_disable_flags, true);
   assert.equal(SDK_CONFIG.disable_external_dependency_loading, true);
-  assert.equal(SDK_CONFIG.capture_pageview, true);
+  assert.equal(SDK_CONFIG.capture_pageview, false, "the SDK's own page view would be dropped while the choice is pending: main.js queues one");
   assert.equal(SDK_CONFIG.capture_pageleave, true);
   assert.equal(SDK_CONFIG.respect_dnt, true);
+});
+
+test('nothing goes until the visitor chooses; then the queue goes, with the choice', async () => {
+  const sdk = fakeSdk('pending');
+  const c = clocks();
+  const statuses = [];
+  const tracker = createTracker({ loadSdk: () => sdk, ...c });
+  tracker.onConsent((s) => statuses.push(s));
+  assert.equal(tracker.consentStatus, 'none', 'no SDK yet');
+  tracker.track('$pageview');
+  tracker.track('app_start', { webgpu: true });
+  await tracker.loading;
+  assert.equal(tracker.consentStatus, 'pending');
+  assert.deepEqual(statuses, ['pending']);
+  assert.equal(tracker.queued, 2, 'held until the choice');
+  assert.deepEqual(captured(sdk), []);
+  c.advance(5000);
+  tracker.ready();
+  tracker.track('teleport', { id: 'urgull' });
+  assert.equal(tracker.queued, 4);
+  tracker.decide(true);
+  assert.deepEqual(sdk.calls.find((call) => call[0] === 'opt_in'), ['opt_in', { captureEventName: null }], 'the SDK sets its cookie, without an event of its own');
+  assert.deepEqual(captured(sdk), ['$pageview', 'app_start', 'app_ready', 'teleport', 'cookie_consent'], 'the queue in order, then the choice');
+  assert.deepEqual(sdk.calls.at(-1)[2], { cookies: true, changed: false });
+  assert.equal(sdk.calls.find((call) => call[0] === 'capture')[3].timestamp.getTime(), 1_700_000_000_000 + 1000, 'the held events keep their time');
+  assert.equal(tracker.consentStatus, 'granted');
+  assert.deepEqual(statuses, ['pending', 'granted']);
+  assert.equal(tracker.queued, 0);
+  tracker.track('map_open');
+  assert.equal(captured(sdk).at(-1), 'map_open', 'straight through from now on');
+  // changed later, from the data popover: the SDK goes cookieless, and the change is an event
+  tracker.decide(false);
+  assert.equal(sdk.calls.filter((call) => call[0] === 'opt_out').length, 1);
+  assert.deepEqual(sdk.calls.at(-1).slice(1, 3), ['cookie_consent', { cookies: false, changed: true }]);
+  assert.deepEqual(statuses, ['pending', 'granted', 'denied']);
+  // the same choice again changes nothing
+  tracker.decide(false);
+  assert.equal(captured(sdk).filter((name) => name === 'cookie_consent').length, 2);
+});
+
+test('a visitor who chose before is not asked again: the queue goes as the SDK loads', async () => {
+  for (const choice of ['granted', 'denied']) {
+    const sdk = fakeSdk(choice);
+    const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+    tracker.track('$pageview');
+    await tracker.loading;
+    assert.equal(tracker.consentStatus, choice);
+    assert.deepEqual(captured(sdk), ['$pageview']);
+    assert.ok(!sdk.calls.some((call) => call[0] === 'opt_in' || call[0] === 'opt_out'), 'nothing asked of the SDK');
+  }
+  // the choice is the SDK's to remember: a listener added late hears it at once
+  const sdk = fakeSdk('denied');
+  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+  await tracker.loading;
+  const heard = [];
+  tracker.onConsent((s) => heard.push(s));
+  assert.deepEqual(heard, ['denied']);
+  // decide() before the SDK is there, or after the SDK failed, does nothing
+  const early = createTracker({ loadSdk: () => new Promise(() => {}), ...clocks() });
+  early.decide(true);
+  assert.equal(early.consentStatus, 'none');
+});
+
+test('the queue is bounded while the choice is pending', async () => {
+  const sdk = fakeSdk('pending');
+  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+  await tracker.loading;
+  tracker.ready();
+  for (let i = 0; i < analytics.QUEUE_MAX + 50; i++) tracker.track('cell_visit', { cell_x: i, cell_z: 0 });
+  assert.equal(tracker.queued, analytics.QUEUE_MAX);
+  tracker.decide(false);
+  assert.equal(captured(sdk).length, analytics.QUEUE_MAX + 1, 'the queue and the choice');
+});
+
+// the consent card (js/donostia/consent.js) against a bare DOM stand-in
+test('the card shows once the city shows and the choice is pending, and the popover offers to change it', async () => {
+  const { initConsent } = await import(pathToFileURL(`${root}js/donostia/consent.js`).href);
+  const elements = {};
+  const el = (id) => (elements[id] ??= { id, hidden: true, textContent: '', handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, click() { this.handlers.click?.(); }, hidePopover() { this.popoverHidden = true; } });
+  const doc = { getElementById: (id) => el(id) };
+  const sdk = fakeSdk('pending');
+  const tracker = createTracker({ loadSdk: () => sdk, ...clocks() });
+  const consent = initConsent(tracker, doc);
+  assert.equal(el('consent-card').hidden, true, 'nothing before the SDK');
+  assert.equal(el('consent-line').hidden, true);
+  await tracker.loading;
+  assert.equal(el('consent-card').hidden, true, 'not over the loading screen');
+  consent.setReady();
+  assert.equal(consent.shown, true);
+  assert.equal(el('consent-line').hidden, false);
+  assert.match(el('consent-state').textContent, /sin responder/);
+  el('consent-decline').click();
+  assert.equal(consent.shown, false);
+  assert.equal(tracker.consentStatus, 'denied');
+  assert.match(el('consent-state').textContent, /sin cookie/);
+  // choose again from the data popover
+  el('consent-change').click();
+  assert.equal(el('credits-popover').popoverHidden, true);
+  assert.equal(consent.shown, true);
+  el('consent-accept').click();
+  assert.equal(consent.shown, false);
+  assert.equal(tracker.consentStatus, 'granted');
+  assert.match(el('consent-state').textContent, /cookie\)$/);
+  // a returning visitor never sees the card
+  const back = initConsent(createTracker({ loadSdk: () => fakeSdk('granted'), ...clocks() }), { getElementById: (id) => el(`back-${id}`) });
+  await new Promise((r) => setTimeout(r, 0));
+  back.setReady();
+  assert.equal(back.shown, false);
+  assert.equal(el('back-consent-line').hidden, false);
+  // analytics off: no card, no popover line
+  const off = initConsent(createTracker({ enabled: false, loadSdk: () => fakeSdk('pending') }), { getElementById: (id) => el(`off-${id}`) });
+  off.setReady();
+  assert.equal(off.shown, false);
+  assert.equal(el('off-consent-line').hidden, true);
 });
 
 test('a disabled tracker never loads the SDK and drops everything', async () => {
@@ -225,14 +343,22 @@ test('the page wires the analytics in, Donostia only, and says so in the data po
   const main = fs.readFileSync(`${root}js/donostia/main.js`, 'utf8');
   const hud = fs.readFileSync(`${root}js/donostia/hud.js`, 'utf8');
   assert.match(main, /from '\.\/analytics\.js'/);
+  assert.match(main, /from '\.\/consent\.js'/);
   assert.match(main, /initAnalytics\(/);
-  for (const event of ['app_start', 'world_built', 'shaders_compiled', 'gpu_lost']) assert.ok(main.includes(`'${event}'`), `main.js sends ${event}`);
+  for (const event of ['$pageview', 'app_start', 'world_built', 'shaders_compiled', 'gpu_lost']) assert.ok(main.includes(`'${event}'`), `main.js sends ${event}`);
+  assert.ok(main.indexOf("'$pageview'") < main.indexOf("'app_start'"), 'the page view opens the funnel');
   assert.match(main, /analytics\.ready\(\)/);
   assert.match(main, /analytics\.end\(\)/);
   assert.match(main, /analytics\.tick\(/);
+  assert.match(main, /consent\.setReady\(\)/);
   for (const event of ['teleport', 'time_preset', 'live_toggle', 'map_open', 'hud_hide']) assert.ok(hud.includes(`'${event}'`), `hud.js sends ${event}`);
   const html = fs.readFileSync(`${root}index.html`, 'utf8');
   assert.match(html, /<div id="credits-popover"[^]*posthog\.com[^]*<\/div>/, 'the data popover says where the usage events go');
+  for (const id of ['consent-card', 'consent-accept', 'consent-decline', 'consent-line', 'consent-state', 'consent-change']) assert.ok(html.includes(`id="${id}"`), `index.html has #${id}`);
+  assert.match(html, /<aside id="consent-card"[^>]*\bhidden\b/, 'the card starts hidden');
+  assert.match(html, /<aside id="consent-card"[^>]*role="dialog"/);
+  const css = fs.readFileSync(`${root}css/donostia.css`, 'utf8');
+  assert.match(css, /\.hud-consent\s*{/, 'the card has its place in css/donostia.css');
   assert.ok(!html.includes('posthog-js'), 'the SDK is not on the page: analytics.js imports it when allowed');
   const newyork = fs.readFileSync(`${root}newyork.html`, 'utf8');
   assert.ok(!newyork.includes('posthog'), 'nothing on the New York page');

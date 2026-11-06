@@ -26,6 +26,7 @@ import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
 import { initAnalytics, deviceInfo, MOVE_SPEED } from './analytics.js';
+import { initConsent } from './consent.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -287,11 +288,14 @@ let deviceLost = false; // (its message outranks the "Could not start" of a load
 let analytics = null; // the usage analytics (js/donostia/analytics.js), from initApp() on
 
 async function initApp() {
-  // The usage analytics: a few events to PostHog, cookieless; nothing on localhost, with ?debug, under a harness or
-  // for a browser that asks not to be tracked. The load funnel starts here, with whether WebGPU is there at all.
+  // The usage analytics: a few events to PostHog, with the visitor's cookie or cookieless (js/donostia/consent.js asks
+  // once the city shows); nothing on localhost, with ?debug, under a harness or for a browser that asks not to be
+  // tracked. The load funnel starts here, with the page view and whether WebGPU is there at all.
   analytics = initAnalytics();
   window.addEventListener('pagehide', () => analytics.end());
+  analytics.track('$pageview');
   analytics.track('app_start', { webgpu: Boolean(navigator.gpu) });
+  const consent = initConsent(analytics);
 
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
@@ -483,6 +487,7 @@ async function initApp() {
         loadingOverlay?.classList.add('hidden');
         hud.setReady();
         analytics.ready();
+        consent.setReady();
       });
     }
     frames++;
