@@ -79,8 +79,10 @@ export async function buildVegetation(GEO, terrain) {
 
   const atlas = createLeafAtlas();
   const far = createFarTreeMaterial(atlas.texture, SPECIES.map((sp) => sp.far));
-  far.uniforms.midEnd.value = LOD_MID;
-  far.uniforms.farEnd.value = FAR_END;
+  // (the levels' reaches are quality knobs: setDetail below)
+  let lodNear = LOD_NEAR, lodMid = LOD_MID, farEnd = FAR_END;
+  far.uniforms.midEnd.value = lodMid;
+  far.uniforms.farEnd.value = farEnd;
 
   // Geometries & crowns: [species][variant] = { geometries: [near, mid], crown, far: the far crown }
   const kits = SPECIES.map((_, s) => [0, 1].map((v) => buildTreeGeometries(s, v, atlas.tileMeters)));
@@ -272,8 +274,8 @@ export async function buildVegetation(GEO, terrain) {
     far.uniforms.lodCenter.value.copy(cam);
     stamp++;
     let changed = false, count = 0;
-    const i0 = Math.max(0, Math.floor((cam.x - LOD_MID - minX) / CELL)), i1 = Math.min(gw - 1, Math.floor((cam.x + LOD_MID - minX) / CELL));
-    const j0 = Math.max(0, Math.floor((cam.z - LOD_MID - minZ) / CELL)), j1 = Math.min(gh - 1, Math.floor((cam.z + LOD_MID - minZ) / CELL));
+    const i0 = Math.max(0, Math.floor((cam.x - lodMid - minX) / CELL)), i1 = Math.min(gw - 1, Math.floor((cam.x + lodMid - minX) / CELL));
+    const j0 = Math.max(0, Math.floor((cam.z - lodMid - minZ) / CELL)), j1 = Math.min(gh - 1, Math.floor((cam.z + lodMid - minZ) / CELL));
     for (let j = j0; j <= j1; j++) {
       for (let ci = i0; ci <= i1; ci++) {
         const c = j * gw + ci;
@@ -283,14 +285,14 @@ export async function buildVegetation(GEO, terrain) {
           const dx = farPos[i * 4] - cam.x, dy = farPos[i * 4 + 1] + farShape[i * 4] - cam.y, dz = farPos[i * 4 + 2] - cam.z;
           const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const cur = lod[i];
-          let l = d >= LOD_MID ? 2 : d < LOD_NEAR ? 0 : 1;
-          if (l < 2 && cur < 2 && l !== cur && Math.abs(d - LOD_NEAR) < LOD_HYSTERESIS) l = cur;
+          let l = d >= lodMid ? 2 : d < lodNear ? 0 : 1;
+          if (l < 2 && cur < 2 && l !== cur && Math.abs(d - lodNear) < LOD_HYSTERESIS) l = cur;
           if (l !== cur) { lod[i] = l; changed = true; }
           if (l < 2) { next[count++] = i; seen[i] = stamp; }
         }
       }
     }
-    // trees that left the searched cells are beyond LOD_MID: far
+    // trees that left the searched cells are beyond lodMid: far
     for (let a = 0; a < activeCount; a++) {
       const i = active[a];
       if (seen[i] !== stamp) { lod[i] = 2; changed = true; }
@@ -308,6 +310,21 @@ export async function buildVegetation(GEO, terrain) {
   let billboardStart = BILLBOARD_START;
   // (a quality knob: the distance where far trees turn into billboards; Infinity keeps the cards; refills next frame)
   group.userData.setBillboardStart = (d) => { billboardStart = d; lastCull.reach = -Infinity; };
+  // (the quality tiers' knobs, js/donostia/quality.js: where the full detail (near) and the branch cards (mid) end, where
+  // the far crowns turn into billboards and where the trees end; what is left out keeps its value. The levels are
+  // picked again and the far trees refilled in the next frame)
+  group.userData.setDetail = ({ near = lodNear, mid = lodMid, billboards = billboardStart, far: end = farEnd } = {}) => {
+    if (near === lodNear && mid === lodMid && billboards === billboardStart && end === farEnd) return;
+    lodMid = Math.max(mid, RECULL + 1);
+    lodNear = Math.min(near, lodMid - 2 * LOD_HYSTERESIS);
+    billboardStart = billboards;
+    farEnd = end;
+    far.uniforms.midEnd.value = lodMid;
+    far.uniforms.farEnd.value = farEnd;
+    lastPick.set(Infinity, Infinity, Infinity);
+    lastCull.reach = -Infinity;
+  };
+  group.userData.detail = () => ({ near: lodNear, mid: lodMid, billboards: billboardStart, far: farEnd });
   // (the far crowns' tint takes their species' spray tone over that of the far tile they're drawn with)
   const farTone = SPECIES.map((sp) => atlas.tileTone[sp.tile] / atlas.tileTone[sp.far]);
   const pack = ([p, s, d], n, i) => {
@@ -336,7 +353,7 @@ export async function buildVegetation(GEO, terrain) {
     lastCull.fov = camera.fov;
     lastCull.aspect = camera.aspect;
     lastCull.reach = reach;
-    // the view frustum widened by VIEW_MARGIN on every side and reaching FAR_END, so a small turn needs no refill
+    // the view frustum widened by VIEW_MARGIN on every side and reaching farEnd, so a small turn needs no refill
     const halfV = THREE.MathUtils.degToRad(camera.fov / 2), halfH = Math.atan(Math.tan(halfV) * camera.aspect);
     const wideV = Math.min(halfV + VIEW_MARGIN, 1.5), wideH = Math.min(halfH + VIEW_MARGIN, 1.5);
     // How far the view can then turn, about any axis, before a ray of it leaves the widened frustum: a rotation by an
@@ -348,14 +365,14 @@ export async function buildVegetation(GEO, terrain) {
     cullCamera.fov = THREE.MathUtils.radToDeg(2 * wideV);
     cullCamera.aspect = Math.tan(wideH) / Math.tan(wideV);
     cullCamera.near = 0.5;
-    cullCamera.far = FAR_END;
+    cullCamera.far = farEnd;
     cullCamera.updateProjectionMatrix();
     cullCamera.position.copy(cam);
     cullCamera.quaternion.copy(camera.quaternion);
     cullCamera.updateMatrixWorld();
     frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(cullCamera.projectionMatrix, cullCamera.matrixWorldInverse));
-    const farEnd2 = FAR_END * FAR_END, shadow2 = (reach + SHADOW_MARGIN) ** 2, billboard2 = billboardStart * billboardStart;
-    const farStart2 = Math.max(0, LOD_MID - RECULL) ** 2;
+    const farEnd2 = farEnd * farEnd, shadow2 = (reach + SHADOW_MARGIN) ** 2, billboard2 = billboardStart * billboardStart;
+    const farStart2 = Math.max(0, lodMid - RECULL) ** 2;
     let nView = 0, nShadow = 0, nBillboard = 0;
     for (let c = 0; c < gw * gh; c++) {
       if (cellStart[c] === cellStart[c + 1]) continue;
@@ -385,7 +402,7 @@ export async function buildVegetation(GEO, terrain) {
   }
 
   // the sun's shadow range (main.js points it at lighting.js); without one, no far tree casts
-  group.userData.shadowReach = () => LOD_MID - SHADOW_MARGIN;
+  group.userData.shadowReach = () => lodMid - SHADOW_MARGIN;
   // The sun: the scene's shadow-casting light, looked up once the trees are in the scene. The far & billboard crowns
   // shade their own sunless side beyond the view depth its shadow maps reach (trees-material.js)
   let sun;

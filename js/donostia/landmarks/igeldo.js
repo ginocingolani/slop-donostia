@@ -9,6 +9,7 @@ import { IGELDO } from '../data-funicular.js';
 import { SEAMARKS } from '../data-seamarks.js';
 import { seamarkClock, lightLevel, beamAzimuth } from '../seamark-timing.js';
 import { ringArea, wound, insetRing, simplify, clipRing, hipRoof, pointInRing } from './geom.js';
+import { detail } from '../quality.js';
 
 // js/donostia/landmarks/igeldo.js
 // Monte Igeldo: the 1855 lighthouse on the cliff, El Torreón above the amusement park, the Montaña Suiza scenic railway
@@ -324,7 +325,7 @@ function getBeamMaterial() {
   const mat = new THREE.MeshBasicNodeMaterial({
     transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
   });
-  mat.mrtNode = effectMRT;
+  if (detail.mrt) mat.mrtNode = effectMRT;
   mat.colorNode = vec3(1.0, 0.95, 0.82);
   mat.opacityNode = Fn(() => {
     const along = uv().y;

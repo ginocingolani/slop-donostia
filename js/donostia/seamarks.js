@@ -7,6 +7,7 @@ import {
 import { cityUniforms } from '../city-uniforms.js';
 import { SEAMARKS } from './data-seamarks.js';
 import { seamarkClock, freezeSeamarkClock, RISE, FALL } from './seamark-timing.js';
+import { detail } from './quality.js';
 
 // js/donostia/seamarks.js
 // The aids to navigation (js/donostia/data-seamarks.js, baked by tools/donostia/bake-seamarks.mjs from OpenStreetMap's
@@ -56,7 +57,7 @@ function createGlowMaterial(uClock, seaLevel) {
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   mat.fog = false; // the haze would add its colour too: the glows dim with distance themselves
   // as Igeldo's beams (js/donostia/landmarks/igeldo.js): leave the normal & metalness buffers the SSR pass reads
-  mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
   const P = attribute('aSeamarkPos', 'vec4'); // x, y, z of the focal plane, lantern radius (m)
   const C = attribute('aSeamarkColour', 'vec4'); // linear rgb, range (nm)
   const T = attribute('aSeamarkTime', 'vec4'); // period, phase (s), rotating (0 | 1), floating (0 | 1)

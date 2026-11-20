@@ -247,14 +247,21 @@ function surfaceTables() {
 
 // --- material ----------------------------------------------------------------------------------------------------------
 
+// prefetched: prefetchGroundMaps()'s promise, or CLASSES_ONLY for the terrain's own classes without asking for the baked
+// maps (the lowest quality tier, js/donostia/quality.js: 9.8 MB less to download and decode, 64 MB less on the GPU)
+export const CLASSES_ONLY = 'classes';
 export async function createGroundMaterial(terrain, prefetched = null) {
   const { core } = terrain;
   let maps;
-  try {
-    maps = await loadMaps(core, prefetched);
-  } catch (e) {
-    console.warn('[ground] baked ground maps unavailable, using the terrain classes', e);
+  if (prefetched === CLASSES_ONLY) {
     maps = fallbackMaps(core);
+  } else {
+    try {
+      maps = await loadMaps(core, prefetched);
+    } catch (e) {
+      console.warn('[ground] baked ground maps unavailable, using the terrain classes', e);
+      maps = fallbackMaps(core);
+    }
   }
   const { w, h, res } = maps;
   const x0 = core.x0, z0 = core.z0, x1 = core.x0 + core.width, z1 = core.z0 + core.depth;

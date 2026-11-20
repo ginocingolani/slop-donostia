@@ -141,7 +141,9 @@ const NIGHT_SKY = 0x0b1528;
 
 class LightingSystem {
   // presets: same shape as TIME_PRESETS (another city's sun & sky)
-  constructor(scene, renderer = null, presets = TIME_PRESETS) {
+  // quality: { shadows (false: the sun casts none), shadowMapSize (px per cascade; null: 3072, or 2048 where the
+  // device allows less), shadowFar (the shadow range, times update()'s own) }; the defaults are the picture as it was
+  constructor(scene, renderer = null, presets = TIME_PRESETS, { shadows = true, shadowMapSize = null, shadowFar = 1 } = {}) {
     this.scene = scene;
     this.renderer = renderer;
     this.presets = presets;
@@ -216,11 +218,12 @@ class LightingSystem {
     // Shines from its position vector toward the origin (no .target needed)
     this.sunLight = new SunLight(0xffca92, 5.8);
     this.sunLight.position.copy(this.presets.golden.sunDir);
-    this.sunLight.castShadow = true;
+    this.sunLight.castShadow = shadows;
     // 3072x3072 per cascade = 6144x3072 2-cascade shadow atlas (an 8192x4096 one cost ~20% fps and caused hitches),
     // 2048 where the device allows less. The near cascade spans ~0.35-80 m of the view at street level (see update)
     const maxTex = (renderer && renderer.backend && renderer.backend.device && renderer.backend.device.limits.maxTextureDimension2D) || 4096;
-    const tile = maxTex >= 6144 ? 3072 : 2048;
+    const tile = shadowMapSize || (maxTex >= 6144 ? 3072 : 2048);
+    this.shadowFarScale = shadowFar;
     this.sunLight.shadow.mapSize.set(tile, tile);
     this.sunLight.shadow.camera.near = 0.5;
     this.sunLight.shadow.camera.far = 300;
@@ -378,13 +381,20 @@ class LightingSystem {
     this.scene.environmentIntensity = look.envIntensity;
   }
 
+  // Quality knobs that change in a running scene: the cascades' size (px; the shadow node resizes its map on the next
+  // frame) and the shadow range's scale
+  setShadowQuality({ mapSize = null, far = null } = {}) {
+    if (mapSize && mapSize !== this.sunLight.shadow.mapSize.x) this.sunLight.shadow.mapSize.set(mapSize, mapSize);
+    if (far != null) this.shadowFarScale = far;
+  }
+
   update(focusPos) {
     // SunLightShadow automatically fits & texel-snaps its 2 cascades to the view camera frustum
     // every frame inside SunShadowNode.renderShadow(), splitting [near, far] halfway between a uniform and a
     // logarithmic split (the near cascade ends at ~far / 4). Keep far at 300 m at street level so the near cascade
     // stays sharp, and expand it with altitude (helicopter / observatory) so shadows reach all the way down to street level.
     const altitude = focusPos && Number.isFinite(focusPos.y) ? Math.max(0, focusPos.y) : 0;
-    this.sunLight.shadow.camera.far = Math.max(300, Math.min(720, 260 + altitude * 1.6));
+    this.sunLight.shadow.camera.far = Math.max(300, Math.min(720, 260 + altitude * 1.6)) * this.shadowFarScale;
   }
 }
 

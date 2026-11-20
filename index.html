@@ -36,6 +36,10 @@
       // (a stylesheet or font failing to load is not fatal: only scripts count)
       if (e.target instanceof HTMLScriptElement) status.textContent = 'Could not load the app (network or browser support).';
       else if (e instanceof ErrorEvent) status.textContent = `Could not start: ${e.message}`;
+      else return;
+      // (the bar stops sweeping over a message that will not change: css/donostia.css)
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay && !overlay.dataset.error) overlay.dataset.error = 'load';
     }, true);
   </script>
   <script type="module" src="./js/donostia/main.js"></script>
@@ -78,6 +82,10 @@
       <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m20 20-4.6-4.6"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+      <!-- touch: the flight stick's switch, and the sheet of settings & everything the phone's bar has no room for -->
+      <symbol id="i-stick" viewBox="0 0 24 24"><circle cx="12" cy="6.6" r="3.1"/><path d="M12 9.7v6.1M5.2 19.6c0-2.1 3-3.8 6.8-3.8s6.8 1.7 6.8 3.8z"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.5 6.5h-4v11h11v-4M14 5.5h4.5V10M18.5 5.5l-7.5 7.5"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h8.6M17.4 7.5H20M4 16.5h2.6M11.4 16.5H20"/><circle cx="15" cy="7.5" r="2.4"/><circle cx="9" cy="16.5" r="2.4"/></symbol>
       <!-- The six-petal rosette drawn with a compass on the discoidal stelae, lintels and chests of the Basque Country:
            a sandstone disc (currentColor) with the rosette cut into it -->
       <symbol id="i-rosette" viewBox="0 0 32 32">
@@ -94,6 +102,12 @@
       <div class="loader-title"><span class="brand-slop">Slop</span> Donostia</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <div id="loading-status">Starting…</div>
+      <!-- Shown by #loading-overlay[data-error='webgpu'] (css/donostia.css): js/donostia/main.js sets the attribute
+           where the browser has no WebGPU, and any other data-error value stills the bar under its own message -->
+      <div class="loader-note loader-webgpu">
+        <strong>WebGPU behar da · Hace falta WebGPU</strong>
+        <p>Slop Donostia is drawn with WebGPU, which this browser or device does not offer. Try the current Chrome, Edge or Samsung Internet (Android 12 or later), Safari on iOS / iPadOS 26 or later, or a desktop browser.</p>
+      </div>
     </div>
   </div>
 
@@ -114,7 +128,11 @@
 
   <div class="hud hud-top-right">
     <div id="hud-toolbar" class="panel toolbar">
-      <div class="time-switch" role="group" aria-label="Time of day">
+      <!-- the phone's bar folds the time of day behind this button (css/donostia.css, js/donostia/hud.js) -->
+      <button id="btn-time" class="tool-btn dock-only" type="button" aria-expanded="false" aria-controls="time-switch" title="Ordua · time of day" aria-label="Time of day">
+        <svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="dock-label">Ordua</span>
+      </button>
+      <div id="time-switch" class="time-switch" role="group" aria-label="Time of day">
         <button class="time-btn active" data-time="golden" type="button" title="Ilunabarra · golden hour [1]"><svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="seg-label">Ilunabarra</span></button>
         <button class="time-btn" data-time="midday" type="button" title="Eguerdia · midday [2]"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label">Eguerdia</span></button>
         <button class="time-btn" data-time="twilight" type="button" title="Ordu urdina · blue hour [3]"><svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label">Ordu urdina</span></button>
@@ -128,6 +146,15 @@
       </button>
       <button id="btn-open-map" class="tool-btn" type="button" title="Mapa · street map [M]" aria-pressed="false">
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Mapa</span><kbd>M</kbd>
+      </button>
+      <!-- touch screens: the flight stick & its buttons, off until asked for (js/donostia/touch.js) -->
+      <button id="btn-fly" class="tool-btn icon-only touch-only" type="button" title="Hegan · flight stick: fly with the left thumb, look with the right" aria-label="Flight stick" aria-pressed="false">
+        <svg class="icon" aria-hidden="true"><use href="#i-stick"/></svg><span class="dock-label">Hegan</span>
+      </button>
+      <!-- the settings sheet: the quality control where js/donostia/quality.js is there, and on touch screens the
+           tools the bar has no room for; hud.js shows the button when the sheet has something to offer -->
+      <button id="btn-settings" class="tool-btn icon-only" type="button" popovertarget="settings-popover" title="Aukerak · settings" aria-label="Settings" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span class="dock-label">Gehiago</span>
       </button>
       <button id="btn-credits" class="tool-btn icon-only" type="button" popovertarget="credits-popover" title="Data sources & licences" aria-label="Data sources">
         <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>
@@ -149,6 +176,22 @@
   <div id="teleport-popover" class="popover" popover aria-label="Fly to">
     <div class="pop-title">Joan · Ir a</div>
     <div id="teleport-list"></div>
+  </div>
+
+  <div id="settings-popover" class="popover settings" popover aria-label="Settings">
+    <!-- filled by js/donostia/hud.js from the quality module's tiers; hidden where there is none -->
+    <div id="quality-control" hidden>
+      <div id="quality-title" class="pop-title">Kalitatea · Calidad</div>
+      <div id="quality-options" class="seg" role="group" aria-labelledby="quality-title"></div>
+      <p id="quality-note" class="settings-note" aria-live="polite"></p>
+    </div>
+    <!-- touch screens only: what the bar leaves out -->
+    <div class="settings-more">
+      <div class="pop-title">Gehiago · Más</div>
+      <button id="more-clean" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg><span class="pop-name">Bista garbia</span><span class="pop-sub">Clean view</span></button>
+      <button id="more-credits" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span class="pop-name">Datuak</span><span class="pop-sub">Data sources &amp; licences</span></button>
+      <a class="pop-item more-item" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg><span class="pop-name">GitHub</span><span class="pop-sub">Source code<span class="visually-hidden"> (opens in a new tab)</span></span></a>
+    </div>
   </div>
 
   <div id="credits-popover" class="popover credits" popover aria-label="Data sources">
@@ -207,24 +250,26 @@
     </section>
   </div>
 
-  <!-- God-camera touch controls (js/donostia/hud.js): shown on touch screens, hidden while the full map is open -->
+  <!-- What the fingers do, said once to a touch screen and again when the flight stick is switched (hud.js) -->
+  <p id="touch-hint" class="touch-hint" role="status" hidden></p>
+
+  <!-- The god camera's flight stick & buttons (js/donostia/touch.js): on touch screens once the toolbar's Hegan
+       button turns them on, hidden while the full map is open -->
   <section id="touch-controls" aria-label="Touch controls" hidden>
     <div class="touch-movement">
-      <div id="touch-stick" role="group" aria-label="Movement stick: drag up or down to fly forward or back, left or right to slide">
+      <div id="touch-stick" role="group" aria-label="Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast">
         <span class="touch-stick-axis" aria-hidden="true"></span>
         <span id="touch-stick-knob" aria-hidden="true"></span>
       </div>
-      <span class="touch-caption">Mugitu · Move</span>
     </div>
-    <p class="touch-look-hint">Drag to look · Pinch to fly</p>
-    <div class="touch-actions" role="group" aria-label="Hold to climb, descend or go faster">
+    <div class="touch-actions" role="group" aria-label="Hold to climb or descend; tap to switch the fast gear">
       <button class="touch-action" data-touch-action="up" type="button" aria-label="Igo · Climb" aria-pressed="false">
         <span aria-hidden="true">↑</span><span>Igo</span>
       </button>
       <button class="touch-action" data-touch-action="down" type="button" aria-label="Jaitsi · Descend" aria-pressed="false">
         <span aria-hidden="true">↓</span><span>Jaitsi</span>
       </button>
-      <button class="touch-action touch-boost" data-touch-action="boost" type="button" aria-label="Azkar · Fast" aria-pressed="false">
+      <button class="touch-action touch-boost" data-touch-action="boost" type="button" aria-label="Azkar · Fast gear" aria-pressed="false">
         <span aria-hidden="true">↟</span><span>Azkar</span>
       </button>
     </div>
@@ -245,7 +290,7 @@
       </div>
       <label class="panel fullmap-search-wrap">
         <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
-        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Bilatu kalea · Search a street — Kale Nagusia, Boulevard…" aria-label="Search a street" autocomplete="off" spellcheck="false" />
+        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Bilatu kalea · Search a street — Kale Nagusia, Boulevard…" aria-label="Search a street" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" />
       </label>
       <button id="close-fullmap-btn" class="panel tool-btn fullmap-close" type="button" title="Itxi · Close [M / Esc]">
         <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg><span class="tool-label">Itxi</span><kbd>Esc</kbd>

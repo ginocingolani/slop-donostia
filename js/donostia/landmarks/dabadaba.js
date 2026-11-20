@@ -10,6 +10,7 @@ import { createFacadeMaterial, createRoofMaterial } from '../facade-material.js'
 import { wound, simplifyRing, signedArea } from '../facade-geometry.js';
 import { pointInRing } from './geom.js';
 import { PaintBuilder, FINISH } from './paint.js';
+import { detail } from '../quality.js';
 
 // js/donostia/landmarks/dabadaba.js
 // The way into Dabadaba, the music club of Egia (Mundaitz kalea 8), across Mundaitz kalea from the Cristina Enea park:
@@ -700,7 +701,7 @@ function neonMaterial() {
 function glowMaterial() {
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   mat.fog = false;
-  mat.mrtNode = effectMRT;
+  if (detail.mrt) mat.mrtNode = effectMRT;
   const g = attribute('aGlow', 'vec4');
   const r = length(uv().sub(0.5)).mul(2.0);
   const fall = pow(clamp(float(1.0).sub(r), 0.0, 1.0), 2.0);
