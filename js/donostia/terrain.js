@@ -14,9 +14,9 @@ import { wallSnaps, snapPosition } from './shore-walls.js';
 // move onto it, so the ground steps down vertically at the wall instead of ramping over a 2 m cell; js/donostia/shore.js
 // faces the step with masonry.
 // A quality tier short of memory (js/donostia/quality.js: terrainMesh 'coarse') builds the core's chunks from every
-// second sample (4 m), but for the chunks a shore wall runs through: a quarter of the vertex buffers, which are the
-// largest thing the city puts on the GPU (107 MB for the core). Such a chunk is what a full one shows from 200 m on;
-// heightAt() and everything standing on it still read every sample.
+// second sample (4 m), but for the chunks a shore wall runs through: a quarter of their vertex buffers, which are the
+// largest thing the city puts on the GPU (130 MB with the context; 29 MB less for the 37 chunks without a wall). Such
+// a chunk is what a full one shows from 200 m on; heightAt() and everything standing on it still read every sample.
 
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];

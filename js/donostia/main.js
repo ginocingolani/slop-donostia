@@ -152,14 +152,28 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {},
   return world;
 }
 
+// Whether a module's shadow casters cast (those that do by design: remembered on the first call)
+function setCasting(root, on) {
+  if (!root || (root.userData.casting ?? true) === on) return;
+  root.userData.casting = on;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.userData.casts ??= o.castShadow;
+    o.castShadow = on && o.userData.casts;
+  });
+}
+
 /**
- * A quality tier's live settings on a built world: the shadow map's size & reach, the terrain's and the trees' levels of
- * detail, the props' draw distance, the rain's drops, the sea's spray and the environment map's bake rate. Cheap, and
+ * A quality tier's live settings on a built world: the shadow map's size & reach and its casters, the terrain's and
+ * the trees' levels of detail, the props' draw distance, the rain's drops, the sea's spray and the environment map's bake rate. Cheap, and
  * safe every time the quality changes: what has not changed is left alone.
  */
 export function applyWorldQuality(world, settings) {
   const { lighting, liveSky, terrain, modules } = world;
   lighting.setShadowQuality({ mapSize: settings.shadowMapSize, far: settings.shadowFar });
+  setCasting(modules.terrain, settings.terrainShadows);
+  setCasting(modules.streetscape, settings.propShadows);
+  setCasting(modules.bridges, settings.propShadows);
   terrain.lodScale = settings.terrainLod;
   modules.vegetation?.userData.setDetail({
     near: settings.treeNear, mid: settings.treeMid, billboards: settings.treeBillboards, far: settings.treeFar
@@ -170,7 +184,7 @@ export function applyWorldQuality(world, settings) {
   liveSky.bakeGap = settings.envBakeGap;
 }
 
-// The terrain's and the buildings' vertex buffers are 190 MB that only the GPU reads once they are uploaded (the
+// The terrain's and the buildings' vertex buffers are 170 to 190 MB that only the GPU reads once they are uploaded (the
 // camera's ground and the colliders work from the height field and the map, not the meshes). Called after the warm-up
 // frame and now and then after it, this swaps the CPU copy of each uploaded attribute for an empty array of its type
 // (three still asks the array for its type when it builds a pipeline). Index buffers stay: the terrain's levels share
@@ -593,6 +607,10 @@ async function initApp() {
       },
       async bench(n = 60, dt = 1 / 60) {
         let cpu = 0, draws = 0, triangles = 0, inFlight = null;
+        // (the governor sits the bench out: the animation loop's frames wait behind the bench's, and it would take
+        // their intervals for a slow device and lower the resolution being measured)
+        const governed = governing;
+        governing = false;
         await device.queue.onSubmittedWorkDone();
         const t0 = performance.now();
         for (let i = 0; i < n; i++) {
@@ -615,6 +633,7 @@ async function initApp() {
           inFlight = done;
         }
         await device.queue.onSubmittedWorkDone();
+        governing = governed;
         const f = (v) => +(v / n).toFixed(2);
         return { frames: n, frameMs: f(performance.now() - t0), cpuMs: f(cpu), draws: Math.round(draws / n), triangles: Math.round(triangles / n) };
       }
@@ -648,7 +667,7 @@ async function initApp() {
       view.render();
       // the governor: the frame rate of the frames that drew the world (a hidden tab's or a hitch's interval is not
       // one, and it sorts those out itself)
-      if (!first && governing) quality.frame(now - lastFrame);
+      if (governing) quality.frame(now - lastFrame);
       lastFrame = now;
     }
     if (first) {

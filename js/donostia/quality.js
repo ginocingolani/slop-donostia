@@ -6,10 +6,12 @@
 // - TIERS: low / medium / high / ultra. `ultra` is the desktop picture as it has always been (pixel ratio 1, 4x MSAA,
 //   3072 px shadow cascades, SSR, bloom, every level of detail at its full reach) and never adapts; the other three are
 //   for phones and tablets, where the frame is bound first by the pixels shaded (the drawing buffer of a 3x phone
-//   screen is 2.5 times a desktop window's) and then by memory (the GPU process and the page share the device's RAM,
-//   and iOS kills the tab that takes too much).
+//   screen is 2.5 times a desktop window's), then by the triangles (4 million a frame on ultra, 1.4 of them in the
+//   shadow maps) and by memory (the GPU process and the page share the device's RAM, and iOS kills the tab that takes
+//   too much: ultra holds 590 MB on the GPU, 250 MB of JS heap, 200 of it three's shader graphs with shadows on, and
+//   380 MB of typed arrays; low 340, 40 and 215).
 // - A tier's settings are of two kinds. The live ones change in a running city for the cost of a frame or two: the
-//   render resolution, the shadow map's size & reach, SSR and bloom (another render pipeline of the same scene pass),
+//   render resolution, the shadow map's size & reach and what casts into it, SSR and bloom (another render pipeline of the same scene pass),
 //   the trees' and the terrain's levels of detail, the props' draw distance, the rain's drops, the sea's spray, how often
 //   the environment map is baked. The boot ones are built into the pipelines and the textures at start-up (MSAA, shadows
 //   at all, the MRT targets SSR reads, the baked ground maps, the terrain's mesh, the CPU copies of the geometry): changing those takes a
@@ -21,7 +23,9 @@
 // - Governor: watches the frame time in one-second windows. Under the target for two of them, it lowers the render
 //   scale a step, and at the tier's floor the tier itself (its live settings); with the target held for a while it
 //   tries a step up, and backs off twice as long after every try that failed, so it settles instead of pumping. With
-//   vsync the frame time says nothing about headroom, hence the tries.
+//   vsync the frame time says nothing about headroom, hence the tries. A frame rate that does not move while the
+//   resolution goes all the way down to the tier's floor is not the GPU's doing (iOS's Low Power Mode holds pages at
+//   30 fps; the CPU may be the limit): the governor gives the resolution back and takes that rate for its target.
 // - quality: the page's controller (a singleton), for main.js and for the HUD. See createQuality() for its API.
 //   ?quality=<tier|auto> in the URL picks for this visit; quality.set() remembers the user's choice (localStorage);
 //   on auto, the tier the governor settled at is remembered too, so the next visit boots with that tier's boot settings.
@@ -32,36 +36,39 @@ export const TIER_NAMES = ['low', 'medium', 'high', 'ultra'];
 // treeBillboards: where the far crowns turn into billboards; treeFar: where the trees end. terrainLod: the reach of
 // every level of the terrain's detail (js/donostia/terrain.js lodScale). detailDistance: the draw distance of the
 // instanced props (street furniture, the port's fittings, the shore's rocks), times their own. shadowFar: the sun's
-// shadow range, times lighting.js's own. rain: the share of the drops drawn. envBakeGap: the least time between two
+// shadow range, times lighting.js's own. terrainShadows / propShadows: whether the ground and the street furniture &
+// the bridges' ironwork cast shadows (the buildings, the trees, the landmarks and the shore walls always do): drawn
+// into both cascades, they are 0.8 of the 1.4 million triangles the shadow maps take, for the hills' own shade and
+// the railings' lace. rain: the share of the drops drawn. envBakeGap: the least time between two
 // bakes of the environment map in real time (s). groundMaps: 'full' (the baked 1 m maps: 86 MB on the GPU) or
 // 'classes' (the terrain's own 2 m classes: no kerbs, crossings or paving directions, 9.8 MB less to download).
-// terrainMesh: 'full' (every 2 m sample of the core) or 'coarse' (every second one away from the shore walls: 75 MB
-// less on the GPU; js/donostia/terrain.js).
+// terrainMesh: 'full' (every 2 m sample of the core) or 'coarse' (every second one in the chunks no shore wall
+// crosses, 37 of them: 29 MB less on the GPU; js/donostia/terrain.js).
 // releaseGeometry: drop the CPU copies of the terrain's & the buildings' vertex buffers once they are on the GPU.
 // maxPixels: the drawing buffer's budget (a tablet's screen has four times a phone's pixels at the same ratio).
 export const TIERS = Object.freeze({
   low: Object.freeze({
     label: 'Low', maxPixelRatio: 1.25, fixedPixelRatio: false, maxPixels: 0.9e6, minScale: 0.68, adaptive: true,
-    msaa: false, shadows: false, shadowMapSize: 1024, shadowFar: 0.6, ssr: false, bloom: false,
-    terrainLod: 0.45, treeNear: 40, treeMid: 130, treeBillboards: 350, treeFar: 2200, detailDistance: 0.5,
+    msaa: false, shadows: false, shadowMapSize: 1024, shadowFar: 0.6, terrainShadows: false, propShadows: false,
+    ssr: false, bloom: false, terrainLod: 0.45, treeNear: 40, treeMid: 130, treeBillboards: 350, treeFar: 2200, detailDistance: 0.5,
     rain: 0.35, spray: false, envBakeGap: 2, groundMaps: 'classes', terrainMesh: 'coarse', releaseGeometry: true
   }),
   medium: Object.freeze({
     label: 'Medium', maxPixelRatio: 1.5, fixedPixelRatio: false, maxPixels: 1.3e6, minScale: 0.68, adaptive: true,
-    msaa: false, shadows: true, shadowMapSize: 1024, shadowFar: 0.7, ssr: false, bloom: true,
-    terrainLod: 0.6, treeNear: 55, treeMid: 190, treeBillboards: 500, treeFar: 2800, detailDistance: 0.7,
+    msaa: false, shadows: true, shadowMapSize: 1024, shadowFar: 0.7, terrainShadows: false, propShadows: false,
+    ssr: false, bloom: true, terrainLod: 0.6, treeNear: 55, treeMid: 190, treeBillboards: 500, treeFar: 2800, detailDistance: 0.7,
     rain: 0.6, spray: true, envBakeGap: 1, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true
   }),
   high: Object.freeze({
     label: 'High', maxPixelRatio: 2, fixedPixelRatio: false, maxPixels: 2.2e6, minScale: 0.6, adaptive: true,
-    msaa: true, shadows: true, shadowMapSize: 2048, shadowFar: 1, ssr: true, bloom: true,
-    terrainLod: 0.8, treeNear: 70, treeMid: 250, treeBillboards: 700, treeFar: 3400, detailDistance: 0.85,
+    msaa: true, shadows: true, shadowMapSize: 2048, shadowFar: 1, terrainShadows: true, propShadows: true,
+    ssr: true, bloom: true, terrainLod: 0.8, treeNear: 70, treeMid: 250, treeBillboards: 700, treeFar: 3400, detailDistance: 0.85,
     rain: 1, spray: true, envBakeGap: 0.4, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true
   }),
   ultra: Object.freeze({
     label: 'Ultra', maxPixelRatio: 1, fixedPixelRatio: true, maxPixels: Infinity, minScale: 1, adaptive: false,
-    msaa: true, shadows: true, shadowMapSize: 3072, shadowFar: 1, ssr: true, bloom: true,
-    terrainLod: 1, treeNear: 85, treeMid: 300, treeBillboards: 900, treeFar: 3400, detailDistance: 1,
+    msaa: true, shadows: true, shadowMapSize: 3072, shadowFar: 1, terrainShadows: true, propShadows: true,
+    ssr: true, bloom: true, terrainLod: 1, treeNear: 85, treeMid: 300, treeBillboards: 900, treeFar: 3400, detailDistance: 1,
     rain: 1, spray: true, envBakeGap: 0.15, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: false
   })
 });
@@ -209,7 +216,10 @@ export class Governor {
     this.levels = levels;
     this.level = Math.min(Math.max(level, 0), levels.length - 1);
     this.scale = this._snap(scale, this.level);
-    this.targetFps = targetFps;
+    this.baseFps = targetFps;
+    this.targetFps = targetFps; // (lower while the rate is held from outside: see capped)
+    this.capped = false; // the frame rate did not answer to the resolution: it is capped, or bound by the CPU
+    this._trail = null; // where a run of steps down began: { mean, level, scale }
     this.windowMs = windowMs;
     this.baseUpAfter = upAfter; // good windows before a step up is tried
     this.upAfter = upAfter;
@@ -240,7 +250,7 @@ export class Governor {
     return true;
   }
 
-  _down(steps) {
+  _down(steps, mean) {
     // a step up that did not hold: wait twice as long before the next
     if (this._sinceUp <= Governor.TRIAL) this.upAfter = Math.min(this.upAfter * 2, this.maxUpAfter);
     this._sinceUp = Infinity;
@@ -248,11 +258,23 @@ export class Governor {
     const i = SCALES.indexOf(this.scale);
     let j = i;
     while (j < SCALES.length - 1 && j - i < steps && SCALES[j + 1] >= floor - 1e-6) j++;
+    this._trail ||= { mean, level: this.level, scale: this.scale };
     if (j !== i) { this.scale = SCALES[j]; return this._changed(); }
+    // At the tier's floor, at least two steps and a third of the pixels down, and the frame time is where it was:
+    // the resolution is not what holds the rate. Back to where the run began, with that rate for the target
+    const t = this._trail;
+    if (t.level === this.level && t.scale / this.scale >= 1.25 && Math.abs(mean - t.mean) < 0.05 * t.mean) {
+      this.targetFps = Math.max(20, 1000 / Math.max(mean, t.mean));
+      this.capped = true;
+      this.scale = t.scale;
+      this._trail = null;
+      return this._changed();
+    }
     if (this.level > 0) {
       const ratio = this.levels[this.level].ratio * this.scale;
       this.level--;
       this.demoted = true;
+      this._trail = null;
       this.scale = this._snap(Math.min(1, ratio / this.levels[this.level].ratio), this.level);
       return this._changed();
     }
@@ -277,6 +299,7 @@ export class Governor {
     }
     this.floored = false;
     this._sinceUp = 0;
+    this._trail = null;
     return this._changed();
   }
 
@@ -292,14 +315,17 @@ export class Governor {
     this.windows++;
     if (this._sinceUp <= Governor.TRIAL) this._sinceUp++;
     if (this._settle > 0) { this._settle--; return false; }
+    // (the cap is gone: the full target again)
+    if (this.capped && mean < 1000 / this.baseFps * 1.07) { this.capped = false; this.targetFps = this.baseFps; }
     const budget = 1000 / this.targetFps;
     if (mean > budget * 1.18) { this._bad++; this._good = 0; }
-    else if (mean < budget * 1.07) { this._good++; this._bad = 0; }
+    else if (mean < budget * 1.07) { this._good++; this._bad = 0; if (this._good >= 2) this._trail = null; }
     else this._bad = this._good = 0; // between the two: neither a reason to go down nor proof of headroom
     // far under the target: at once, and two steps
-    if (mean > budget * 1.6) return this._down(2);
-    if (this._bad >= 2) return this._down(1);
-    if (this._good >= this.upAfter) return this._up();
+    if (mean > budget * 1.6) return this._down(2, mean);
+    if (this._bad >= 2) return this._down(1, mean);
+    // (under a cap the frame time cannot show whether a step up holds: none is tried)
+    if (this._good >= this.upAfter && !this.capped) return this._up();
     return false;
   }
 }
@@ -319,8 +345,10 @@ export const CHANGE_EVENT = 'slop-quality';
  *   quality.tiers                 ['low', 'medium', 'high', 'ultra']
  *   quality.describe(tier)        that tier's settings (TIERS[tier]: label, maxPixelRatio, shadows, ssr...)
  *   quality.get()                 the state: { mode: 'auto' | tier (what was asked for), tier (in effect now),
- *                                 bootTier, detected, source: 'url' | 'stored' | 'auto', scale, pixelRatio,
- *                                 needsReload, adaptive, settings }
+ *                                 bootTier, detected (the tier auto starts at here), mobile, source: 'url' |
+ *                                 'stored' | 'auto', scale (the governor's, 0.6 .. 1), pixelRatio, needsReload,
+ *                                 adaptive, floored (at the lowest setting and still under the target), capped
+ *                                 (the frame rate is held from outside, e.g. Low Power Mode), targetFps, settings }
  *   quality.set(tier | 'auto', { persist = true })   picks a tier (or hands back to auto), applies its live settings
  *                                 at once and remembers the choice; returns the new state. state.needsReload says
  *                                 the tier's boot settings (MSAA, shadows, SSR, ground maps) wait for a reload.
@@ -366,11 +394,16 @@ export function createQuality({ storage = null, win = null } = {}) {
     };
   };
   const scale = () => (governor && TIERS[tier].adaptive ? governor.scale : 1);
+  // The tier's resolution rule. ultra's fixed ratio of 1 is the desktop's; picked on a phone (three screen pixels to
+  // a CSS one) it would be the heaviest tier and the blurriest, so there it takes high's rule instead
+  const ratioRule = (name) => (TIERS[name].fixedPixelRatio && detected.mobile
+    ? { ...TIERS[name], fixedPixelRatio: false, maxPixelRatio: TIERS.high.maxPixelRatio, maxPixels: TIERS.high.maxPixels } : TIERS[name]);
   const state = () => ({
-    mode, tier, bootTier, detected: detected.tier, source, scale: scale(),
-    pixelRatio: pixelRatio(TIERS[tier], view, scale()),
+    mode, tier, bootTier, detected: detected.tier, mobile: detected.mobile, source, scale: scale(),
+    pixelRatio: pixelRatio(ratioRule(tier), view, scale()),
     needsReload: needsReload(booted, bootSettings(wanted, limits)),
-    adaptive: Boolean(governor) && TIERS[tier].adaptive, floored: Boolean(governor?.floored), settings: settings()
+    adaptive: Boolean(governor) && TIERS[tier].adaptive, floored: Boolean(governor?.floored), capped: Boolean(governor?.capped),
+    targetFps: governor ? Math.round(governor.targetFps) : null, settings: settings()
   });
   const emit = () => {
     const s = state();
@@ -394,7 +427,7 @@ export function createQuality({ storage = null, win = null } = {}) {
     const levels = [];
     for (let i = lo; i <= hi; i++) {
       const t = TIERS[TIER_NAMES[i]];
-      levels.push({ minScale: t.minScale, ratio: pixelRatio(t, view, 1) });
+      levels.push({ minScale: t.minScale, ratio: pixelRatio(ratioRule(TIER_NAMES[i]), view, 1) });
     }
     governor = new Governor({ levels, level: tierIndex(tier) - lo, scale: startScale });
   };
@@ -457,7 +490,7 @@ export function createQuality({ storage = null, win = null } = {}) {
       const changed = width !== view.width || height !== view.height || dpr !== view.dpr;
       view = { dpr, width, height };
       if (changed && governor) makeGovernor(governor.scale);
-      return pixelRatio(TIERS[tier], view, scale());
+      return pixelRatio(ratioRule(tier), view, scale());
     },
 
     set(choice, { persist = true } = {}) {
@@ -529,7 +562,10 @@ export function createQuality({ storage = null, win = null } = {}) {
     /** For ?debug: how the tier was chosen and where the governor stands. */
     debug: () => ({
       env, detected, mode, source, tier, bootTier, booted, ceiling, memoTier, overrides,
-      governor: governor && { level: governor.level, scale: governor.scale, upAfter: governor.upAfter, stable: governor.stable, floored: governor.floored, levels: governor.levels }
+      governor: governor && {
+        level: governor.level, scale: governor.scale, targetFps: governor.targetFps, capped: governor.capped, upAfter: governor.upAfter,
+        stable: governor.stable, floored: governor.floored, levels: governor.levels
+      }
     })
   };
   return api;

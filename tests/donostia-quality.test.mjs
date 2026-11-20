@@ -19,6 +19,19 @@ const storage = (initial = {}) => {
 const desktop = { coarse: false, touchPoints: 0, uaMobile: false, deviceMemory: 8, cores: 10, dpr: 2, gpu: { vendor: 'apple', architecture: 'metal-3' } };
 const iphone = { coarse: true, touchPoints: 5, uaMobile: true, deviceMemory: null, cores: 6, dpr: 3, screenShort: 390, gpu: { vendor: 'apple', architecture: 'metal-3' } };
 const android = (gpu, deviceMemory = 8, cores = 8) => ({ coarse: true, touchPoints: 5, uaMobile: true, deviceMemory, cores, dpr: 2.6, screenShort: 412, gpu });
+// A GPU-bound phone: `fixed` ms a frame whatever is drawn, plus k ms for high's pixels at full scale, each tier's
+// pixels costing its share of high's; vsync at 60 Hz. drive() runs a governor or a controller on such a phone
+const RATIO = { low: 1.25, medium: 1.5, high: 2 }, COST = { low: 0.5, medium: 0.8, high: 1 };
+const phone = (fixed, k) => (tier, scale) => Math.max(16.7, fixed + k * (RATIO[tier] * scale / 2) ** 2 * COST[tier]);
+const drive = (target, model, seconds, onChange = null) => {
+  const names = ['low', 'medium', 'high'];
+  for (let t = 0; t < seconds * 1000;) {
+    const at = target.get ? target.get() : { tier: names[target.level], scale: target.scale };
+    const ms = model(at.tier, at.scale);
+    t += ms;
+    if (target.frame(ms) && onChange) onChange(target, t);
+  }
+};
 // frames of `ms` for `seconds` of them; returns how often the governor changed
 const run = (target, ms, seconds) => {
   let changes = 0;
@@ -31,12 +44,13 @@ test('ultra is the desktop picture as it was; every tier below costs no more tha
   const u = TIERS.ultra;
   // main.js before the tiers: pixel ratio 1, MSAA, 3072 px cascades, SSR, bloom; vegetation.js's and terrain.js's reaches
   assert.deepEqual([u.maxPixelRatio, u.fixedPixelRatio, u.msaa, u.shadows, u.shadowMapSize, u.shadowFar, u.ssr, u.bloom], [1, true, true, true, 3072, 1, true, true]);
+  assert.deepEqual([u.terrainShadows, u.propShadows, u.terrainMesh, u.spray], [true, true, 'full', true]);
   assert.deepEqual([u.terrainLod, u.treeNear, u.treeMid, u.treeBillboards, u.treeFar, u.detailDistance, u.rain, u.envBakeGap], [1, 85, 300, 900, 3400, 1, 1, 0.15]);
   assert.equal(u.adaptive, false);
   assert.equal(u.groundMaps, 'full');
   assert.equal(u.releaseGeometry, false);
   const rising = ['shadowMapSize', 'shadowFar', 'terrainLod', 'treeNear', 'treeMid', 'treeBillboards', 'treeFar', 'detailDistance', 'rain'];
-  const flags = ['msaa', 'shadows', 'ssr', 'bloom', 'spray'];
+  const flags = ['msaa', 'shadows', 'terrainShadows', 'propShadows', 'ssr', 'bloom', 'spray'];
   for (let i = 1; i < TIER_NAMES.length; i++) {
     const a = TIERS[TIER_NAMES[i - 1]], b = TIERS[TIER_NAMES[i]];
     assert.deepEqual(Object.keys(a).sort(), Object.keys(b).sort(), 'the tiers set the same knobs');
@@ -142,19 +156,13 @@ test('the governor lowers the scale when the frame rate stays under the target, 
   run(h, 25, 1.1);
   assert.equal(run(h, 16.7, 3), 0);
   assert.deepEqual([h.level, h.scale], [2, 1]);
-  // 40 fps for a while: the scale steps down, one step at a time, with a second to settle in between
-  run(g, 25, 3.2);
-  assert.deepEqual([g.level, g.scale], [2, 0.88]);
-  run(g, 25, 9.5);
-  assert.equal(g.level, 2);
-  assert.equal(g.scale, 0.6, 'at the tier\'s floor');
-  // still slow: the tier goes, and the resolution stays about where it was (2 x 0.6 = 1.2 = 1.5 x 0.77)
-  run(g, 25, 3.2);
-  assert.deepEqual([g.level, g.scale, g.demoted], [1, 0.77, true]);
-  // to the very bottom: it says so and stops
-  run(g, 25, 60);
-  assert.deepEqual([g.level, g.scale, g.floored], [0, TIERS.low.minScale, true]);
-  assert.equal(run(g, 25, 20), 0);
+  // a phone too slow for any of it (19.2 ms before a pixel is drawn): the scale steps down to the tier's floor, then
+  // the tier goes with the resolution about where it was (2 x 0.6 = 1.2 = 1.5 x 0.77), down to the very bottom
+  const steps = [];
+  drive(g, phone(19.2, 7), 120, (gov) => steps.push([gov.level, gov.scale]));
+  assert.deepEqual(steps, [[2, 0.88], [2, 0.77], [2, 0.68], [2, 0.6], [1, 0.77], [1, 0.68], [0, 0.77], [0, 0.68]]);
+  assert.deepEqual([g.demoted, g.floored, g.capped], [true, true, false]);
+  assert.equal(run(g, 21, 20), 0, 'at the bottom it says so and stops');
   // a hitch or a hidden tab is no frame rate
   const k = new Governor({ levels });
   run(k, 16.7, 3);
@@ -169,36 +177,53 @@ test('the governor lowers the scale when the frame rate stays under the target, 
 
 test('the governor tries a step up with the target held, and backs off when the step does not hold', () => {
   const levels = ['low', 'medium', 'high'].map((n) => ({ minScale: TIERS[n].minScale, ratio: TIERS[n].maxPixelRatio }));
-  // a device that holds 60 fps up to medium at full scale, and 40 above it
-  const device = (g) => (g.level === 2 || (g.level === 1 && g.scale > 1) ? 25 : 16.7);
+  // a phone that holds 60 fps at medium, and at high up to 0.68 of its resolution (16 ms), not above (20 ms)
+  const model = phone(0, 34);
   const g = new Governor({ levels, level: 0, scale: 0.68 });
-  const history = [];
-  let ups = 0, downs = 0, t = 0, lastUp = -Infinity;
-  const gaps = [];
-  for (; t < 1800e3;) {
-    const ms = device(g), before = [g.level, g.scale];
-    t += ms;
-    if (g.frame(ms)) {
-      const up = g.level > before[0] || (g.level === before[0] && g.scale > before[1]);
-      if (up) { ups++; if (g.level === 2) { gaps.push(t - lastUp); lastUp = t; } } else downs++;
-      history.push([Math.round(t / 1000), g.level, g.scale]);
-    }
-  }
-  // it climbed to medium at full scale...
-  assert.ok(history.some(([, level, scale]) => level === 1 && scale === 1), JSON.stringify(history.slice(0, 12)));
-  // ...tried high, fell back, and tried again later and later: no pumping
-  const tries = gaps.slice(1);
-  assert.ok(tries.length >= 2 && tries.length <= 8, `${tries.length} tries at high in half an hour: ${JSON.stringify(tries.map((x) => Math.round(x / 1000)))}`);
-  for (let i = 1; i < tries.length; i++) assert.ok(tries[i] >= tries[i - 1] * 0.95, `the tries get no closer together: ${JSON.stringify(tries.map((x) => Math.round(x / 1000)))}`);
-  assert.ok(tries[tries.length - 1] >= 200e3, 'minutes apart by the end');
-  // and it spends its time at medium: the last state is medium or the try above it
-  assert.ok(g.level >= 1);
-  assert.ok(downs <= ups);
+  const tries = [];
+  let downs = 0, last = [0, 0.68];
+  drive(g, model, 1800, (gov, t) => {
+    const up = gov.level > last[0] || (gov.level === last[0] && gov.scale > last[1]);
+    if (up && gov.level === 2 && gov.scale === 0.77) tries.push(t);
+    if (!up) downs++;
+    last = [gov.level, gov.scale];
+  });
+  // it climbed to high and settled a step under what does not hold...
+  assert.deepEqual([g.level, g.scale === 0.68 || g.scale === 0.77], [2, true]);
+  // ...trying that step again later and later: no pumping
+  const gaps = tries.slice(1).map((t, n) => Math.round((t - tries[n]) / 1000));
+  assert.ok(gaps.length >= 2 && gaps.length <= 12, `${gaps.length + 1} tries in half an hour: ${JSON.stringify(gaps)}`);
+  for (let n = 1; n < gaps.length; n++) assert.ok(gaps[n] >= gaps[n - 1] * 0.95, `the tries get no closer together: ${JSON.stringify(gaps)}`);
+  assert.ok(gaps[gaps.length - 1] >= 200, `minutes apart by the end: ${JSON.stringify(gaps)}`);
+  assert.equal(downs, tries.length, 'every step down is a try taken back');
+  assert.equal(g.capped, false);
   // a device with headroom everywhere ends at the top and stays
   const fast = new Governor({ levels, level: 0, scale: 0.68 });
   run(fast, 16.7, 120);
   assert.deepEqual([fast.level, fast.scale], [2, 1]);
   assert.equal(run(fast, 16.7, 60), 0);
+});
+
+test('a frame rate held from outside (Low Power Mode\'s 30 fps) is not chased: the resolution comes back', () => {
+  const levels = ['low', 'medium', 'high'].map((n) => ({ minScale: TIERS[n].minScale, ratio: TIERS[n].maxPixelRatio }));
+  const g = new Governor({ levels, level: 1 });
+  let lowest = 1;
+  for (let t = 0; t < 60e3; t += 33.3) { g.frame(33.3); lowest = Math.min(lowest, g.scale); }
+  // it went down to the tier's floor, saw the frame time unmoved, and came back: same tier, full scale, 30 fps target
+  assert.equal(lowest, TIERS.medium.minScale);
+  assert.deepEqual([g.level, g.scale, g.capped, Math.round(g.targetFps), g.demoted], [1, 1, true, 30, false]);
+  assert.equal(run(g, 33.3, 120), 0, 'and stays');
+  // a rate that drops under the cap still counts
+  run(g, 50, 6);
+  assert.ok(g.scale < 1);
+  // the cap lifted: 60 fps is the target again
+  run(g, 16.7, 5);
+  assert.deepEqual([g.capped, g.targetFps], [false, 60]);
+  // a GPU-bound phone is not mistaken for one: its frame time follows the pixels
+  const h = new Governor({ levels, level: 1 });
+  drive(h, phone(4, 40), 120);
+  assert.equal(h.capped, false);
+  assert.ok(h.level < 1 || h.scale < 1, 'it settled lower instead');
 });
 
 test('the controller: URL, stored choice, auto, set() and change events', () => {
@@ -253,6 +278,11 @@ test('the controller: URL, stored choice, auto, set() and change events', () => 
   assert.equal(seen.length, 3);
   assert.equal(store.getItem('donostia-quality'), null);
   assert.throws(() => q.set('extreme'), /not one of/);
+  // ultra picked on a phone: the desktop's settings at the phone's resolution (not the desktop's fixed ratio of 1)
+  q = Q.createQuality({ storage: storage() });
+  s = q.init({ env: iphone, search: '?quality=ultra' });
+  q.viewport(...view);
+  assert.deepEqual([s.tier, s.mobile, q.get().pixelRatio, q.get().adaptive], ['ultra', true, 2, false]);
   // storage that throws is no storage
   const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };
   q = Q.createQuality({ storage: broken });
@@ -268,7 +298,7 @@ test('the controller on auto: the governor moves the tier, and the next visit st
   const applied = [];
   q.attach((state) => applied.push([state.tier, state.scale, state.pixelRatio]));
   // a slow phone: down the scale, then to low
-  run(q, 28, 40);
+  drive(q, phone(19.2, 7), 40);
   assert.equal(q.get().tier, 'low');
   assert.ok(applied.length >= 3 && applied.some(([tier, scale]) => tier === 'medium' && scale < 1), JSON.stringify(applied));
   assert.equal(q.get().needsReload, false, 'auto never asks for a reload');
@@ -306,7 +336,7 @@ test('the controller on auto: the governor moves the tier, and the next visit st
   // a later slowdown (a hot phone) lowers the tier without a ceiling
   q.viewport(390, 844, 3);
   run(q, 16.7, 200);
-  run(q, 30, 60);
+  drive(q, phone(19.2, 7), 60);
   assert.notEqual(q.get().tier, 'high');
   memo = JSON.parse(fast.getItem('donostia-quality-auto'));
   assert.equal(memo.ceiling, null);
@@ -315,7 +345,7 @@ test('the controller on auto: the governor moves the tier, and the next visit st
   q = Q.createQuality({ storage: busy });
   q.init({ env: iphone, search: '' });
   q.viewport(390, 844, 3);
-  run(q, 28, 40);
+  drive(q, phone(19.2, 7), 40);
   assert.equal(JSON.parse(busy.getItem('donostia-quality-auto')).ceiling, 'low');
   run(q, 16.7, 200);
   assert.deepEqual([q.get().tier, JSON.parse(busy.getItem('donostia-quality-auto')).ceiling], ['high', null]);
@@ -327,7 +357,7 @@ test('the controller on auto: the governor moves the tier, and the next visit st
   q = Q.createQuality({ storage: storage() });
   q.init({ env: iphone, search: '?quality=high' });
   q.viewport(390, 844, 3);
-  run(q, 30, 120);
+  drive(q, phone(19.2, 7), 120);
   assert.deepEqual([q.get().tier, q.get().scale, q.get().floored], ['high', TIERS.high.minScale, true]);
   run(q, 16.7, 300);
   assert.deepEqual([q.get().tier, q.get().scale], ['high', 1]);
