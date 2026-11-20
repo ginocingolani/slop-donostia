@@ -6,6 +6,7 @@ import {
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
+import { STREETLIGHT } from './data-streetlight.js';
 import { detail, effectTargets } from './quality.js';
 import { streetLit } from './street-light.js';
 
@@ -19,10 +20,16 @@ import { streetLit } from './street-light.js';
 //   steps in front of the Hotel de Londres; the rotunda's obelisks, clock & barometer, with their arms of globes
 // - OSM's street lamps (a dark cast-iron post under a four-sided lantern) and benches (wooden slats on iron frames)
 // - lanterns on iron brackets along the lanes of the Parte Vieja, where OSM maps no street lamps
+// - the lamps of every other street, which no map has: placed by tools/donostia/bake-streetlight.mjs along the street
+//   network (js/donostia/data-streetlight.js; its header has the rules). Steel columns with an arm and a flat LED
+//   head over the carriageway on the avenues (9 m), the local streets (7 m) and the motorway (12 m), the same
+//   cast-iron lantern as OSM's in the pedestrian streets, squares and paths, the bracket lantern where a lane is too
+//   narrow for a post. They are the sources of the light the streets show at night (js/donostia/street-light.js)
 // - the handrails of the beaches' stairs & ramps (js/donostia/data-beach-access.js) on the kerbs of their open sides: a
 //   tube on posts with a middle rail, painted white at La Concha & Ondarreta, stainless at Zurriola
 // Lamps glow at dusk & night with cityUniforms.uInteriorGlow (emissive + bloom), each over a soft pool of light on the
-// ground; no real lights. Everything is instanced or merged: 9 draws.
+// ground; no real lights. Everything is instanced or merged: 13 draws (the placed lamps: their posts and their glass,
+// columns and lanterns apart, each culled by distance; they cast no shadows).
 // buildStreetscape(GEO, terrain) -> Promise<Object3D | null>; its userData.update(dt, elapsed, camera) culls the small
 // props by distance.
 
@@ -228,6 +235,29 @@ function streetPostGeometry() {
   return b.build();
 }
 const streetGlassGeometry = () => lanternGlass(3.41);
+
+// Street column, as placed by tools/donostia/bake-streetlight.mjs: a tapered steel column of COLUMN_H (scaled to the
+// street's own: 7, 9 or 12 m) with a short arm towards the carriageway (+z) and a flat LED head; its lit face apart
+const COLUMN_H = 9;
+const COLUMN_STEEL = [0.115, 0.125, 0.13, 0.5]; // galvanised, painted grey
+function columnGeometry() {
+  const b = new Builder();
+  b.add(lathe([[0, 0], [0.17, 0], [0.17, 0.45], [0.105, 0.55], [0.06, COLUMN_H - 0.25], [0, COLUMN_H - 0.25]], 6), COLUMN_STEEL);
+  beam(b, new THREE.Vector3(0, COLUMN_H - 0.45, 0), new THREE.Vector3(0, COLUMN_H - 0.1, 1.05), 0.07, COLUMN_STEEL, M4());
+  const [head, m] = box(0.3, 0.09, 0.7, 0, COLUMN_H - 0.12, 1.3);
+  b.add(head, COLUMN_STEEL, m);
+  return b.build();
+}
+const columnGlassGeometry = () => new THREE.BoxGeometry(0.24, 0.03, 0.58).translate(0, COLUMN_H - 0.135, 1.3);
+
+// A list of placed lamps (data-streetlight.js: five bytes each, x & z in its units from its origin, the heading in
+// 1/256 of a turn) as [[x, z, yaw (rad)], ...]
+function placedLamps({ count, data }) {
+  const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0)), view = new DataView(bytes.buffer);
+  const [x0, z0] = STREETLIGHT.origin, unit = STREETLIGHT.unit;
+  return Array.from({ length: count }, (_, k) => [x0 + view.getUint16(5 * k, true) * unit, z0 + view.getUint16(5 * k + 2, true) * unit,
+    (bytes[5 * k + 4] / 256) * Math.PI * 2]);
+}
 
 // Wall lantern of the Parte Vieja: a scrolled iron bracket out of the facade (+z) with a lantern hanging from it
 // (y = height above the street)
@@ -605,7 +635,9 @@ class DistanceCulled {
 }
 // Cull distances (m): about where each prop shrinks to a few pixels. The lamp glass is never culled, so the city's
 // lamps still glow from afar at night; La Concha's barandilla, its lamp posts & monuments are always drawn.
-const CULL = { streetPosts: 900, wallLanterns: 450, benches: 350, pools: 2000 };
+// The placed lamps are many (twelve thousand): their posts go sooner, their glass (the far streets' points of light)
+// at the distance where the city's own glow takes over.
+const CULL = { streetPosts: 900, wallLanterns: 450, benches: 350, pools: 2000, placedPosts: 320, columns: 520, placedGlass: 2400 };
 const RECULL = 8; // m the camera moves before the props are culled again
 
 export async function buildStreetscape(GEO, terrain) {
@@ -668,6 +700,20 @@ export async function buildStreetscape(GEO, terrain) {
     place(wall, x, terrain.heightAt(x + ox * 1.5, z + oz * 1.5), z, yaw);
     pool(x + ox * 1.8, z + oz * 1.8, 4);
   }
+  // the lamps placed along the streets no map has lamps for: their light is the light map's, so no pools
+  const placedWall = placedLamps(STREETLIGHT.wall);
+  for (const [x, z, yaw] of placedWall) place(wall, x, terrain.heightAt(x + Math.sin(yaw) * 1.5, z + Math.cos(yaw) * 1.5), z, yaw);
+  const lanterns = [], columns = [];
+  for (const [x, z, yaw] of placedLamps(STREETLIGHT.lanterns)) place(lanterns, x, terrain.heightAt(x, z) - 0.05, z, yaw);
+  for (const list of STREETLIGHT.columns) {
+    for (const [x, z, yaw] of placedLamps(list)) place(columns, x, terrain.heightAt(x, z) - 0.05, z, yaw, list.height / COLUMN_H);
+  }
+  const postGeo = streetPostGeometry(), glassGeo = streetGlassGeometry();
+  const placed = [
+    instanced(postGeo, paint, lanterns, 'Placed_lantern_posts', false), instanced(glassGeo, glass, lanterns, 'Placed_lantern_glass', false),
+    instanced(columnGeometry(), paint, columns, 'Street_columns', false), instanced(columnGlassGeometry(), glass, columns, 'Street_column_glass', false)
+  ];
+  for (const mesh of placed) if (mesh) mesh.receiveShadow = true;
   const wallFrames = instanced(wallLanternGeometry(), paint, wall, 'Wall_lanterns', false);
   const wallGlass = instanced(wallGlassGeometry(), glass, wall, 'Wall_lantern_glass', false);
   const benches = [];
@@ -679,10 +725,11 @@ export async function buildStreetscape(GEO, terrain) {
   const poolMesh = instanced(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), createPoolMaterial(), pools, 'Lamp_light_pools', false);
   if (poolMesh) poolMesh.renderOrder = 1;
 
-  for (const mesh of [promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, poolMesh]) if (mesh) group.add(mesh);
+  for (const mesh of [promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, ...placed, poolMesh]) if (mesh) group.add(mesh);
   if (!group.children.length) return null;
 
-  const culled = [[streetPosts, CULL.streetPosts], [wallFrames, CULL.wallLanterns], [benchMesh, CULL.benches], [poolMesh, CULL.pools]]
+  const culled = [[streetPosts, CULL.streetPosts], [wallFrames, CULL.wallLanterns], [benchMesh, CULL.benches], [poolMesh, CULL.pools],
+    [placed[0], CULL.placedPosts], [placed[1], CULL.placedGlass], [placed[2], CULL.columns], [placed[3], CULL.placedGlass]]
     .filter(([mesh]) => mesh).map(([mesh, d]) => new DistanceCulled(mesh, d));
   const last = new THREE.Vector3(Infinity, Infinity, Infinity);
   let scale = detail.distance;

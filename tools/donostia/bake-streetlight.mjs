@@ -378,6 +378,47 @@ for (const [pitch, classes, gap, kind] of [[17, [G.pedestrian], 13.5, 'square'],
     }
   }
 }
+// The brackets onto their facades: the 1 m raster found a wall within half a metre; the lantern hangs from the
+// footprint's own edge (5 cm out, facing along its outward normal), or stays put where none is within 2 m
+{
+  const edges = [];
+  for (const b of GEO.buildings) {
+    for (const r of b.g) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (let k = 0; k < r.length; k += 2) {
+        minX = Math.min(minX, r[k]); maxX = Math.max(maxX, r[k]);
+        minZ = Math.min(minZ, r[k + 1]); maxZ = Math.max(maxZ, r[k + 1]);
+      }
+      edges.push({ r, minX, maxX, minZ, maxZ });
+    }
+  }
+  let snapped = 0;
+  for (const l of lamps) {
+    if (l.kind !== 'wall') continue;
+    let best = 4, bx = 0, bz = 0;
+    for (const e of edges) {
+      if (l.x < e.minX - 2 || l.x > e.maxX + 2 || l.z < e.minZ - 2 || l.z > e.maxZ + 2) continue;
+      const { r } = e, n = r.length / 2;
+      for (let a = 0, b = n - 1; a < n; b = a++) {
+        const ax = r[2 * b], az = r[2 * b + 1], dx = r[2 * a] - ax, dz = r[2 * a + 1] - az, len2 = dx * dx + dz * dz || 1;
+        const t = Math.min(1, Math.max(0, ((l.x - ax) * dx + (l.z - az) * dz) / len2));
+        const px = ax + dx * t, pz = az + dz * t, d2 = (l.x - px) ** 2 + (l.z - pz) ** 2;
+        if (d2 < best) { best = d2; bx = px; bz = pz; }
+      }
+    }
+    if (best >= 4) continue;
+    // out of the wall: the way the lamp was hung (its heading), unless the edge's own normal is clear
+    const yaw = (l.heading * Math.PI) / 180;
+    let ox = l.x - bx, oz = l.z - bz;
+    const d = Math.hypot(ox, oz);
+    if (d < 0.05 || bldAt(l.x, l.z)) { ox = Math.sin(yaw); oz = Math.cos(yaw); } else { ox /= d; oz /= d; }
+    l.x = bx + ox * 0.05;
+    l.z = bz + oz * 0.05;
+    l.heading = headingOf(ox, oz);
+    snapped++;
+  }
+  log(`wall lanterns: ${snapped} hung from their facades' edges`);
+}
 const byKind = {};
 for (const l of lamps) byKind[l.kind] = (byKind[l.kind] || 0) + 1;
 log(`street lamps: ${modelled} modelled already; ${stats.ways} lit ways (${stats.unlit} unlit or dark trails, ${stats.underground} underground left out), ` +
@@ -396,7 +437,10 @@ function clear(ax, az, bx, bz, d) {
   for (let s = 2; s <= steps; s++) if (bld[cellOf(ax + sx * s, az + sz * s)] === 1) return false;
   return true;
 }
-for (const l of lamps) {
+for (const lamp of lamps) {
+  // (a bracket's lantern hangs 0.9 m out from its facade, as the Parte Vieja's)
+  const out = lamp.kind === 'wall' ? 0.9 : 0, yaw = (lamp.heading * Math.PI) / 180;
+  const l = { x: lamp.x + Math.sin(yaw) * out, z: lamp.z + Math.cos(yaw) * out, kind: lamp.kind };
   const r0 = R0(l.kind), reach = r0 * REACH, I = KIND[l.kind].I;
   const i0 = Math.max(0, Math.floor((l.x - reach - R.x0) / MAP_RES)), i1 = Math.min(W - 1, Math.ceil((l.x + reach - R.x0) / MAP_RES));
   const j0 = Math.max(0, Math.floor((l.z - reach - R.z0) / MAP_RES)), j1 = Math.min(H - 1, Math.ceil((l.z + reach - R.z0) / MAP_RES));

@@ -22,12 +22,12 @@ import { streetLight, lamplit } from './street-light.js';
 //   the camera position of the last level pass, exactly as vegetation.js chose them) or beyond uFarEnd.
 // - createBillboardTreeMaterial: the far trees beyond vegetation.js's BILLBOARD_START, one camera-facing quad each.
 // At night the street lamps light the trunks and the crowns from below (js/donostia/street-light.js; zero by day):
-// 0.4 of the light where the tree stands (leaves take it edge-on and shade one another), read per vertex, all of that
+// a third of the light where the tree stands (leaves take it edge-on and shade one another), read per vertex, all of that
 // up to the lamps' height and fading up the crown.
 
 // The street lamps' light on a tree at xz, `h` metres up it: as below the lamps to 4 m (most hang at 4 to 9 m), half
 // that at 9 m, a sixth on a plane tree's top
-const lampOnTree = (xz, h) => streetLight(xz).mul(float(0.4).div(max(float(h).sub(4.0), 0.0).div(5.0).pow2().add(1.0)));
+const lampOnTree = (xz, h) => streetLight(xz).mul(float(0.32).div(max(float(h).sub(4.0), 0.0).div(5.0).pow2().add(1.0)));
 
 // Fast deterministic 2D -> 1D hash
 const hash2D = Fn(([p]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)));
