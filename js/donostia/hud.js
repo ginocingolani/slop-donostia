@@ -23,6 +23,17 @@ const CORNER = 14; // m: a second street this close makes a corner (two signs)
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
 export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }) {
+  // js/donostia/main.js's pill while the shaders compile behind the city ('Loading details…', 'Applying quality…'):
+  // its words in the HUD's language, from the 'slop-compile' event it sends right after writing its own English
+  let compiling = null;
+  const compileNote = () => {
+    const note = document.getElementById('compile-note');
+    if (!note || !compiling || compiling.stage === 'done') return;
+    const n = compiling.total ? Math.round((100 * compiling.done) / compiling.total) : 0;
+    note.textContent = t(compiling.stage === 'applying' ? 'compile.applying' : 'compile.details', { n });
+  };
+  window.addEventListener('slop-compile', (e) => { compiling = e.detail; compileNote(); });
+  onLang(compileNote);
   // Until the city first shows, main.js compiles the shaders with the scene pass's render target bound (across
   // awaits): a preset applied meanwhile would bake its environment map into that target. A time picked then waits
   // for setReady(), and the shortcuts and the HUD (under the loading screen) don't answer yet.
@@ -562,6 +573,9 @@ function initQualityControl(quality) {
     // Auto says which tier it settled on for this device
     const settled = choice === 'auto' && tier != null ? api.tiers.find((x) => x.id === String(tier)) : null;
     if (note) note.textContent = settled ? t('quality.autoNote', { tier: name(settled) }) : '';
+    // a pick is applied in the running city (js/donostia/quality.js): no second pick while one is being applied
+    const applying = !!quality?.get?.()?.applying;
+    for (const b of buttons) b.disabled = applying;
   }
   api.watch(() => show());
   show();

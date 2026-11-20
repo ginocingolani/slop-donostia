@@ -1212,3 +1212,11 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled #hud-toolbar { width: auto; }
   body.touch-enabled .live-readout { gap: 4px 7px; padding: 4px 8px; font-size: 11px; }
 }
+
+/* js/donostia/main.js's pill while shaders compile behind the city ("Loading details… 40%"): in the HUD's face, and on
+   phones clear of the bottom bar, between the stick and the Up / Down buttons */
+#compile-note {
+  font-family: var(--font-ui, inherit);
+  z-index: 20;
+}
+body.touch-enabled #compile-note { bottom: calc(var(--safe-b) + var(--dock-h) + 10px); }
