@@ -134,11 +134,10 @@ Global Privacy Control: nothing is loaded and nothing is sent. `?analytics=1` fo
 headless test of the real SDK needs a visitor's user agent, and must cut `eu.i.posthog.com` off (stub `fetch` and
 `sendBeacon` in the page, or intercept by CDP) so that no test event reaches the project.
 
-The card (`#consent-card` in `index.html`, `.hud-consent` in `css/donostia.css`) says in the HUD's language, with a
-teja beside its title, what the cookie is for; its words are in `js/donostia/i18n.js` (`consent.*`), English, Basque
+The card (`#consent-card` in `index.html`, `.hud-consent` in `css/donostia.css`) says in the HUD's language what the cookie is for; its words are in `js/donostia/i18n.js` (`consent.*`), English, Basque
 and Spanish. It shows 2.5 s after the city does (it does not wait for the background compile) and never again once
-answered, by either button. It covers no control: over the controls hint on a desktop, between the stick and the Up /
-Down buttons on a tablet or a phone on its side, above the stick and clear of the bar on an upright phone. The data
+answered, by either button. It covers no control: over the controls hint on a desktop, in the middle beside the stick on
+a tablet or a phone on its side, above the stick and clear of the bar on an upright phone. The data
 popover (ⓘ; on a phone, Settings › Data sources) says what is sent (`credits.usage`), shows the answer and offers to
 change it, which brings the card back.
 
@@ -151,7 +150,10 @@ stamped on each event as it happens, so one that waited in the queue says what w
 - the quality (`js/donostia/quality.js`): `quality_mode` (`auto`, or the tier picked by hand), `quality_tier` (the
   tier in force: `low` / `medium` / `high` / `ultra`), `render_scale` (the governor's share of the tier's resolution,
   0.6 to 1), `fps_capped` (the frame rate is held from outside, e.g. Low Power Mode), `quality_detected` (the tier
-  this device starts at on auto). From `quality.init()` on: the page view and `app_start` are sent before it;
+  this device starts at on auto), `quality_boot_reason` (what decided the tier this visit booted with: `url`,
+  `stored`, `detected`, `remembered` (auto, moved from the detected tier by what its governor learnt on earlier
+  visits) or `crash_recovery` (under the tier at which the last visit died); `slopDebug.quality.debug().decision`
+  has the steps). From `quality.init()` on: the page view and `app_start` are sent before it;
 - the interface: `lang` (`en` / `eu` / `es`), `input` (`touch`: the stick and the phone layouts are on; `mouse`
   otherwise), `orientation` (`portrait` / `landscape`, the window's), `display_mode` (`browser`; `standalone`: opened
   from the home screen; `fullscreen`: a browser tab gone full screen).
@@ -160,19 +162,33 @@ The events (the reference is the header of `js/donostia/analytics.js`; a test ke
 
 - the load funnel: `$pageview` (ours, queued like the rest: the SDK's own goes before it is told the choice, and is
   dropped) → `app_start { webgpu }` → `world_built` → `shaders_compiled` → `app_ready { ms_<step>…, ms_total,
-  shaders_pending, shaders_total }` → `details_ready { ms_since_ready, ms_total, shaders_total, quality_changed }` →
+  shaders_pending, shaders_total }` → `details_ready { ms_since_ready, ms_total, shaders_total, bg_compiles,
+  bg_blocked_ms, bg_stall_max_ms, quality_changed }` →
   `first_move { after_s, by }`. The load is progressive: `app_ready` is "the city shows" (the first view's shaders are
   compiled, with the init timings `main.js` logs; on the phone tiers `shaders_pending` of the `shaders_total` jobs
   still compile behind it), `details_ready` the end of that background compile (at once, with `ms_since_ready` 0,
-  where nothing was left; `quality_changed`: a tier was picked by hand meanwhile, and the time includes applying it).
+  where nothing was left; `quality_changed`: a tier was picked by hand meanwhile, and the time includes applying it;
+  `bg_compiles`: the pipelines compiled behind the city, `bg_blocked_ms`: the time they held the frames up between
+  them, `bg_stall_max_ms`: the longest single stall, a compile's stall being the longest gap between two frames while
+  it ran over the usual gap: near nothing where pipelines are made off the main thread, a frame or more each on a
+  phone's WebKit, where the background then compiles only what is in view while the camera moves).
   `first_move`'s `by` is `fly` (the keys or the stick moved the camera) or `look` (a drag on the view or the arrow
   keys turned it), whichever came first; `input` says whether by touch. Where it breaks: `app_unsupported { reason }`
   (`no_api`, `no_adapter` or `no_device`: no WebGPU, the page says so and stops), `app_error { after, message }` and
   `gpu_lost { after, reason, hidden }` (`after`: the last init step that completed; `hidden`: the page was in the
-  background, where a phone takes the GPU's memory back);
+  background, where a phone takes the GPU's memory back). A page the browser killed for its memory can send nothing:
+  the load after it sends `app_recovered { from_tier, to_tier, last_stage, fails, shown, real_time, ran_s, after_s,
+  same_tab, lowered, halted }` from the note `js/donostia/crash-guard.js` left in `localStorage` (`from_tier`: the
+  tier the dead visit ran; `to_tier`: the tier this load starts at, a tier lower, the lowest after two deaths in a
+  row, `null` with `halted`; `last_stage`: the last init step it completed, or `details`, `running` or `applying`
+  once its city showed; `fails`: the boots that died in a row; `shown`: its city had shown; `real_time`: the
+  real-time switch was on; `ran_s` and `after_s`: how long it lived and how long ago that was; `halted`: the lowest
+  tier died too, and the page stopped at a message with a "Try again" button). A page hidden when it died, a note
+  older than half an hour and, on a desktop, another window's live note are not counted;
 - the answer: `cookie_consent { cookies, changed, lang }` (`changed`: from the popover, after a first answer; `lang`:
   the language the card was read in);
-- flying: `fps_sample` every minute (`fps`, `fps_min`, `fps_bucket`, `altitude`) and `cell_visit { cell_x, cell_z,
+- flying: `fps_sample` every minute (`fps`, `fps_min`, `fps_bucket`, `altitude`, `compiling`: shaders were compiling
+  behind the city at some point of that minute, so its `fps_min` is the compile's) and `cell_visit { cell_x, cell_z,
   altitude }` once the camera has dwelt 2 s in a cell of a 100 m grid of the frame (`cellOf()`: the heatmap of where
   people fly, `cell_x * 100` is the cell's west edge in frame metres);
 - quality: `quality_change { from, to, by, from_mode, to_mode }` when the mode or the tier in force changes: by
@@ -603,8 +619,8 @@ governor's rate limit, the card and its words, and the page's wiring.
   from their pixels committed.
 - Shapefile rings: outer rings run clockwise and holes counter-clockwise; `extract.py` groups them by orientation, so
   a courtyard that touches its building's outline stays a hole.
-- Real time (the HUD's Orain switch, key 5; on by default unless the browser turned it off, remembered in
-  `localStorage` as `donostia-live`, with the weather and the sea fetched behind the loading screen): the city
+- Real time (the HUD's Orain switch, key 5; on at the start of every visit, with the weather and the sea fetched
+  behind the loading screen: a time preset holds for the visit it is picked in and is not remembered): the city
   follows its own clock, weather and sea (`js/donostia/live-state.js`; data by Open-Meteo.com, CC BY 4.0, credited in
   the data popover and on the switch's readout). The sky's part (`js/donostia/time-of-day.js`, applied each frame by
   `js/donostia/live-sky.js`):

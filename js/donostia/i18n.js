@@ -33,6 +33,7 @@ const STRINGS = {
   en: {
     'status.starting': 'Starting…',
     'loading.reload': 'Reload',
+    'loading.retry': 'Try again',
     'loading.webgpuTitle': 'WebGPU is needed',
     'loading.webgpuNote': 'Slop Donostia is drawn with WebGPU, which this browser or device does not offer. Try the current Chrome, Edge or Samsung Internet (Android 12 or later), Safari on iOS / iPadOS 26 or later, or a desktop browser.',
     'view.label': '3D view of Donostia / San Sebastián',
@@ -133,12 +134,7 @@ const STRINGS = {
     'gauge.camera': 'God camera',
     'gauge.alt': 'Alt',
     'touch.label': 'Touch controls',
-    'touch.stick': 'Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast',
-    'touch.actions': 'Hold to climb or descend',
-    'touch.up': 'Up',
-    'touch.down': 'Down',
-    'touch.upLabel': 'Climb',
-    'touch.downLabel': 'Descend',
+    'touch.stick': 'Flight stick: push up to fly where the view looks (look up to climb, down to descend), down to fly back, left or right to slide, past the rim to go fast',
     'map.label': 'Street map of Donostia',
     'map.title': 'Map of Donostia',
     'map.here': 'You are at {place}',
@@ -173,12 +169,16 @@ const STRINGS = {
     'status.hintIos': 'On iPhone and iPad it comes with iOS 26 (Safari 26).',
     'status.hintAndroid': 'On Android it needs Chrome 121 or later on Android 12 or later.',
     'status.hintDesktop': 'Try a current Chrome or Edge, or Safari 26 or later.',
-    'status.insecure': 'WebGPU also needs a secure (https) page.'
+    'status.insecure': 'WebGPU also needs a secure (https) page.',
+    'status.memory': 'This device ran out of memory for the city, even at the lowest quality. Close other tabs and apps, then try again.',
+    'recovery.lowered': 'The last visit stopped unexpectedly: starting at a lighter quality ({tier}).',
+    'recovery.again': 'The last visit stopped unexpectedly: starting again at {tier} quality.'
   },
 
   eu: {
     'status.starting': 'Abiarazten…',
     'loading.reload': 'Kargatu berriro',
+    'loading.retry': 'Saiatu berriro',
     'loading.webgpuTitle': 'WebGPU behar da',
     'loading.webgpuNote': 'Slop Donostia WebGPUrekin marrazten da, eta nabigatzaile edo gailu honek ez du eskaintzen. Probatu Chrome, Edge edo Samsung Internet eguneratuekin (Android 12 edo berriagoa), Safarirekin iOS / iPadOS 26an edo berriagoan, edo mahaigaineko nabigatzaile batekin.',
     'view.label': 'Donostiaren 3D ikuspegia',
@@ -278,12 +278,7 @@ const STRINGS = {
     'gauge.camera': 'Jainko-kamera',
     'gauge.alt': 'Alt',
     'touch.label': 'Ukipen-kontrolak',
-    'touch.stick': 'Hegaldi-palanka: bultzatu gora edo behera aurrera edo atzera hegan egiteko, ezkerrera edo eskuinera albora joateko, eta ertzetik harago azkar joateko',
-    'touch.actions': 'Eutsi sakatuta igotzeko edo jaisteko',
-    'touch.up': 'Igo',
-    'touch.down': 'Jaitsi',
-    'touch.upLabel': 'Igo',
-    'touch.downLabel': 'Jaitsi',
+    'touch.stick': 'Hegaldi-palanka: bultzatu gora begiratzen duzun aldera hegan egiteko (gora begiratuta igotzen da, behera begiratuta jaisten), behera atzera egiteko, ezkerrera edo eskuinera albora joateko, eta ertzetik harago azkar joateko',
     'map.label': 'Donostiako kale-mapa',
     'map.title': 'Donostiako mapa',
     'map.here': 'Hemen zaude: {place}',
@@ -329,12 +324,16 @@ const STRINGS = {
     'status.hintIos': 'iPhone eta iPadetan iOS 26rekin dator (Safari 26).',
     'status.hintAndroid': 'Androiden Chrome 121 edo berriagoa behar du, Android 12an edo berriagoan.',
     'status.hintDesktop': 'Probatu Chrome edo Edge eguneratu batekin, edo Safari 26 edo berriagoarekin.',
-    'status.insecure': 'WebGPUk orri segurua (https) ere behar du.'
+    'status.insecure': 'WebGPUk orri segurua (https) ere behar du.',
+    'status.memory': 'Gailu honek ez du hirirako adina memoria, ezta kalitate baxuenean ere. Itxi beste fitxak eta aplikazioak, eta saiatu berriro.',
+    'recovery.lowered': 'Azken bisita ustekabean eten zen: kalitate arinagoan abiarazten da ({tier}).',
+    'recovery.again': 'Azken bisita ustekabean eten zen: berriro abiarazten da, {tier} kalitatean.'
   },
 
   es: {
     'status.starting': 'Iniciando…',
     'loading.reload': 'Recargar',
+    'loading.retry': 'Reintentar',
     'loading.webgpuTitle': 'Hace falta WebGPU',
     'loading.webgpuNote': 'Slop Donostia se dibuja con WebGPU, que este navegador o dispositivo no ofrece. Prueba con Chrome, Edge o Samsung Internet actuales (Android 12 o posterior), Safari en iOS / iPadOS 26 o posterior, o un navegador de escritorio.',
     'view.label': 'Vista 3D de Donostia / San Sebastián',
@@ -434,12 +433,7 @@ const STRINGS = {
     'gauge.camera': 'Cámara dios',
     'gauge.alt': 'Alt',
     'touch.label': 'Controles táctiles',
-    'touch.stick': 'Palanca de vuelo: empuja arriba o abajo para volar adelante o atrás, a la izquierda o a la derecha para ir de lado, y más allá del borde para ir rápido',
-    'touch.actions': 'Mantén pulsado para subir o bajar',
-    'touch.up': 'Subir',
-    'touch.down': 'Bajar',
-    'touch.upLabel': 'Subir',
-    'touch.downLabel': 'Bajar',
+    'touch.stick': 'Palanca de vuelo: empuja arriba para volar hacia donde miras (mirando arriba subes, mirando abajo bajas), abajo para volar hacia atrás, a la izquierda o a la derecha para ir de lado, y más allá del borde para ir rápido',
     'map.label': 'Callejero de Donostia',
     'map.title': 'Mapa de Donostia',
     'map.here': 'Estás en {place}',
@@ -485,7 +479,10 @@ const STRINGS = {
     'status.hintIos': 'En iPhone y iPad llega con iOS 26 (Safari 26).',
     'status.hintAndroid': 'En Android hace falta Chrome 121 o posterior con Android 12 o posterior.',
     'status.hintDesktop': 'Prueba con un Chrome o Edge actual, o con Safari 26 o posterior.',
-    'status.insecure': 'WebGPU también necesita una página segura (https).'
+    'status.insecure': 'WebGPU también necesita una página segura (https).',
+    'status.memory': 'Este dispositivo se ha quedado sin memoria para la ciudad, incluso en la calidad más baja. Cierra otras pestañas y aplicaciones y vuelve a intentarlo.',
+    'recovery.lowered': 'La última visita se interrumpió: se inicia con una calidad más ligera ({tier}).',
+    'recovery.again': 'La última visita se interrumpió: se inicia de nuevo en calidad {tier}.'
   }
 };
 
@@ -628,9 +625,11 @@ function watchLoadingScreen() {
     if (status.textContent !== shown) raw = status.textContent; // (a new line from main.js)
     shown = translateStatus(raw);
     if (status.textContent !== shown) status.textContent = shown;
-    // (main.js's button on a lost GPU)
+    // (main.js's buttons: on a lost GPU, and when the city ran out of memory at the lowest quality)
     const reload = document.getElementById('loading-reload');
     if (reload && reload.textContent !== t('loading.reload')) reload.textContent = t('loading.reload');
+    const retry = document.getElementById('loading-retry');
+    if (retry && retry.textContent !== t('loading.retry')) retry.textContent = t('loading.retry');
   };
   new MutationObserver(say).observe(overlay, { childList: true, subtree: true, characterData: true });
   onLang(say);

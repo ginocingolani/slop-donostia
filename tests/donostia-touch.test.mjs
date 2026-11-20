@@ -3,8 +3,9 @@ import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // The god camera's touch input (js/donostia/touch.js): the stick's response and its trailing centre as arithmetic,
-// then the stick & buttons wired to a fake page: always there on a touch screen, pointers captured, held and let go
-// one by one, the fast gear that is the stick's alone, and a browser bar that slides away mid-flight.
+// then the stick wired to a fake page: always there on a touch screen, its pointer captured, held and let go, the
+// fast gear that is the stick's alone, no buttons beside it (it flies where the view looks: looking up climbs), and
+// a browser bar that slides away mid-flight.
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const touchModule = await import(pathToFileURL(`${root}js/donostia/touch.js`).href);
@@ -59,7 +60,7 @@ test('the stick and a drag on the view are the whole scheme: no other gesture is
   for (const gone of ['btn-fly', 'touch-hint']) assert.ok(!html.includes(gone), `index.html still has #${gone}`);
 });
 
-// --- the stick & buttons on a fake page ------------------------------------------------------------------------------
+// --- the stick on a fake page ----------------------------------------------------------------------------------------
 
 function element(dataset = {}) {
   const listeners = new Map(), classes = new Set(), captures = new Set(), attrs = {}, styles = new Map();
@@ -92,8 +93,6 @@ function page({ coarse = true, stored = null } = {}) {
   const media = Object.assign(element(), { matches: coarse });
   win.matchMedia = () => media;
   const rootEl = element(), stick = element(), knob = element();
-  const buttons = Object.fromEntries(['up', 'down'].map((a) => [a, element({ touchAction: a })]));
-  rootEl.querySelectorAll = () => Object.values(buttons);
   const doc = Object.assign(element(), {
     body: element(), hidden: false,
     getElementById: (id) => ({ 'touch-controls': rootEl, 'touch-stick': stick, 'touch-stick-knob': knob })[id]
@@ -108,7 +107,7 @@ function page({ coarse = true, stored = null } = {}) {
   };
   const changes = [];
   const controls = initTouchControls(god, { onChange: (a) => changes.push(a) });
-  return { win, doc, media, rootEl, stick, knob, buttons, god, controls, store, changes };
+  return { win, doc, media, rootEl, stick, knob, god, controls, store, changes };
 }
 
 test('the stick is always there on a touch screen, with nothing to turn on and nothing stored', () => {
@@ -165,13 +164,8 @@ test('the stick is relative, captured, and independent of the other fingers', ()
   // a second finger cannot take the stick over
   p.stick.dispatch('pointerdown', { pointerId: 9, clientX: 10, clientY: 10 });
   assert.equal(p.stick.hasPointerCapture(9), false);
-  // climbing with a third finger, slid off its button, while the stick flies
-  p.buttons.up.dispatch('pointerdown', { pointerId: 3 });
-  assert.equal(p.god.touch.up, 1);
-  assert.equal(p.buttons.up.attrs['aria-pressed'], 'true');
-  p.buttons.up.dispatch('pointerup', { pointerId: 3 });
+  // (nothing of the stick climbs: that is the view's pitch)
   assert.equal(p.god.touch.up, 0);
-  assert.equal(p.god.touch.forward, 1, 'lifting the climb finger leaves the stick');
   // the stick lifted: everything of it at rest
   p.stick.dispatch('pointerup', { pointerId: 7 });
   assert.deepEqual(p.god.touch, { forward: 0, side: 0, up: 0, boost: 0 });
@@ -179,36 +173,51 @@ test('the stick is relative, captured, and independent of the other fingers', ()
   assert.equal(p.stick.classList.contains('is-pressed'), false);
 });
 
-test('climb and descend are held; the fast gear is the stick past its rim, with no button and no latch', async () => {
+test('the fast gear is the stick past its rim, with no button and no latch', () => {
   const p = page();
-  p.buttons.up.dispatch('pointerdown', { pointerId: 1 });
-  p.buttons.down.dispatch('pointerdown', { pointerId: 2 });
-  assert.equal(p.god.touch.up, 0, 'both held cancel out');
-  p.buttons.up.dispatch('pointercancel', { pointerId: 1 });
-  assert.equal(p.god.touch.up, -1);
-  p.buttons.down.dispatch('pointerup', { pointerId: 2 });
-  assert.equal(p.god.touch.up, 0);
-
   // the fast gear follows the stick: in by degrees past the rim, out again as the thumb comes back or lifts
   p.stick.dispatch('pointerdown', { pointerId: 5, clientX: 66, clientY: 66 });
   p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius * (1 + STICK.overdrive / 2) });
   assert.equal(p.god.touch.boost.toFixed(3), '0.500');
-  p.buttons.up.dispatch('pointerdown', { pointerId: 6 });
-  assert.equal(p.god.touch.boost.toFixed(3), '0.500', 'a button pressed meanwhile leaves the gear as the stick has it');
-  p.buttons.up.dispatch('pointerup', { pointerId: 6 });
   p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius });
   assert.equal(p.god.touch.boost, 0, 'back at the rim: the normal gear');
   p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: -400 });
   assert.equal(p.god.touch.boost, 1);
   p.stick.dispatch('pointerup', { pointerId: 5 });
   assert.equal(p.god.touch.boost, 0, 'nothing stays latched');
+});
 
-  // the page has the two buttons and no third
+test('no Up and Down buttons: the stick flies where the view looks, and the right of the screen is free to look', async () => {
   const { readFile } = await import('node:fs/promises');
-  const html = await readFile(`${root}index.html`, 'utf8');
-  assert.deepEqual([...html.matchAll(/data-touch-action="(\w+)"/g)].map((m) => m[1]), ['up', 'down']);
-  const sources = html + await readFile(`${root}js/donostia/touch.js`, 'utf8') + await readFile(`${root}css/donostia.css`, 'utf8') + await readFile(`${root}js/donostia/i18n.js`, 'utf8');
-  for (const gone of ['touch-boost', 'fastGear', 'touch.fast', "'boost'"]) assert.ok(!sources.includes(gone), `${gone} is still there`);
+  const read = (file) => readFile(`${root}${file}`, 'utf8');
+  const html = await read('index.html'), script = await read('js/donostia/touch.js'), css = await read('css/donostia.css'), i18n = await read('js/donostia/i18n.js');
+  // the page has the stick and nothing else to press
+  const controls = html.slice(html.indexOf('<section id="touch-controls"'), html.indexOf('</section>', html.indexOf('<section id="touch-controls"')));
+  assert.match(controls, /<div id="touch-stick" role="group"/);
+  assert.ok(!/<button/.test(controls), 'no button in the touch controls');
+  for (const gone of ['data-touch-action', 'touch-actions', 'touch-action"', "'touch.up'", "'touch.down'", 'touch.upLabel', 'touch.downLabel', 'touch.actions', 'i18n="touch.', 'touch-boost', 'fastGear', 'touch.fast', "'boost'"]) {
+    assert.ok(!(html + script + i18n).includes(gone), `${gone} is still there`);
+  }
+  assert.ok(!/\.touch-actions?\b[^-]/.test(css), "nor the buttons' styles (touch-action: none, the CSS property, stays)");
+  // the script feeds forward, side and the gear, never `up`: that input of the camera's is left to the keyboard
+  assert.ok(!/god\.touch\.up\s*=/.test(script));
+  const p = page();
+  p.stick.dispatch('pointerdown', { pointerId: 1, clientX: 66, clientY: 66 });
+  p.stick.dispatch('pointermove', { pointerId: 1, clientX: 66 + STICK.radius, clientY: 66 - STICK.radius });
+  assert.deepEqual([p.god.touch.up, p.god.touch.forward > 0.5, p.god.touch.side > 0.5], [0, true, true]);
+  // The camera's forward has the view's pitch in it (js/donostia/god-camera.js), and the stick's push runs along it:
+  // looking up climbs, looking down descends, level flies level. Its arithmetic, as the camera writes it:
+  const camera = await read('js/donostia/god-camera.js');
+  assert.match(camera, /const forward = this\._forward\.set\(-Math\.sin\(this\.yaw\) \* Math\.cos\(this\.pitch\), Math\.sin\(this\.pitch\), -Math\.cos\(this\.yaw\) \* Math\.cos\(this\.pitch\)\);/);
+  assert.match(camera, /const wish = forward\.multiplyScalar\(fwd\)\.addScaledVector\(right, side\);/);
+  assert.match(camera, /const fwd = THREE\.MathUtils\.clamp\(\(k\.has\('KeyW'\) \? 1 : 0\) - \(k\.has\('KeyS'\) \? 1 : 0\) \+ t\.forward, -1, 1\);/);
+  const climb = (pitch, push) => Math.sin(pitch) * push; // (wish.y for a push of the stick, per unit of speed)
+  assert.ok(climb(0.5, 1) > 0.47 && climb(-0.5, 1) < -0.47 && climb(0, 1) === 0 && climb(0.5, -1) < 0);
+  // the keyboard's climb and descend keys stay, for the desktop
+  assert.match(camera, /k\.has\('Space'\) \|\| k\.has\('KeyE'\) \? 1 : 0\) - \(k\.has\('KeyQ'\) \|\| k\.has\('KeyC'\) \? 1 : 0\) \+ t\.up/);
+  // the stick's label says so, in the three languages
+  assert.equal(i18n.split("'touch.stick':").length, 4);
+  assert.match(i18n, /look up to climb, down to descend/);
 });
 
 test('a browser bar sliding away keeps the stick; turning the phone and the full map let go', () => {

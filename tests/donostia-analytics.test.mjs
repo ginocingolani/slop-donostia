@@ -278,9 +278,9 @@ test("the card's words are the owner's, in the three languages, with the fuller 
   for (const old of ['Bai · Vale', 'Ez · Sin cookie', 'aldatu · cambiar', 'Cookie bat · Una cookie', 'Erabilera neurtzeko', 'galdetu gabe']) {
     assert.ok(!html.includes(old) && !consent.includes(old), `the old card's "${old}" is gone`);
   }
-  // the teja: a drawn symbol of the sprite, beside the title
-  assert.match(html, /<symbol id="i-teja" viewBox="[^"]+">\s*<path/);
-  assert.match(html, /<div class="consent-head">\s*<svg class="icon consent-teja"[^>]*aria-hidden="true"><use href="#i-teja"\/><\/svg>\s*<div id="consent-title"/);
+  // no drawing beside the title: the card is its words and its two buttons (the teja's symbol and styles are gone)
+  assert.ok(!/i-teja|consent-teja|consent-head/.test(html), 'no teja in the page');
+  assert.ok(!/teja-|consent-teja|consent-head/.test(fs.readFileSync(`${root}css/donostia.css`, 'utf8')), 'nor in the stylesheet');
 });
 
 test('a disabled tracker never loads the SDK and drops everything', async () => {
@@ -573,11 +573,11 @@ test('the session samples the fps by the minute, counts a cell after a dwell, an
   // a minute on: the sample of that minute's fps
   const [sample] = s.tick(1000 + FPS_SAMPLE_S * 1000, { fps: 20, x: 150, z: -250, altitude: 40 });
   assert.equal(sample[0], 'fps_sample');
-  assert.deepEqual(sample[1], { fps: 48, fps_min: 20, fps_bucket: '30-50', altitude: 40 });
-  // the next minute starts afresh
-  assert.deepEqual(s.tick(1000 + FPS_SAMPLE_S * 1000 + 250, { fps: 10, x: 150, z: -250, altitude: 40 }), []);
+  assert.deepEqual(sample[1], { fps: 48, fps_min: 20, fps_bucket: '30-50', altitude: 40, compiling: false });
+  // the next minute starts afresh; shaders compiling behind the city at any point of it mark its sample
+  assert.deepEqual(s.tick(1000 + FPS_SAMPLE_S * 1000 + 250, { fps: 10, x: 150, z: -250, altitude: 40, compiling: true }), []);
   const [again] = s.tick(1000 + 2 * FPS_SAMPLE_S * 1000, { fps: 10, x: 150, z: -250, altitude: 40 });
-  assert.deepEqual(again[1], { fps: 10, fps_min: 10, fps_bucket: '<15', altitude: 40 });
+  assert.deepEqual(again[1], { fps: 10, fps_min: 10, fps_bucket: '<15', altitude: 40, compiling: true });
   s.count('teleport');
   s.count('teleport');
   s.count('map_open');
@@ -742,7 +742,8 @@ test("the quality's and the interface's super-properties", async () => {
   const q = createQuality();
   q.init({ env: { coarse: true, touchPoints: 5, gpuVendor: 'apple', gpuArchitecture: 'metal-3', memory: 4, cores: 6, width: 390, height: 844, dpr: 3, ua: 'iPhone' }, search: '' });
   const props = qualityInfo(q.get());
-  assert.deepEqual(Object.keys(props), ['quality_mode', 'quality_tier', 'render_scale', 'fps_capped', 'quality_detected']);
+  assert.deepEqual(Object.keys(props), ['quality_mode', 'quality_tier', 'render_scale', 'fps_capped', 'quality_detected', 'quality_boot_reason']);
+  assert.equal(props.quality_boot_reason, 'detected');
   assert.equal(props.quality_mode, 'auto');
   assert.ok(q.tiers.includes(props.quality_tier) && q.tiers.includes(props.quality_detected));
   assert.equal(props.render_scale, 1);
@@ -794,6 +795,7 @@ test("the quality's and the interface's super-properties", async () => {
 
 // the events named in a text: `name { props }` and bare `name` after a list's dash, an arrow or a comma
 const SENT = ['$pageview', 'app_start', 'world_built', 'shaders_compiled', 'app_ready', 'details_ready', 'first_move', 'app_unsupported', 'app_error', 'gpu_lost',
+  'app_recovered',
   'cookie_consent', 'fps_sample', 'cell_visit', 'quality_change', 'teleport', 'time_preset', 'live_toggle', 'map_open', 'hud_hide', 'language_change',
   'fullscreen_toggle', 'session_end'];
 
@@ -815,8 +817,10 @@ test('the event list in the header is exact: every event sent is listed, and eve
   // and nothing in the header that is not sent: every snake_case word followed by its { properties }
   for (const [, name] of header.matchAll(/(?:^|[\s(→])([a-z]+(?:_[a-z]+)+) \{/gm)) assert.ok(sent.has(name), `the header lists ${name}, which nothing sends`);
   // the properties new with the phone interface, by name, in both
-  for (const prop of ['quality_mode', 'quality_tier', 'render_scale', 'fps_capped', 'quality_detected', 'lang', 'input', 'orientation', 'display_mode',
-    'ms_since_ready', 'shaders_pending', 'shaders_total', 'quality_changed', 'from_mode', 'to_mode', 'steps', 'visit_id', 'seq', 'hidden_s', 'reason', 'ready']) {
+  for (const prop of ['quality_mode', 'quality_tier', 'render_scale', 'fps_capped', 'quality_detected', 'quality_boot_reason', 'crash_recovery', 'remembered', 'lang', 'input', 'orientation', 'display_mode',
+    'ms_since_ready', 'shaders_pending', 'shaders_total', 'quality_changed', 'from_mode', 'to_mode', 'steps', 'visit_id', 'seq', 'hidden_s', 'reason', 'ready',
+    'from_tier', 'to_tier', 'last_stage', 'fails', 'real_time', 'ran_s', 'after_s', 'same_tab', 'lowered', 'halted',
+    'bg_compiles', 'bg_blocked_ms', 'bg_stall_max_ms', 'compiling']) {
     assert.ok(header.includes(prop), `the header names ${prop}`);
     assert.ok(section.includes(prop), `the README names ${prop}`);
   }
@@ -833,6 +837,8 @@ test('the page wires the analytics in, Donostia only, and says so in the data po
   assert.ok(main.indexOf("'app_start'") < main.indexOf('await probeWebGPU()'), 'before WebGPU is asked for: a browser without it is counted');
   assert.match(main, /analytics\.ready\(\{ shaders_pending: view\.compiler\.pending, shaders_total: view\.compiler\.total \}\)/);
   assert.match(main, /if \(stage === 'done'\) analytics\.details\(/, "the background compile's end, where main.js says it");
+  assert.match(main, /return \{ bg_compiles: compiles, bg_blocked_ms: blockedMs, bg_stall_max_ms: maxStallMs \};/, 'with what the compiles cost the frames');
+  assert.match(main, /analytics\.tick\(\{\s*compiling: view\.compiler\.pending > 0,/, "and each fps sample knows whether they ran");
   assert.match(main, /else analytics\.details\(/, 'and at once where nothing was left to compile');
   assert.match(main, /analytics\.setQuality\(quality\.get\(\)\)/);
   assert.match(main, /quality\.onChange\(\(state\) => analytics\.setQuality\(state\)\)/);

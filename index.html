@@ -99,14 +99,6 @@
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h8.6M17.4 7.5H20M4 16.5h2.6M11.4 16.5H20"/><circle cx="15" cy="7.5" r="2.4"/><circle cx="9" cy="16.5" r="2.4"/></symbol>
       <!-- The six-petal rosette drawn with a compass on the discoidal stelae, lintels and chests of the Basque Country:
            a sandstone disc (currentColor) with the rosette cut into it -->
-      <!-- a teja de Tolosa, the curved almond biscuit, for the cookie card: a roof tile lying on its edges, seen from
-           its near end: the arch of that end, the back running away from it to the far end, and the flaked almonds
-           on the back -->
-      <symbol id="i-teja" viewBox="0 0 40 28">
-        <path class="teja-body" d="M6.8 16.6 24.8 5.6C28.7 3.2 34.4 5.6 37 14.5L19 25.5C16.4 16.6 10.7 14.2 6.8 16.6Z"/>
-        <path d="M3 24C4 13.5 15 12 19 25.5M6.8 16.6 24.8 5.6C28.7 3.2 34.4 5.6 37 14.5L19 25.5"/>
-        <path class="teja-almond" d="M15 14.4l2-.7M21 10.2l1.6 1.2M26.5 8l2.2-.4M22 16.2l2.1-1M28.5 12.6l1.4 1.5M18.6 19.6l1.6-.4M31.6 9.4l1 1.6"/>
-      </symbol>
       <symbol id="i-rosette" viewBox="0 0 32 32">
         <circle cx="16" cy="16" r="15" fill="currentColor"/>
         <circle cx="16" cy="16" r="12.4" fill="none" stroke-width="1.2" style="stroke: var(--rosette-ink); opacity: 0.55"/>
@@ -122,6 +114,9 @@
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <!-- main.js writes its lines here in English; js/donostia/i18n.js says them in the language picked -->
       <div id="loading-status">Starting…</div>
+      <!-- After a visit that died (the browser killed the page for its memory): js/donostia/main.js says here that
+           this one starts at a lighter quality -->
+      <div id="loading-recovery" hidden></div>
       <!-- Shown by #loading-overlay[data-error='webgpu'] (css/donostia.css): js/donostia/main.js sets the attribute
            where the browser has no WebGPU, and any other data-error value stills the bar under its own message -->
       <div class="loader-note loader-webgpu">
@@ -252,14 +247,10 @@
   </div>
 
   <!-- The cookie choice (js/donostia/consent.js): a moment after the city shows, until it is answered. Over the
-       controls hint; on touch screens between the stick and the Up / Down buttons, and above the stick on an upright
-       phone (css/donostia.css). The teja beside the title is #i-teja. -->
+       controls hint; on touch screens beside the stick, and above it on an upright phone (css/donostia.css). -->
   <div class="hud hud-consent">
     <aside id="consent-card" class="panel consent" role="dialog" aria-labelledby="consent-title" aria-describedby="consent-text" hidden>
-      <div class="consent-head">
-        <svg class="icon consent-teja" viewBox="0 0 40 28" aria-hidden="true"><use href="#i-teja"/></svg>
-        <div id="consent-title" class="pop-title" data-i18n="consent.title">One small cookie?</div>
-      </div>
+      <div id="consent-title" class="pop-title" data-i18n="consent.title">One small cookie?</div>
       <p id="consent-text" class="consent-text" data-i18n="consent.text">Just to see how the city loads and where people fly. No ads, no following you around the web. Say no and nothing changes.</p>
       <div class="consent-actions">
         <button id="consent-accept" class="tool-btn consent-btn is-primary" type="button" data-i18n="consent.accept">Sure</button>
@@ -311,22 +302,15 @@
     </section>
   </div>
 
-  <!-- The god camera's flight stick & buttons (js/donostia/touch.js): always there on touch screens, hidden while
-       the full map is open. The stick and a drag on the view are the whole scheme. -->
+  <!-- The god camera's flight stick (js/donostia/touch.js): always there on touch screens, hidden while the full
+       map is open. The stick and a drag on the view are the whole scheme: the stick flies where the view looks, so
+       looking up climbs and looking down descends, and the right half of the screen is the looking thumb's. -->
   <section id="touch-controls" aria-label="Touch controls" data-i18n-attr="aria-label:touch.label" hidden>
     <div class="touch-movement">
-      <div id="touch-stick" role="group" aria-label="Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast" data-i18n-attr="aria-label:touch.stick">
+      <div id="touch-stick" role="group" aria-label="Flight stick: push up to fly where the view looks (look up to climb, down to descend), down to fly back, left or right to slide, past the rim to go fast" data-i18n-attr="aria-label:touch.stick">
         <span class="touch-stick-axis" aria-hidden="true"></span>
         <span id="touch-stick-knob" aria-hidden="true"></span>
       </div>
-    </div>
-    <div class="touch-actions" role="group" aria-label="Hold to climb or descend" data-i18n-attr="aria-label:touch.actions">
-      <button class="touch-action" data-touch-action="up" type="button" aria-label="Climb" aria-pressed="false" data-i18n-attr="aria-label:touch.upLabel">
-        <span aria-hidden="true">↑</span><span data-i18n="touch.up">Up</span>
-      </button>
-      <button class="touch-action" data-touch-action="down" type="button" aria-label="Descend" aria-pressed="false" data-i18n-attr="aria-label:touch.downLabel">
-        <span aria-hidden="true">↓</span><span data-i18n="touch.down">Down</span>
-      </button>
     </div>
   </section>
 

@@ -19,7 +19,7 @@ import { track } from './analytics.js';
 // are listed; nothing happens where they are off).
 
 const TIMES = ['golden', 'midday', 'twilight', 'midnight'];
-const LIVE_KEY = 'donostia-live'; // localStorage: '1' while the real-time switch is on
+const OLD_LIVE_KEY = 'donostia-live'; // localStorage: where the real-time switch was remembered (no more: removed)
 const STREET_RADIUS = 50; // m: beyond this the camera is not "on" a street
 const CORNER = 14; // m: a second street this close makes a corner (two signs)
 
@@ -73,9 +73,13 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     });
     showTimeToggle();
   };
+  // (js/donostia/live-sky.js fades to the preset from whatever is on show; without it, the preset at once)
   const applyTime = (id) => {
-    lighting.applyPreset(id);
-    grade.applyPreset(lighting.activePresetId);
+    if (liveSky?.setPreset) liveSky.setPreset(id);
+    else {
+      lighting.applyPreset(id);
+      grade.applyPreset(lighting.activePresetId);
+    }
     showTime(id);
   };
   // picking a time turns real time off and shows that look, as it always has
@@ -91,17 +95,19 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   timeButtons.forEach((b) => b.addEventListener('click', () => { selectTime(b.dataset.time); openTimes(false); }));
 
   // --- Real time ("Now") -----------------------------------------------------------------------------------------------
-  // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. On by
-  // default (the city as it is now), unless this browser turned it off; the choice is remembered. Turned on before the
-  // city shows, it waits for setReady(), and the weather and the sea are fetched meanwhile, behind the loading screen.
+  // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. Every
+  // visit starts in real time (the city as it is now), whatever was picked the last time: a time preset holds for the
+  // visit it was picked in and is not remembered (it used to be, and a phone that had once tapped a preset came up
+  // in the golden hour ever after; what that left in localStorage is cleared). The weather and the sea are fetched
+  // behind the loading screen, and the switch itself waits for setReady().
 
   const liveButton = document.getElementById('btn-live');
   const timeSwitch = liveButton?.closest('.time-switch');
   const readout = document.getElementById('live-readout');
   const renderLive = initLiveReadout(readout);
   let liveWanted = true, liveShown = null;
-  try { liveWanted = localStorage.getItem(LIVE_KEY) !== '0'; } catch { /* storage unavailable */ }
-  if (liveWanted) live.refreshLive();
+  try { localStorage.removeItem(OLD_LIVE_KEY); } catch { /* storage unavailable */ }
+  live.refreshLive();
   const showLive = (on) => {
     if (on === liveShown) return;
     liveShown = on;
@@ -113,7 +119,6 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   };
   const setLive = (on) => {
     liveWanted = on;
-    try { localStorage.setItem(LIVE_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
     if (ready) live.setLiveEnabled(on);
     else showLive(on);
   };
@@ -127,8 +132,9 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   // back the preset picked last
   live.onLive((snap) => {
     if (!ready) return;
+    const was = liveShown;
     showLive(snap.enabled);
-    if (!snap.enabled && lighting.activePresetId === 'live') applyTime(time);
+    if (!snap.enabled && was) applyTime(time);
     if (snap.enabled) renderLive(snap);
   });
   showLive(liveWanted);
@@ -330,7 +336,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   const radarCanvas = document.getElementById('minimap-canvas');
   const radar = radarCanvas ? new Radar({ canvas: radarCanvas, layers, god, terrain, onFly: flyToGround }) : null;
   // --- Touch -----------------------------------------------------------------------------------------------------------
-  // The flight stick & its buttons are there on every touch screen (js/donostia/touch.js)
+  // The flight stick is there on every touch screen (js/donostia/touch.js)
   const touch = initTouchControls(god);
   keepViewSized();
   // The HUD, the view and the touch controls are inert while the loading screen or the full map (a modal dialog)

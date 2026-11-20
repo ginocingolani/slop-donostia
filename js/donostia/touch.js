@@ -1,19 +1,21 @@
 // js/donostia/touch.js
 // Touch input for the god camera (js/donostia/god-camera.js). The whole scheme is two thumbs: the left one flies on
 // the flight stick, the right one looks by dragging on the view (that part is god-camera.js's own pointer handling).
-// The stick and its buttons are always there on a touch screen: there is nothing to turn on, and no other gesture to
-// learn.
+// The stick is always there on a touch screen: there is nothing to turn on, and no other gesture to learn.
 //
-// The stick flies forward / back and sideways, and two buttons climb and descend while held. The fast gear has no
-// button: the stick pushed past its rim is the fast gear. The stick is relative: wherever the thumb lands on the pad is neutral and the push from there is the
+// The stick flies forward / back and sideways, forward being where the view looks (god-camera.js's forward vector
+// has the pitch in it): looking up climbs, looking down descends, so there are no buttons for that (there were two,
+// Up and Down, under the right thumb: they took the corner the looking thumb works in; god.touch.up is still read by
+// the camera, and nothing here feeds it). The fast gear has no button either: the stick pushed past its rim is the
+// fast gear. The stick is relative: wherever the thumb lands on the pad is neutral and the push from there is the
 // input, so it needs no aim; pushed past its rim it shifts smoothly into the fast gear, and pushed further still its
-// centre trails the thumb, so turning back answers at once. Every control captures its pointer: a finger that slides
-// off its control keeps it until it lifts, and a second or third finger never disturbs the first.
+// centre trails the thumb, so turning back answers at once. The stick captures its pointer: a finger that slides
+// off it keeps it until it lifts, and a second or third finger never disturbs the first.
 //
 // The arithmetic (stickResponse, trailOrigin) is free of the DOM and is tested in tests/donostia-touch.test.mjs.
-// initTouchControls(god, { onChange }) -> { setEnabled(on), reset(), available } wires the stick & buttons, shows them
-// on coarse pointers (or after the first touch on hybrid devices) and sets body.touch-enabled for the touch layout
-// (css/donostia.css). setEnabled(false) hides them and lets go (the full map covers the view).
+// initTouchControls(god, { onChange }) -> { setEnabled(on), reset(), available } wires the stick, shows it on coarse
+// pointers (or after the first touch on hybrid devices) and sets body.touch-enabled for the touch layout
+// (css/donostia.css). setEnabled(false) hides it and lets go (the full map covers the view).
 
 export const STICK = {
   radius: 48, // px from neutral to the rim: full speed
@@ -56,8 +58,6 @@ export function initTouchControls(god, { onChange } = {}) {
   const knob = document.getElementById('touch-stick-knob');
   const none = { setEnabled() {}, reset() {}, available: false };
   if (!root || !stick || !knob) return none;
-  const buttons = [...root.querySelectorAll('[data-touch-action]')];
-  const held = new Map(); // pointerId -> { button, action }
   const media = window.matchMedia('(any-pointer: coarse)');
   let stickPointer = null, origin = null, radius = STICK.radius, overdrive = 0;
   let enabled = true, available = false, touchSeen = false;
@@ -91,32 +91,14 @@ export function initTouchControls(god, { onChange } = {}) {
     overdrive = 0;
     applyBoost();
   };
-  const applyButtons = () => {
-    const actions = new Set([...held.values()].map((h) => h.action));
-    god.touch.up = (actions.has('up') ? 1 : 0) - (actions.has('down') ? 1 : 0);
-    for (const b of buttons) {
-      const pressed = [...held.values()].some((h) => h.button === b);
-      b.classList.toggle('is-pressed', pressed);
-      b.setAttribute('aria-pressed', String(pressed));
-    }
-  };
-  const releaseButton = (id) => {
-    const h = held.get(id);
-    if (!h) return;
-    held.delete(id);
-    releaseCapture(h.button, id);
-    applyButtons();
-  };
-  // lets go of everything held
+  // lets go of the stick
   const reset = () => {
     releaseStick(stickPointer);
-    for (const id of [...held.keys()]) releaseButton(id);
     god.clearTouch();
-    applyButtons();
   };
 
   stick.addEventListener('pointerdown', (e) => {
-    if (!canInteract() || e.button !== 0 || stickPointer !== null || held.has(e.pointerId)) return;
+    if (!canInteract() || e.button !== 0 || stickPointer !== null) return;
     e.preventDefault();
     e.stopPropagation();
     // (the pad is larger than the ring drawn in it, css/donostia.css: the thumb finds it without looking)
@@ -136,23 +118,7 @@ export function initTouchControls(god, { onChange } = {}) {
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     stick.addEventListener(type, (e) => releaseStick(e.pointerId));
   }
-  for (const button of buttons) {
-    const action = button.dataset.touchAction;
-    button.addEventListener('pointerdown', (e) => {
-      if (!canInteract() || e.button !== 0 || held.has(e.pointerId) || e.pointerId === stickPointer) return;
-      e.preventDefault();
-      e.stopPropagation();
-      // (climbing and descending are held: the keys E & Q do the same for a keyboard)
-      held.set(e.pointerId, { button, action });
-      button.setPointerCapture(e.pointerId);
-      applyButtons();
-    });
-    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-      button.addEventListener(type, (e) => releaseButton(e.pointerId));
-    }
-    // a long press must not open the context menu or select the label
-    button.addEventListener('contextmenu', (e) => e.preventDefault());
-  }
+  // a long press must not open the context menu
   stick.addEventListener('contextmenu', (e) => e.preventDefault());
 
   const show = () => {

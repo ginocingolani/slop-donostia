@@ -33,6 +33,27 @@
 // - quality: the page's controller (a singleton), for main.js and for the HUD. See createQuality() for its API.
 //   ?quality=<tier|auto> in the URL picks for this visit; quality.set() remembers the user's choice (localStorage);
 //   on auto, the tier the governor settled at is remembered too, so the next visit boots with that tier's boot settings.
+// - Auto's memory (localStorage AUTO_KEY) holds what auto itself found out, and nothing else: the tier its governor
+//   settled at (written once it has held a tier for SETTLED windows, so a visit that ends early leaves nothing), a
+//   tier it could not hold from a cold start (not booted again for a week: `why: 'governor'`), and the caps of real
+//   failures (a lost GPU device, a visit that died: `why: 'gpu_lost' | 'crash'`). A pick by hand, ?quality= and a
+//   tier applied in the running city write nothing into it, and picking Auto in the settings starts auto afresh from
+//   the detected tier: only a failure's cap outlives that. main.js does not feed the governor while shaders compile
+//   behind the city or a tier is being applied: a phone's browser stalls a frame or more for every pipeline, and
+//   that says nothing of what the device can hold (an iPhone 15 Pro, detected medium, had been banned to low for a
+//   week by its own start-up). The memory of the versions before that rule is not trusted and is dropped (MEMO_V).
+//   state.bootReason says which rule decided the tier this visit booted with ('url', 'stored', 'detected',
+//   'remembered', 'crash_recovery'), and quality.debug().decision how, step by step.
+// - A phone or tablet never runs ultra unless the URL says so (?quality=ultra, for testing): ultra is the desktop's
+//   tier, some 1.2 GB with every shader compiled before the city shows, and an iPhone 15 Pro that had it stored from
+//   a test took 32 s to start and then died in the compile step on every load. There the tiers offered
+//   (quality.tiers) end at high, a stored pick of ultra is dropped for auto, and every tier starts progressively,
+//   ultra by the URL included: the first view's shaders, then the rest behind the city.
+// - Recovery: when the last visit died (js/donostia/crash-guard.js tells: the page was killed while it loaded or
+//   ran), init({ recovery }) starts this one lighter, on any device: a tier under the one that failed, the lowest
+//   after two failures in a row. A stored pick does not override that (the visit runs on auto under that cap), and
+//   one that has failed twice is dropped; on a phone the cap is remembered for a week, like a tier the governor
+//   found too much. The URL's tier is still obeyed.
 
 export const TIER_NAMES = ['low', 'medium', 'high', 'ultra'];
 
@@ -52,7 +73,8 @@ export const TIER_NAMES = ['low', 'medium', 'high', 'ultra'];
 // maxPixels: the drawing buffer's budget (a tablet's screen has four times a phone's pixels at the same ratio).
 // progressive: the city shows once the shaders of the first view are compiled, and the rest compile in the background
 // (main.js's createView(): a phone's browser takes most of a minute for all of them); false waits for every visible
-// object behind the loading screen, as the desktop always has.
+// object behind the loading screen, as the desktop always has. On a phone or tablet it is true whatever the tier says
+// (the controller's boot settings: see mobileBoot()).
 export const TIERS = Object.freeze({
   low: Object.freeze({
     label: 'Low', maxPixelRatio: 1.25, fixedPixelRatio: false, maxPixels: 0.9e6, minScale: 0.68, adaptive: true,
@@ -362,7 +384,9 @@ Governor.TRIAL = 4; // windows a step up has to hold
 // --- the controller --------------------------------------------------------------------------------------------------
 
 const CHOICE_KEY = 'donostia-quality'; // localStorage: the tier the user picked (absent: auto)
-const AUTO_KEY = 'donostia-quality-auto'; // localStorage: { detected, tier, ceiling, until }: what auto learnt here
+const AUTO_KEY = 'donostia-quality-auto'; // localStorage: { v, detected, tier, ceiling, until, why }: what auto learnt here
+const MEMO_V = 2; // the memory's version: one written before the governor sat out the compiles is dropped
+const FAILURES = ['crash', 'gpu_lost']; // the caps (`why`) that outlive a pick of Auto: something really went wrong
 const CEILING_DAYS = 7; // a tier that proved too much is not tried again for this long
 const SETTLED = 20; // windows without a change before the governor's tier is remembered
 const EARLY = 90; // windows from the start within which a tier that did not hold is taken for too much
@@ -370,19 +394,24 @@ export const CHANGE_EVENT = 'slop-quality';
 
 /**
  * The quality controller.
- *   quality.tiers                 ['low', 'medium', 'high', 'ultra']
+ *   quality.tiers                 the tiers offered here: ['low', 'medium', 'high', 'ultra'], without 'ultra' on a
+ *                                 phone or tablet (unless the URL forced it for this visit)
  *   quality.describe(tier)        that tier's settings (TIERS[tier]: label, maxPixelRatio, shadows, ssr...)
  *   quality.get()                 the state: { mode: 'auto' | tier (what was asked for), tier (in effect now),
  *                                 bootTier, detected (the tier auto starts at here), mobile, source: 'url' |
- *                                 'stored' | 'auto', scale (the governor's, 0.6 .. 1), pixelRatio, needsReload
+ *                                 'stored' | 'auto' | 'recovery' (auto under a cap, after a visit that died: then
+ *                                 recovered is { from, to, fails }, else null), bootReason: 'url' | 'stored' |
+ *                                 'detected' | 'remembered' | 'crash_recovery' (what decided the tier this visit
+ *                                 booted with; it does not change with later picks), scale (the governor's, 0.6 .. 1), pixelRatio, needsReload
  *                                 (always false), applying (main.js is rebuilding for the tier picked last),
  *                                 adaptive, floored (at the lowest setting and still under the target), capped
  *                                 (the frame rate is held from outside, e.g. Low Power Mode), targetFps, settings,
  *                                 boot (the structural settings in effect) }
  *   quality.set(tier | 'auto', { persist = true })   picks a tier (or hands back to auto), applies all of its
  *                                 settings to the running city (the live ones at once, the structural ones as
- *                                 main.js rebuilds: state.applying meanwhile) and remembers the choice; returns
- *                                 the new state.
+ *                                 main.js rebuilds: state.applying meanwhile) and remembers the choice (never
+ *                                 ultra on a phone or tablet: that holds for the visit only); returns the new
+ *                                 state.
  *   quality.reload()              reloads the page (nothing needs it any more; a way out if the city misbehaves)
  *   quality.onChange(fn)          fn(state) on every change (a pick, a governor step); returns the unsubscriber.
  *                                 window also gets a 'slop-quality' CustomEvent with the state as its detail.
@@ -397,6 +426,10 @@ export function createQuality({ storage = null, win = null } = {}) {
   let view = { dpr: 1, width: 1, height: 1 }, lowest = 0, memoTier = null;
   let windows = 0; // governor windows since the city started (a resize starts a new governor)
   let applying = false; // main.js is rebuilding the city for the structural settings picked last
+  let recovered = null; // { from, to, fails }: this visit started lighter because the last one died (init's recovery)
+  let bootReason = 'detected', decision = []; // what decided the boot tier, in a word and step by step (debug())
+  let coldAuto = false; // the city booted on auto and no tier has been picked since: the governor's finds are the device's
+  let fellEarly = false; // the governor left the boot tier within EARLY windows of such a start
 
   const read = (key) => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
   const write = (key, value) => {
@@ -405,15 +438,31 @@ export function createQuality({ storage = null, win = null } = {}) {
       else storage?.setItem(key, value);
     } catch { /* storage unavailable or full */ }
   };
+  // Auto's memory, if it is this version's and the device still looks the same (else null: one from before MEMO_V is
+  // removed, see the header)
   const readMemo = () => {
-    try {
-      const m = JSON.parse(read(AUTO_KEY));
-      return m && typeof m === 'object' ? m : null;
-    } catch { return null; }
+    let m = null;
+    try { m = JSON.parse(read(AUTO_KEY)); } catch { /* not JSON */ }
+    if (!m || typeof m !== 'object') return null;
+    if (m.v !== MEMO_V) { write(AUTO_KEY, null); return null; }
+    return m.detected === detected.tier ? m : null;
   };
-  const writeMemo = () => write(AUTO_KEY, JSON.stringify({
-    detected: detected.tier, tier: memoTier, ceiling: ceiling?.tier ?? null, until: ceiling?.until ?? null
-  }));
+  const writeMemo = () => {
+    if (memoTier === null && !ceiling) { write(AUTO_KEY, null); return; }
+    write(AUTO_KEY, JSON.stringify({
+      v: MEMO_V, detected: detected.tier, tier: memoTier, ceiling: ceiling?.tier ?? null, until: ceiling?.until ?? null, why: ceiling?.why ?? null
+    }));
+  };
+
+  // A tier's boot settings on this device. A phone or tablet starts progressively whatever the tier (see the
+  // header): the first view's shaders, then the rest behind the city (?debug's q.progressive=false still has its say)
+  const mobileBoot = (name) => {
+    const s = bootSettings(name, limits, overrides);
+    if (detected.mobile && overrides?.progressive === undefined) s.progressive = true;
+    return s;
+  };
+  // The tiers offered: a phone or tablet is not offered ultra, unless the URL forced it for this visit
+  const offered = () => (detected.mobile && mode !== 'ultra' ? TIER_NAMES.filter((name) => name !== 'ultra') : TIER_NAMES);
 
   // What is in effect: the tier's live settings over the structural settings of the tier the city started with or
   // the one picked last (`booted`: the governor's steps leave those alone)
@@ -431,7 +480,7 @@ export function createQuality({ storage = null, win = null } = {}) {
   const ratioRule = (name) => (TIERS[name].fixedPixelRatio && detected.mobile
     ? { ...TIERS[name], fixedPixelRatio: false, maxPixelRatio: TIERS.high.maxPixelRatio, maxPixels: TIERS.high.maxPixels } : TIERS[name]);
   const state = () => ({
-    mode, tier, bootTier, detected: detected.tier, mobile: detected.mobile, source, scale: scale(),
+    mode, tier, bootTier, detected: detected.tier, mobile: detected.mobile, source, recovered, bootReason, scale: scale(),
     pixelRatio: pixelRatio(ratioRule(tier), view, scale()),
     needsReload: false, applying, boot: structural(booted),
     adaptive: Boolean(governor) && TIERS[tier].adaptive, floored: Boolean(governor?.floored), capped: Boolean(governor?.capped),
@@ -465,16 +514,18 @@ export function createQuality({ storage = null, win = null } = {}) {
   };
 
   const api = {
-    tiers: TIER_NAMES,
+    get tiers() { return offered(); },
     describe: (name) => TIERS[name] || null,
     get: state,
 
     /**
      * Start-up, before the renderer exists. env: readEnvironment(adapter); search: location.search. Decides the tier the
      * city boots with: ?quality=, else the stored choice, else auto (the detected tier, or the one auto settled at on
-     * an earlier visit). Returns the state; state.settings are the boot settings.
+     * an earlier visit). recovery: { failedTier, fails, dropPick } when the last visit died (js/donostia/crash-guard.js's
+     * assessment): this one starts under the tier that failed (see the header). Returns the state; state.settings are
+     * the boot settings.
      */
-    init({ env: e = {}, search = '', now = Date.now() } = {}) {
+    init({ env: e = {}, search = '', now = Date.now(), recovery = null } = {}) {
       env = e;
       const params = new URLSearchParams(search);
       overrides = null;
@@ -488,27 +539,62 @@ export function createQuality({ storage = null, win = null } = {}) {
       limits = env.limits || null;
       detected = detectTier(env);
       const asked = params.get('quality');
-      const stored = read(CHOICE_KEY);
+      let stored = read(CHOICE_KEY);
+      // a phone never runs ultra from a stored pick (a test's, or one made before the sheet stopped offering it)
+      if (stored === 'ultra' && detected.mobile) { write(CHOICE_KEY, null); stored = null; }
+      // the last visit died: this one is on auto under a cap, whatever was picked (the URL's tier is still obeyed)
+      const rec = recovery && isTier(recovery.failedTier) && recovery.fails > 0 && !isTier(asked) ? recovery : null;
+      if (rec && isTier(stored)) {
+        if (rec.dropPick) write(CHOICE_KEY, null);
+        stored = null;
+      }
       mode = 'auto';
       source = 'auto';
       if (isTier(asked)) { mode = asked; source = 'url'; }
       else if (asked !== 'auto' && isTier(stored)) { mode = stored; source = 'stored'; }
+      // The one place the boot tier is decided, in this order: the URL's, the stored pick, else auto: the detected
+      // tier, moved by what auto remembers (the tier it settled at, a cap), and held under the tier that died if the
+      // last visit did. `decision` keeps the steps
       ceiling = null;
       memoTier = null;
       tier = mode === 'auto' ? detected.tier : mode;
-      if (mode === 'auto' && TIERS[detected.tier].adaptive) {
-        const memo = readMemo();
-        // (what an earlier visit learnt, if the device still looks the same)
-        if (memo && memo.detected === detected.tier) {
-          if (isTier(memo.ceiling) && memo.until > now) ceiling = { tier: memo.ceiling, until: memo.until };
-          const top = Math.min(tierIndex(detected.tier) + 1, tierIndex('high'), ceiling ? tierIndex(ceiling.tier) : Infinity);
-          if (isTier(memo.tier)) { memoTier = memo.tier; tier = TIER_NAMES[Math.min(tierIndex(memo.tier), top)]; }
-          else if (tierIndex(tier) > top) tier = TIER_NAMES[top];
+      bootReason = source === 'url' ? 'url' : source === 'stored' ? 'stored' : 'detected';
+      decision = [source === 'url' ? `?quality=${asked}` : source === 'stored' ? `the stored pick: ${stored}` : `auto: detected ${detected.tier} (${detected.reasons.join('; ')})`];
+      // (the memory is read whatever the mode: a failure's cap stands when Auto is picked later in the visit)
+      const memo = TIERS[detected.tier].adaptive ? readMemo() : null;
+      if (memo && isTier(memo.ceiling) && memo.until > now) ceiling = { tier: memo.ceiling, until: memo.until, why: memo.why || 'governor' };
+      if (mode === 'auto' && memo) {
+        const top = Math.min(tierIndex(detected.tier) + 1, tierIndex('high'), ceiling ? tierIndex(ceiling.tier) : Infinity);
+        if (isTier(memo.tier)) {
+          memoTier = memo.tier;
+          tier = TIER_NAMES[Math.min(tierIndex(memo.tier), top)];
+          decision.push(`remembered: auto settled at ${memo.tier} on an earlier visit`);
         }
+        if (tierIndex(tier) > top) tier = TIER_NAMES[top];
+        if (ceiling) decision.push(`remembered: not above ${ceiling.tier} until ${new Date(ceiling.until).toISOString().slice(0, 10)} (${ceiling.why})`);
+        if (tier !== detected.tier) bootReason = 'remembered';
       }
+      recovered = null;
+      if (rec) {
+        const cap = rec.fails >= 2 ? TIER_NAMES[0] : TIER_NAMES[Math.max(0, tierIndex(rec.failedTier) - 1)];
+        if (tierIndex(tier) > tierIndex(cap)) tier = cap;
+        // (the governor does not climb past it in this visit; a phone remembers it, as after a lost GPU device)
+        if (!ceiling || tierIndex(ceiling.tier) >= tierIndex(cap)) ceiling = { tier: cap, until: now + CEILING_DAYS * 86400e3, why: 'crash' };
+        if (TIERS[detected.tier].adaptive) {
+          memoTier = tier;
+          writeMemo();
+        }
+        source = 'recovery';
+        bootReason = 'crash_recovery';
+        recovered = { from: rec.failedTier, to: tier, fails: rec.fails };
+        decision.push(`crash recovery: the last visit died at ${rec.failedTier} (${rec.fails} in a row): not above ${cap}${rec.dropPick ? ', the stored pick dropped' : ''}`);
+      }
+      decision.push(`boots at ${tier}`);
+      coldAuto = mode === 'auto';
+      fellEarly = false;
       bootTier = tier;
       windows = 0;
-      booted = bootSettings(tier, limits, overrides);
+      booted = mobileBoot(tier);
       initialised = true;
       makeGovernor();
       return state();
@@ -529,12 +615,24 @@ export function createQuality({ storage = null, win = null } = {}) {
       if (choice !== 'auto' && !isTier(choice)) throw new Error(`quality.set: '${choice}' is not one of ${TIER_NAMES.join(', ')} or 'auto'`);
       mode = choice;
       source = choice === 'auto' ? 'auto' : 'stored';
-      if (persist) write(CHOICE_KEY, choice === 'auto' ? null : choice);
-      // back on auto: the tier the city booted with if auto chose it, else the detected one
+      // (ultra picked on a phone, where only the URL offers it, is for this visit only)
+      if (persist && !(choice === 'ultra' && detected.mobile)) write(CHOICE_KEY, choice === 'auto' ? null : choice);
+      // (from here on the tier in force is somebody's pick applied in a running city, not a cold start: what the
+      // governor does with it is not held against the tier for a week)
+      coldAuto = false;
+      fellEarly = false;
+      if (choice === 'auto') {
+        // Auto picked by hand starts afresh: what the governor remembered is forgotten (the tier it settled at, a
+        // tier it found too much); the cap of a real failure stands
+        if (ceiling && !FAILURES.includes(ceiling.why)) ceiling = null;
+        memoTier = null;
+        if (TIERS[detected.tier].adaptive) writeMemo();
+      }
+      // back on auto: the detected tier, under a failure's cap if there is one
       tier = choice === 'auto' ? (TIERS[detected.tier].adaptive ? TIER_NAMES[Math.min(tierIndex(detected.tier), ceiling ? tierIndex(ceiling.tier) : Infinity)] : detected.tier) : choice;
       // (the whole tier, in the running city: main.js rebuilds what its structural settings change)
       bootTier = tier;
-      booted = bootSettings(tier, limits, overrides);
+      booted = mobileBoot(tier);
       makeGovernor();
       return emit();
     },
@@ -564,25 +662,25 @@ export function createQuality({ storage = null, win = null } = {}) {
       if (changed) {
         const next = TIER_NAMES[lowest + governor.level];
         if (next !== tier) {
-          // Below the tier the city booted with: the next visit boots lower. If that came within the first minutes
-          // (the device never held the tier, even cold), the tier is not booted again for a week; later it is more
-          // likely the phone running hot, and the governor may climb back
-          if (mode === 'auto' && tierIndex(next) < tierIndex(bootTier) && tierIndex(next) < tierIndex(tier)) {
-            if (windows <= EARLY) ceiling = { tier: next, until: Date.now() + CEILING_DAYS * 86400e3 };
-            memoTier = next;
-            writeMemo();
-          }
+          // Below the tier the city booted with, within the first minutes of a cold start on auto: the device may
+          // never have held the tier. Nothing is remembered yet: only if the governor settles there (below)
+          if (coldAuto && windows <= EARLY && tierIndex(next) < tierIndex(bootTier)) fellEarly = true;
           tier = next;
         }
         emit();
         return true;
       }
-      // settled: the next visit boots with this tier
-      if (mode === 'auto' && governor.stable === SETTLED && stableBefore !== SETTLED) {
-        // (settled above a tier that had not held earlier in this visit: that was a passing load, not the device)
+      // Settled (SETTLED windows without a change): the next visit boots with this tier. A visit that ends before
+      // that leaves nothing. If it fell from the boot tier early in a cold start and stayed down, the device never
+      // held that tier: it is not booted again for a week; later it is more likely the phone running hot
+      if (mode === 'auto' && TIERS[detected.tier].adaptive && governor.stable === SETTLED && stableBefore !== SETTLED) {
+        // (settled above a tier that had not held earlier: that was a passing load, not the device)
         const lifted = ceiling && tierIndex(tier) > tierIndex(ceiling.tier);
         if (lifted) ceiling = null;
-        if (lifted || memoTier !== tier) {
+        const banned = fellEarly && tierIndex(tier) < tierIndex(bootTier) && (!ceiling || tierIndex(ceiling.tier) > tierIndex(tier));
+        if (banned) ceiling = { tier, until: Date.now() + CEILING_DAYS * 86400e3, why: 'governor' };
+        fellEarly = false;
+        if (lifted || banned || memoTier !== tier) {
           memoTier = tier;
           writeMemo();
         }
@@ -597,14 +695,14 @@ export function createQuality({ storage = null, win = null } = {}) {
     deviceLost() {
       if (!initialised || mode !== 'auto' || !TIERS[bootTier].adaptive) return;
       const lower = TIER_NAMES[Math.max(0, tierIndex(bootTier) - 1)];
-      ceiling = { tier: lower, until: Date.now() + CEILING_DAYS * 86400e3 };
+      ceiling = { tier: lower, until: Date.now() + CEILING_DAYS * 86400e3, why: 'gpu_lost' };
       memoTier = lower;
       writeMemo();
     },
 
     /** For ?debug: how the tier was chosen and where the governor stands. */
     debug: () => ({
-      env, detected, mode, source, tier, bootTier, booted, ceiling, memoTier, overrides,
+      env, detected, mode, source, tier, bootTier, bootReason, decision, booted, ceiling, memoTier, overrides, recovered,
       governor: governor && {
         level: governor.level, scale: governor.scale, targetFps: governor.targetFps, capped: governor.capped, upAfter: governor.upAfter,
         stable: governor.stable, floored: governor.floored, levels: governor.levels

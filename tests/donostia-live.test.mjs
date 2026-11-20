@@ -124,3 +124,14 @@ test('a fetch made before the switch goes on (behind the loading screen) is used
   assert.equal(live.liveSnapshot().status, 'ok');
   live.setLiveEnabled(false);
 });
+
+test('every visit starts in real time: the HUD remembers neither the switch nor a preset', () => {
+  const hud = fs.readFileSync(new URL('../js/donostia/hud.js', import.meta.url), 'utf8');
+  // what an earlier version stored is cleared, and nothing is written or read back
+  assert.match(hud, /localStorage\.removeItem\(OLD_LIVE_KEY\)/);
+  assert.match(hud, /const OLD_LIVE_KEY = 'donostia-live'/);
+  assert.ok(!/localStorage\.(setItem|getItem)\((OLD_)?LIVE_KEY/.test(hud), 'the switch is not stored');
+  assert.match(hud, /let liveWanted = true, liveShown = null;/);
+  // no URL parameter fixes a time either (there never was one)
+  assert.ok(!/searchParams|URLSearchParams/.test(hud));
+});

@@ -240,7 +240,9 @@ test('the controller: URL, stored choice, auto, set() and change events', () => 
   assert.deepEqual([s.mode, s.tier, s.source, s.detected], ['auto', 'medium', 'auto', 'medium']);
   assert.equal(q.get().pixelRatio, 1.5);
   assert.equal(q.get().adaptive, true);
-  assert.deepEqual(q.tiers, TIER_NAMES);
+  // (a phone is not offered ultra: see the test of that below)
+  assert.deepEqual(q.tiers, ['low', 'medium', 'high']);
+  assert.deepEqual(Q.createQuality({ storage: storage() }).tiers, TIER_NAMES, 'before init(), and on a desktop, all four');
   assert.equal(q.describe('high'), TIERS.high);
   assert.equal(q.describe('nope'), null);
   // desktop: ultra, never adaptive, whatever the frames say
@@ -403,4 +405,203 @@ test('?debug overrides single settings of a tier, to measure a knob', () => {
   // without ?debug they are ignored
   s = q.init({ env: desktop, search: '?quality=ultra&q.shadows=false' });
   assert.equal(s.settings.shadows, true);
+});
+
+test('a phone or tablet never runs ultra unless the URL says so, and starts progressively at every tier', () => {
+  // a stored pick of ultra (a test's, or one made before the sheet stopped offering it) is auto, and is cleared
+  const store = storage({ 'donostia-quality': 'ultra' });
+  let q = Q.createQuality({ storage: store });
+  let s = q.init({ env: iphone, search: '' });
+  assert.deepEqual([s.mode, s.tier, s.source, s.detected], ['auto', 'medium', 'auto', 'medium']);
+  assert.equal(store.getItem('donostia-quality'), null);
+  // the sheet's choices: Auto and these three
+  assert.deepEqual(q.tiers, ['low', 'medium', 'high']);
+  // every tier a phone runs starts with the first view's shaders and compiles the rest behind the city
+  for (const tier of ['low', 'medium', 'high']) assert.equal(q.set(tier, { persist: false }).boot.progressive, true, tier);
+  // ?quality=ultra still forces it, for testing: for this visit, progressive too, shown among the choices, not stored
+  q = Q.createQuality({ storage: store });
+  s = q.init({ env: iphone, search: '?quality=ultra' });
+  assert.deepEqual([s.mode, s.tier, s.source, s.settings.progressive, s.boot.progressive], ['ultra', 'ultra', 'url', true, true]);
+  assert.deepEqual([s.settings.msaa, s.settings.ssr, s.settings.shadowMapSize], [true, true, 3072], "the rest of ultra's settings as they are");
+  assert.deepEqual(q.tiers, TIER_NAMES);
+  assert.equal(store.getItem('donostia-quality'), null);
+  q.set('high');
+  assert.equal(store.getItem('donostia-quality'), 'high');
+  q.set('ultra');
+  assert.equal(store.getItem('donostia-quality'), 'high', 'ultra picked on a phone is not remembered');
+  assert.equal(q.get().boot.progressive, true);
+  // (?debug's q.progressive=false still measures the other way)
+  q = Q.createQuality({ storage: storage() });
+  assert.equal(q.init({ env: iphone, search: '?debug&quality=ultra&q.progressive=false' }).settings.progressive, false);
+  // a tablet, and an Android phone, alike
+  const ipad = { ...iphone, uaMobile: false, screenShort: 820 };
+  q = Q.createQuality({ storage: storage({ 'donostia-quality': 'ultra' }) });
+  assert.deepEqual([q.init({ env: ipad, search: '' }).mode, q.tiers.includes('ultra')], ['auto', false]);
+  q = Q.createQuality({ storage: storage({ 'donostia-quality': 'ultra' }) });
+  assert.deepEqual([q.init({ env: android({ vendor: 'qualcomm', architecture: 'adreno-7xx' }), search: '' }).tier, q.tiers.includes('ultra')], ['high', false]);
+
+  // the desktop keeps all of it: five choices, ultra stored and obeyed, each tier's own way of starting
+  const desk = storage({ 'donostia-quality': 'ultra' });
+  q = Q.createQuality({ storage: desk });
+  s = q.init({ env: desktop, search: '' });
+  assert.deepEqual([s.mode, s.tier, s.source, s.settings.progressive], ['ultra', 'ultra', 'stored', false]);
+  assert.equal(desk.getItem('donostia-quality'), 'ultra');
+  assert.deepEqual(q.tiers, TIER_NAMES);
+  for (const tier of TIER_NAMES) assert.equal(q.set(tier).boot.progressive, TIERS[tier].progressive, tier);
+  assert.equal(desk.getItem('donostia-quality'), 'ultra');
+  q = Q.createQuality({ storage: storage() });
+  assert.deepEqual([q.init({ env: desktop, search: '' }).tier, q.get().settings.progressive, q.get().recovered], ['ultra', false, null]);
+});
+
+test('recovery: after a visit that died, this one starts under the tier that failed', () => {
+  // auto on a phone: a tier lower, remembered for a week like a tier the governor found too much
+  let store = storage();
+  let q = Q.createQuality({ storage: store });
+  let s = q.init({ env: iphone, search: '', now: 1000, recovery: { failedTier: 'medium', fails: 1, dropPick: false } });
+  assert.deepEqual([s.mode, s.tier, s.source, s.recovered], ['auto', 'low', 'recovery', { from: 'medium', to: 'low', fails: 1 }]);
+  let memo = JSON.parse(store.getItem('donostia-quality-auto'));
+  assert.deepEqual([memo.tier, memo.ceiling, memo.until], ['low', 'low', 1000 + 7 * 86400e3]);
+  // (the governor does not climb back past it in this visit)
+  q.viewport(390, 844, 3);
+  run(q, 16.7, 400);
+  assert.equal(q.get().tier, 'low');
+  s = Q.createQuality({ storage: store }).init({ env: iphone, search: '', now: 2000 });
+  assert.deepEqual([s.tier, s.source, s.recovered], ['low', 'auto', null]);
+  // two in a row: the lowest, wherever it failed; a stored pick is not obeyed, and dropped when told
+  store = storage({ 'donostia-quality': 'high' });
+  s = Q.createQuality({ storage: store }).init({ env: iphone, search: '', recovery: { failedTier: 'high', fails: 1, dropPick: false } });
+  assert.deepEqual([s.mode, s.tier, store.getItem('donostia-quality')], ['auto', 'medium', 'high']);
+  s = Q.createQuality({ storage: store }).init({ env: iphone, search: '', recovery: { failedTier: 'medium', fails: 2, dropPick: true } });
+  assert.deepEqual([s.mode, s.tier, store.getItem('donostia-quality')], ['auto', 'low', null]);
+  // never above what auto would start at anyway
+  s = Q.createQuality({ storage: storage() }).init({ env: iphone, search: '', recovery: { failedTier: 'ultra', fails: 1, dropPick: false } });
+  assert.deepEqual([s.tier, s.recovered.to], ['medium', 'medium']);
+  // a desktop: ultra died, high it is (adaptive there: the governor may lower it further, not lift it)
+  q = Q.createQuality({ storage: storage() });
+  s = q.init({ env: desktop, search: '', recovery: { failedTier: 'ultra', fails: 1, dropPick: false } });
+  assert.deepEqual([s.mode, s.tier, s.adaptive, s.settings.progressive], ['auto', 'high', true, true]);
+  q.viewport(1440, 840, 2);
+  run(q, 16.7, 400);
+  assert.equal(q.get().tier, 'high');
+  // the URL's tier is obeyed whatever happened; nonsense is no recovery
+  s = Q.createQuality({ storage: storage() }).init({ env: iphone, search: '?quality=high', recovery: { failedTier: 'high', fails: 2, dropPick: true } });
+  assert.deepEqual([s.tier, s.source, s.recovered], ['high', 'url', null]);
+  for (const recovery of [null, {}, { failedTier: 'nope', fails: 1 }, { failedTier: 'high', fails: 0 }]) {
+    assert.deepEqual([Q.createQuality({ storage: storage() }).init({ env: iphone, search: '', recovery }).tier], ['medium']);
+  }
+});
+
+test("auto's memory holds only what auto found out: the iPhone that booted low on auto after a round of picks", () => {
+  // The owner's iPhone 15 Pro, detected medium. What it had in storage is what the versions before this one wrote:
+  // on an earlier visit on auto the governor, fed the frames of the start-up's background compile (a stall per
+  // pipeline on WebKit: 7 to 20 fps for half a minute), left medium within its first 90 windows, and the tier was
+  // banned for a week on the spot. Then: ultra picked for a test (four loads that died), ?quality=low, low, medium
+  // and high picked in turn, Auto picked in the settings (medium, applied live: the pick did not look at the
+  // memory), a reload (low: the boot did).
+  const week = 7 * 86400e3, t0 = 1_000_000;
+  const old = JSON.stringify({ detected: 'medium', tier: 'low', ceiling: 'low', until: t0 + week });
+  const store = storage({ 'donostia-quality-auto': old, 'donostia-quality': 'low' });
+  // the rule as it was, for the record: with that memory, auto boots low and says nothing of why
+  let q = Q.createQuality({ storage: store });
+  // (this version: a memory without its version is not trusted, and is removed as soon as it is read)
+  let s = q.init({ env: iphone, search: '', now: t0 });
+  assert.deepEqual([s.mode, s.tier, s.bootReason], ['low', 'low', 'stored']);
+  q.viewport(390, 844, 3);
+  s = q.set('auto');
+  assert.deepEqual([s.mode, s.tier], ['auto', 'medium'], 'Auto picked in the settings: the detected tier');
+  assert.equal(store.getItem('donostia-quality-auto'), null, 'with a clean memory');
+  // the reload: auto boots where the pick left it, and says why
+  q = Q.createQuality({ storage: store });
+  s = q.init({ env: iphone, search: '', now: t0 + 12000 });
+  assert.deepEqual([s.mode, s.tier, s.bootReason, s.source], ['auto', 'medium', 'detected', 'auto']);
+  assert.match(q.debug().decision.join(' | '), /^auto: detected medium \(an Apple GPU.*\| boots at medium$/);
+  // and had he reloaded without picking Auto first, on auto by the URL: the old memory is dropped all the same
+  const again = storage({ 'donostia-quality-auto': old });
+  s = Q.createQuality({ storage: again }).init({ env: iphone, search: '', now: t0 });
+  assert.deepEqual([s.tier, s.bootReason, again.getItem('donostia-quality-auto')], ['medium', 'detected', null]);
+
+  // What may not write the memory, each from a clean one: a pick by hand and what the governor does under it...
+  const clean = storage();
+  q = Q.createQuality({ storage: clean });
+  q.init({ env: iphone, search: '' });
+  q.viewport(390, 844, 3);
+  q.set('high');
+  drive(q, phone(19.2, 7), 60);
+  q.set('low');
+  run(q, 16.7, 60);
+  assert.equal(clean.getItem('donostia-quality-auto'), null, 'a pick, and the governor scaling it');
+  // ...a visit by the URL's tier...
+  q = Q.createQuality({ storage: clean });
+  q.init({ env: iphone, search: '?quality=low' });
+  q.viewport(390, 844, 3);
+  drive(q, phone(19.2, 7), 60);
+  run(q, 16.7, 60);
+  assert.equal(clean.getItem('donostia-quality-auto'), null, '?quality=');
+  // ...a visit on auto that ends early, the governor on its way down (slow frames, as while the shaders compile)...
+  q = Q.createQuality({ storage: clean });
+  q.init({ env: iphone, search: '' });
+  q.viewport(390, 844, 3);
+  drive(q, phone(19.2, 7), 12);
+  assert.notDeepEqual([q.get().tier, q.get().scale], ['medium', 1], 'the governor has stepped down');
+  assert.equal(clean.getItem('donostia-quality-auto'), null, 'a visit left early: nothing settled, nothing remembered');
+  // ...and Auto picked in a running city: the tier is applied live, its start is not a cold one, so a fall within
+  // the first windows is not held against the tier for a week (where it settles is remembered: that is auto's own)
+  clean.setItem('donostia-quality', 'low');
+  q = Q.createQuality({ storage: clean });
+  q.init({ env: iphone, search: '' });
+  q.viewport(390, 844, 3);
+  q.set('auto');
+  drive(q, phone(19.2, 7), 60);
+  let memo = JSON.parse(clean.getItem('donostia-quality-auto'));
+  assert.deepEqual([q.get().tier, memo.v, memo.tier, memo.ceiling], ['low', 2, 'low', null]);
+  // the next visit boots there and says it is from memory; with a fast frame rate it climbs back, unbanned
+  q = Q.createQuality({ storage: clean });
+  s = q.init({ env: iphone, search: '' });
+  assert.deepEqual([s.tier, s.bootReason], ['low', 'remembered']);
+  assert.match(q.debug().decision.join(' | '), /remembered: auto settled at low on an earlier visit/);
+  q.viewport(390, 844, 3);
+  run(q, 16.7, 200);
+  assert.equal(q.get().tier, 'high');
+
+  // What does: a cold start on auto that cannot hold the tier and settles lower (a week's ban, why: governor)...
+  const slow = storage();
+  q = Q.createQuality({ storage: slow });
+  q.init({ env: iphone, search: '', now: t0 });
+  q.viewport(390, 844, 3);
+  drive(q, phone(19.2, 7), 60);
+  memo = JSON.parse(slow.getItem('donostia-quality-auto'));
+  assert.deepEqual([memo.tier, memo.ceiling, memo.why], ['low', 'low', 'governor']);
+  s = Q.createQuality({ storage: slow }).init({ env: iphone, search: '' });
+  assert.deepEqual([s.tier, s.bootReason], ['low', 'remembered']);
+  // ...which Auto picked by hand forgets...
+  slow.setItem('donostia-quality', 'high');
+  q = Q.createQuality({ storage: slow });
+  q.init({ env: iphone, search: '' });
+  assert.deepEqual([q.set('auto').tier, slow.getItem('donostia-quality-auto')], ['medium', null]);
+  // ...and a real failure, which it does not: a lost GPU device, a visit that died
+  for (const fail of ['gpu', 'crash']) {
+    const st = storage();
+    q = Q.createQuality({ storage: st });
+    q.init({ env: iphone, search: '', recovery: fail === 'crash' ? { failedTier: 'medium', fails: 1, dropPick: false } : null });
+    if (fail === 'gpu') q.deviceLost();
+    memo = JSON.parse(st.getItem('donostia-quality-auto'));
+    assert.deepEqual([memo.ceiling, memo.why], ['low', fail === 'gpu' ? 'gpu_lost' : 'crash']);
+    st.setItem('donostia-quality', 'high');
+    q = Q.createQuality({ storage: st });
+    s = q.init({ env: iphone, search: '' });
+    assert.deepEqual([s.tier, s.bootReason], ['high', 'stored'], 'a pick by hand is obeyed');
+    assert.equal(q.set('auto').tier, 'low', `Auto picked: still under the cap of the ${fail}`);
+    assert.equal(JSON.parse(st.getItem('donostia-quality-auto')).ceiling, 'low');
+    s = Q.createQuality({ storage: st }).init({ env: iphone, search: '' });
+    assert.deepEqual([s.tier, s.bootReason], ['low', 'remembered']);
+  }
+  // the reasons, each
+  assert.equal(Q.createQuality({ storage: storage() }).init({ env: iphone, search: '?quality=high' }).bootReason, 'url');
+  assert.equal(Q.createQuality({ storage: storage() }).init({ env: desktop, search: '' }).bootReason, 'detected');
+  s = Q.createQuality({ storage: storage() }).init({ env: iphone, search: '', recovery: { failedTier: 'medium', fails: 1, dropPick: false } });
+  assert.equal(s.bootReason, 'crash_recovery');
+  // (the reason is the boot's: a pick later in the visit does not change it)
+  q = Q.createQuality({ storage: storage() });
+  q.init({ env: iphone, search: '' });
+  assert.equal(q.set('low', { persist: false }).bootReason, 'detected');
 });
