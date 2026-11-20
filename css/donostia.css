@@ -888,7 +888,8 @@ body {
 
 /* ------------------------------------------------------------------------------------------------------------------
    Touch (body.touch-enabled, js/donostia/touch.js). The bottom corners belong to the thumbs, always: the flight stick
-   on the left and its buttons on the right. The radar card says the street too, as a plain line under the auzoa, and
+   on the left, and on the right nothing at all: that corner is where the other thumb drags the view to look (and,
+   the stick flying where the view looks, to climb and descend). The radar card says the street too, as a plain line under the auzoa, and
    the street's plaque is not shown: the two together took too much of a small screen.
    ------------------------------------------------------------------------------------------------------------------ */
 #touch-controls {
@@ -923,25 +924,6 @@ body {
   border-color: var(--harri);
   box-shadow: var(--shadow), inset 0 0 0 12px rgba(220, 181, 116, 0.08), 0 0 0 4px rgba(220, 181, 116, 0.22);
 }
-
-/* climb & descend, one over the other under the right thumb at the edge: a column as tall as the stick's ring
-   across from it (the fast gear is the stick pushed past its rim, and has no button) */
-.touch-actions {
-  grid-template-columns: 60px;
-  grid-template-areas: 'up' 'down';
-  gap: 12px;
-  padding-bottom: 0;
-}
-
-.touch-action {
-  width: 60px;
-  height: 60px;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.touch-action[data-touch-action='up'] { grid-area: up; }
-.touch-action[data-touch-action='down'] { grid-area: down; }
 
 body.touch-enabled .settings-more { display: block; }
 body.touch-enabled .hud-bottom-right { display: none; }
@@ -1226,7 +1208,7 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
 }
 
 /* js/donostia/main.js's pill while shaders compile behind the city ("Loading details… 40%"): in the HUD's face, and on
-   phones clear of the bottom bar, between the stick and the Up / Down buttons */
+   phones clear of the bottom bar, in the middle, beside the stick */
 #compile-note {
   font-family: var(--font-ui, inherit);
   z-index: 20;
@@ -1236,7 +1218,7 @@ body.touch-enabled #compile-note { bottom: calc(var(--safe-b) + var(--dock-h) + 
 /* ------------------------------------------------------------------------------------------------------------------
    The cookie choice (index.html #consent-card, js/donostia/consent.js): a small card in the HUD's glass with the
    carved hairline, while the choice is pending; the yes in the sandstone. It never covers a
-   control: over the controls hint on a desktop; on touch screens between the stick's pad and the Up / Down buttons,
+   control: over the controls hint on a desktop; on touch screens in the middle, beside the stick's pad,
    over the note of the background compile; on an upright phone, where there is no room between them, across the
    screen above the stick, clear of the bar. Centred with `translate`, which clean view's `transform` leaves alone.
    Over the other corners' panels where a small window leaves it no room of its own (z-index), under the phone's bar
@@ -1333,8 +1315,9 @@ body.hud-minimized .hud-consent { transform: translateY(12px); }
   cursor: pointer;
 }
 
-/* Touch: the bottom corners are the thumbs' (the stick's pad reaches 164 px in from the left, the Up / Down column
-   is on the right), so the card keeps to the middle, over the compile note, with buttons a thumb can hit */
+/* Touch: the bottom corners are the thumbs' (the stick's pad reaches 164 px in from the left, and the right corner
+   is where the other thumb looks), so the card keeps to the middle, over the compile note, with buttons a thumb can
+   hit */
 body.touch-enabled .hud-consent { bottom: calc(var(--safe-b) + 44px); }
 body.touch-enabled .consent { width: min(420px, calc(100vw - var(--safe-l) - var(--safe-r) - 2 * 176px)); }
 body.touch-enabled .consent-btn { height: 44px; }
@@ -1347,14 +1330,14 @@ body.touch-enabled .link-btn { padding: 12px 8px; margin: -12px -4px; }
 }
 
 /* (a small phone on its side has the radar card under the toolbar, down to the stick: the card keeps to its right,
-   up to the Up / Down buttons) */
+   as far as the screen's edge) */
 @media (max-height: 500px) and (max-width: 719px) {
   body.touch-enabled .hud-consent {
     left: auto;
-    right: calc(var(--safe-r) + 76px);
+    right: var(--safe-r);
     translate: none;
   }
-  body.touch-enabled .consent { width: min(420px, calc(100vw - var(--safe-l) - var(--safe-r) - 178px - 76px - 16px)); }
+  body.touch-enabled .consent { width: min(420px, calc(100vw - var(--safe-l) - var(--safe-r) - 178px - 16px)); }
 }
 
 /* the upright phone: across the screen, above the stick and its pad (132 px and 20 px over the bar) */

@@ -331,7 +331,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   const radarCanvas = document.getElementById('minimap-canvas');
   const radar = radarCanvas ? new Radar({ canvas: radarCanvas, layers, god, terrain, onFly: flyToGround }) : null;
   // --- Touch -----------------------------------------------------------------------------------------------------------
-  // The flight stick & its buttons are there on every touch screen (js/donostia/touch.js)
+  // The flight stick is there on every touch screen (js/donostia/touch.js)
   const touch = initTouchControls(god);
   keepViewSized();
   // The HUD, the view and the touch controls are inert while the loading screen or the full map (a modal dialog)

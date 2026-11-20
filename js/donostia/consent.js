@@ -8,8 +8,8 @@ import { t, onLang } from './i18n.js';
 // is until the card is answered. Either answer is remembered (localStorage) and the card does not come back; the data
 // popover shows the answer with a button to choose again, which brings the card back.
 //
-// Where it sits is css/donostia.css's (.hud-consent): over the controls hint on a desktop, between the stick and the
-// Up / Down buttons on a tablet or a phone on its side, and above the stick on an upright phone, clear of the bar.
+// Where it sits is css/donostia.css's (.hud-consent): over the controls hint on a desktop, in the middle beside the
+// stick on a tablet or a phone on its side, and above the stick on an upright phone, clear of the bar.
 // It does not wait for the background compile ("Loading details…", js/donostia/main.js): that can take a minute on a
 // phone, its note sits under the card and the two do not touch.
 //

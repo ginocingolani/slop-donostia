@@ -136,8 +136,8 @@ headless test of the real SDK needs a visitor's user agent, and must cut `eu.i.p
 
 The card (`#consent-card` in `index.html`, `.hud-consent` in `css/donostia.css`) says in the HUD's language what the cookie is for; its words are in `js/donostia/i18n.js` (`consent.*`), English, Basque
 and Spanish. It shows 2.5 s after the city does (it does not wait for the background compile) and never again once
-answered, by either button. It covers no control: over the controls hint on a desktop, between the stick and the Up /
-Down buttons on a tablet or a phone on its side, above the stick and clear of the bar on an upright phone. The data
+answered, by either button. It covers no control: over the controls hint on a desktop, in the middle beside the stick on
+a tablet or a phone on its side, above the stick and clear of the bar on an upright phone. The data
 popover (ⓘ; on a phone, Settings › Data sources) says what is sent (`credits.usage`), shows the answer and offers to
 change it, which brings the card back.
 

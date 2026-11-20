@@ -247,8 +247,7 @@
   </div>
 
   <!-- The cookie choice (js/donostia/consent.js): a moment after the city shows, until it is answered. Over the
-       controls hint; on touch screens between the stick and the Up / Down buttons, and above the stick on an upright
-       phone (css/donostia.css). -->
+       controls hint; on touch screens beside the stick, and above it on an upright phone (css/donostia.css). -->
   <div class="hud hud-consent">
     <aside id="consent-card" class="panel consent" role="dialog" aria-labelledby="consent-title" aria-describedby="consent-text" hidden>
       <div id="consent-title" class="pop-title" data-i18n="consent.title">One small cookie?</div>
@@ -303,22 +302,15 @@
     </section>
   </div>
 
-  <!-- The god camera's flight stick & buttons (js/donostia/touch.js): always there on touch screens, hidden while
-       the full map is open. The stick and a drag on the view are the whole scheme. -->
+  <!-- The god camera's flight stick (js/donostia/touch.js): always there on touch screens, hidden while the full
+       map is open. The stick and a drag on the view are the whole scheme: the stick flies where the view looks, so
+       looking up climbs and looking down descends, and the right half of the screen is the looking thumb's. -->
   <section id="touch-controls" aria-label="Touch controls" data-i18n-attr="aria-label:touch.label" hidden>
     <div class="touch-movement">
-      <div id="touch-stick" role="group" aria-label="Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast" data-i18n-attr="aria-label:touch.stick">
+      <div id="touch-stick" role="group" aria-label="Flight stick: push up to fly where the view looks (look up to climb, down to descend), down to fly back, left or right to slide, past the rim to go fast" data-i18n-attr="aria-label:touch.stick">
         <span class="touch-stick-axis" aria-hidden="true"></span>
         <span id="touch-stick-knob" aria-hidden="true"></span>
       </div>
-    </div>
-    <div class="touch-actions" role="group" aria-label="Hold to climb or descend" data-i18n-attr="aria-label:touch.actions">
-      <button class="touch-action" data-touch-action="up" type="button" aria-label="Climb" aria-pressed="false" data-i18n-attr="aria-label:touch.upLabel">
-        <span aria-hidden="true">↑</span><span data-i18n="touch.up">Up</span>
-      </button>
-      <button class="touch-action" data-touch-action="down" type="button" aria-label="Descend" aria-pressed="false" data-i18n-attr="aria-label:touch.downLabel">
-        <span aria-hidden="true">↓</span><span data-i18n="touch.down">Down</span>
-      </button>
     </div>
   </section>
 
