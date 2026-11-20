@@ -73,9 +73,13 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     });
     showTimeToggle();
   };
+  // (js/donostia/live-sky.js fades to the preset from whatever is on show; without it, the preset at once)
   const applyTime = (id) => {
-    lighting.applyPreset(id);
-    grade.applyPreset(lighting.activePresetId);
+    if (liveSky?.setPreset) liveSky.setPreset(id);
+    else {
+      lighting.applyPreset(id);
+      grade.applyPreset(lighting.activePresetId);
+    }
     showTime(id);
   };
   // picking a time turns real time off and shows that look, as it always has
@@ -128,8 +132,9 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   // back the preset picked last
   live.onLive((snap) => {
     if (!ready) return;
+    const was = liveShown;
     showLive(snap.enabled);
-    if (!snap.enabled && lighting.activePresetId === 'live') applyTime(time);
+    if (!snap.enabled && was) applyTime(time);
     if (snap.enabled) renderLive(snap);
   });
   showLive(liveWanted);

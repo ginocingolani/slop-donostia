@@ -4,11 +4,20 @@ import { timeOfDay, skyWeather, mixLooks, presetLook, smoothstep, cityHour, dire
 import { cityUniforms } from '../city-uniforms.js';
 
 // js/donostia/live-sky.js
-// The sky of the HUD's real-time switch: while it is on, every frame takes the live state (js/donostia/live-state.js)
-// through js/donostia/time-of-day.js's blend of the presets and hands the look to the lighting (js/lighting.js's
-// applyLook) and the colour grade; off, it does nothing and the presets stand as they always have (the HUD applies
-// them). The weather eases over a few seconds (it arrives in 15-minute steps), the switch fades in over two, and the
-// sun and the moon move with the clock (or a debug override's, a timelapse included) every frame.
+// The time of day on show, and every change of it. While the HUD's real-time switch is on, every frame takes the live
+// state (js/donostia/live-state.js) through js/donostia/time-of-day.js's blend of the presets and hands the look to
+// the lighting (js/lighting.js's applyLook) and the colour grade; off, a preset stands (js/lighting.js's applyPreset,
+// through setPreset() here). The weather eases over a few seconds (it arrives in 15-minute steps), and the sun and the
+// moon move with the clock (or a debug override's, a timelapse included) every frame.
+//
+// No change of the time of day is a cut: preset to preset, real time to a preset and a preset to real time all fade
+// over FADE seconds, the whole look at once (the light and where it comes from, the sky, the fog, the colour grade,
+// the windows' glow, the streets' wetness: time-of-day.js's mixLooks(), which carries every number and colour a look
+// has, so a field added to the looks fades with the rest). A fade starts from what is on show, a fade under way
+// included: picking another time mid-fade bends towards it without a jump. A fade to a preset ends on the preset
+// itself (applyPreset: its exact values, its own bake). With prefers-reduced-motion there is no fade: the change is
+// at once, as it used to be between presets. Nothing new is compiled for it: a fade is uniforms and the lights, and
+// the environment map baked again where the sky has changed enough, as in real time.
 //
 // The environment map (the sky baked into a PMREM cube for the image-based light, the aerial haze's colour and the
 // sea's reflections) is baked again only when the sky has changed enough to show: the sun or the moon 0.75° on, the
@@ -16,9 +25,10 @@ import { cityUniforms } from '../city-uniforms.js';
 // every 3 minutes or so by day and by moonlight, every 20 s at dusk and dawn (650 to 770 a day); a timelapse caps at
 // BAKE_GAP. A bake takes ~0.4 ms of CPU and a few ms of GPU (slopDebug.timeOfDay.benchBake()).
 //
-// createLiveSky({ lighting, presets }) -> { update(dt), hour(), state, debug(), benchBake(n) }, main.js's
-// world.liveSky; main.js gives it the colour grade (attachGrade), and the HUD says when the city first shows (ready =
-// true: until then the shaders compile with the scene pass's target bound, and a bake would land in it).
+// createLiveSky({ lighting, presets }) -> { update(dt), setPreset(id), hour(), state, debug(), benchBake(n) },
+// main.js's world.liveSky; main.js gives it the colour grade (attachGrade), the HUD picks the presets through
+// setPreset() and says when the city first shows (ready = true: until then the shaders compile with the scene pass's
+// target bound, and a bake would land in it, so a preset picked before that is applied without a fade or a frame).
 //
 // For the other lanes (rain, wetness, lightning, the sea), whether the switch is on or off:
 //   cityUniforms.uDaylight   0 (night) .. 1 (a clear day), the weather's gloom included (TSL uniform)
@@ -34,7 +44,7 @@ import { cityUniforms } from '../city-uniforms.js';
 // Here the time of day's share is held at the dry midday's, so only real rain wets them (js/donostia/weather.js's
 // cityUniforms.uRainWetness, on top of it).
 
-const FADE = 2.0; // s: the switch fading in from the preset
+const FADE = 2.0; // s: a change of the time of day, from the look on show to the one picked
 const EASE = 1.5; // s: the weather's time constant (98% of a change in 6 s)
 const BAKE_GAP = 0.15; // s: the least time between two bakes of the environment map
 const BAKE_ANGLE = Math.cos(0.75 * Math.PI / 180);
@@ -45,6 +55,9 @@ const EASED = ['cover', 'coverLow', 'overcast', 'precip', 'fog'];
 export function createLiveSky({ lighting, presets }) {
   const dryRoad = presets.midday?.roadWetness ?? 0.08; // the streets' wetness on a dry day (js/lighting.js)
   let grade = null, on = false, fade = 1, fadeFrom = null, current = null;
+  // the preset picked last (the one that stands, or stands again when real time goes off), and its look while the
+  // fade to it is under way (null: no such fade)
+  let presetId = presets[lighting.activePresetId] ? lighting.activePresetId : 'golden', target = null;
   let sky = null, logVis = 0;
   let baked = null, bakedAt = -Infinity, clock = 0;
   const stats = { bakes: 0, bakeMs: 0, lastBakeMs: 0 };
@@ -74,6 +87,30 @@ export function createLiveSky({ lighting, presets }) {
     stats.bakes++;
     bakedAt = clock;
   };
+  // A look on show: the lights, the sky and the grade, and the environment map when its sky is due (at most every
+  // bakeGap: the quality tier's, so a fade costs a phone no more bakes than real time does)
+  const show = (look) => {
+    current = look;
+    lighting.applyLook(look);
+    grade.applyLook(look.grade);
+    const key = skyKey(look);
+    if (clock - bakedAt >= self.bakeGap && due(key)) {
+      bake();
+      baked = key;
+    }
+  };
+  // What is on show now, as a look to fade from: the last one shown while real time or a fade runs, else the preset
+  // that stands
+  const standing = () => current || (presets[presetId] && grade ? presetLook(presets, grade.looks, presetId) : null);
+  const reducedMotion = () => { try { return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true; } catch { return false; } };
+  // The preset itself, exactly (its own values and its bake): the end of a fade to it, or the whole change without one
+  const land = () => {
+    target = fadeFrom = current = null;
+    fade = 1;
+    lighting.applyPreset(presetId, true);
+    grade?.applyPreset(lighting.activePresetId);
+    baked = null;
+  };
 
   const self = {
     ready: false,
@@ -84,29 +121,59 @@ export function createLiveSky({ lighting, presets }) {
     bakeGap: BAKE_GAP,
     attachGrade(g) { grade = g; },
 
+    // The HUD's pick of a preset (and the preset real time hands back to when it goes off): faded to from what is on
+    // show, or at once before the city shows, with { instant: true } and for prefers-reduced-motion. While real time
+    // is on the pick only waits: it shows when the switch goes off (update() below)
+    setPreset(id, { instant = false } = {}) {
+      if (!presets[id]) return;
+      const from = standing();
+      presetId = id;
+      if (on && live.liveEnabled()) return;
+      if (instant || !self.ready || !grade || !from || reducedMotion()) { land(); return; }
+      // (the environment map on show is the one of the look the fade starts from)
+      if (!current) baked = skyKey(from);
+      fadeFrom = from;
+      target = presetLook(presets, grade.looks, id);
+      fade = 0;
+    },
+    get preset() { return presetId; },
+    // 0..1 while a fade runs (to a preset, or into real time), 1 otherwise
+    get fade() { return fade; },
+
     // Every frame (main.js's view.simulate)
     update(dt) {
       clock += dt;
       const enabled = self.ready && grade !== null && live.liveEnabled();
       if (!enabled) {
-        on = false;
+        // real time went off: back to the preset picked last, faded to from the live look
+        if (on) {
+          on = false;
+          self.setPreset(presetId);
+        }
+        if (!target) return;
+        // a fade to a preset: the blend, then the preset itself
+        fade = Math.min(1, fade + dt / FADE);
+        if (fade >= 1) land();
+        else show(mixLooks(fadeFrom, target, smoothstep(0, 1, fade)));
         return;
       }
       snap = live.liveSnapshot();
-      const target = skyWeather(snap.weather);
+      const weather = skyWeather(snap.weather);
       if (!on) {
-        // switched on: the weather as it is, the look fading in from the preset on show (or the last live look)
+        // switched on: the weather as it is, the look fading in from what is on show (a preset, or a fade to one
+        // caught where it stands)
         on = true;
-        sky = { ...target };
-        logVis = Math.log(target.visibility);
-        fadeFrom = presets[lighting.activePresetId] ? presetLook(presets, grade.looks, lighting.activePresetId) : current;
-        fade = fadeFrom && !self.skipFade ? 0 : 1;
+        sky = { ...weather };
+        logVis = Math.log(weather.visibility);
+        fadeFrom = standing();
+        fade = fadeFrom && !self.skipFade && !reducedMotion() ? 0 : 1;
         self.skipFade = false;
+        target = null;
         baked = null;
       } else {
         const k = 1 - Math.exp(-Math.max(0, dt) / EASE);
-        for (const f of EASED) sky[f] += (target[f] - sky[f]) * k;
-        logVis += (Math.log(target.visibility) - logVis) * k;
+        for (const f of EASED) sky[f] += (weather[f] - sky[f]) * k;
+        logVis += (Math.log(weather.visibility) - logVis) * k;
       }
       sky.visibility = Math.exp(logVis);
 
@@ -116,21 +183,16 @@ export function createLiveSky({ lighting, presets }) {
         const weights = look.weights, night = look.night, moonlight = look.moonlight;
         look = Object.assign(mixLooks(fadeFrom, look, smoothstep(0, 1, fade)), { weights, night, moonlight, sky });
       }
-      look.roadWetness = Math.min(look.roadWetness, dryRoad);
-      current = look;
-      lighting.applyLook(look);
-      grade.applyLook(look.grade);
-      const key = skyKey(look);
-      if (clock - bakedAt >= self.bakeGap && due(key)) {
-        bake();
-        baked = key;
-      }
+      // (the dry streets are real time's own: a fade from a preset's wet dusk dries them with the rest)
+      if (fade >= 1) look.roadWetness = Math.min(look.roadWetness, dryRoad);
+      else look.roadWetness = Math.min(look.roadWetness, Math.max(dryRoad, fadeFrom.roadWetness * (1 - smoothstep(0, 1, fade))));
+      show(look);
     },
 
     // The hour of the day the city shows (h): its own with the switch on, else the preset's (the ferries' service)
     hour() {
       if (on) return cityHour(snap ? snap.date : live.liveNow());
-      return presets[lighting.activePresetId]?.clock ?? 12;
+      return presets[presetId]?.clock ?? 12;
     },
 
     // The time of day as numbers, for the other lanes (whether the switch is on or off):
@@ -150,7 +212,7 @@ export function createLiveSky({ lighting, presets }) {
         moonDir.set(0, -1, 0);
       }
       return {
-        live: on, daylight: cityUniforms.uDaylight.value, night: on ? current.night : lighting.activePresetId === 'midnight' ? 1 : 0,
+        live: on, daylight: cityUniforms.uDaylight.value, night: on ? current.night : presetId === 'midnight' ? 1 : 0,
         lightDir, sunDir, moonDir, moonlight: on ? current.moonlight : 0,
         sky: on ? { ...sky } : skyWeather(live.CALM_WEATHER)
       };
@@ -158,7 +220,7 @@ export function createLiveSky({ lighting, presets }) {
 
     // slopDebug.timeOfDay(): the blend as it stands
     debug() {
-      if (!on || !current) return { live: false, preset: lighting.activePresetId, daylight: cityUniforms.uDaylight.value };
+      if (!on || !current) return { live: false, preset: presetId, fade: +fade.toFixed(3), daylight: cityUniforms.uDaylight.value, bakes: { count: stats.bakes } };
       const r = (v, n = 3) => +v.toFixed(n);
       const w = Object.fromEntries(Object.entries(current.weights).map(([k, v]) => [k, r(v)]));
       return {
