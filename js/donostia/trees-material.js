@@ -6,6 +6,7 @@ import {
   storage, transformNormal
 } from 'three/tsl';
 import { weatherUniforms } from './weather-uniforms.js';
+import { streetLight, lamplit } from './street-light.js';
 
 // js/donostia/trees-material.js
 // Materials of Donostia's trees (js/donostia/vegetation.js). Adapted from createTreeMaterial, FoliageLightingModel,
@@ -20,6 +21,13 @@ import { weatherUniforms } from './weather-uniforms.js';
 //   crown half-height, trunk radius) and folded away where the near & mid meshes stand (within uMidEnd of uLodCenter,
 //   the camera position of the last level pass, exactly as vegetation.js chose them) or beyond uFarEnd.
 // - createBillboardTreeMaterial: the far trees beyond vegetation.js's BILLBOARD_START, one camera-facing quad each.
+// At night the street lamps light the trunks and the crowns from below (js/donostia/street-light.js; zero by day):
+// 0.4 of the light where the tree stands (leaves take it edge-on and shade one another), read per vertex, all of that
+// up to the lamps' height and fading up the crown.
+
+// The street lamps' light on a tree at xz, `h` metres up it: as below the lamps to 4 m (most hang at 4 to 9 m), half
+// that at 9 m, a sixth on a plane tree's top
+const lampOnTree = (xz, h) => streetLight(xz).mul(float(0.4).div(max(float(h).sub(4.0), 0.0).div(5.0).pow2().add(1.0)));
 
 // Fast deterministic 2D -> 1D hash
 const hash2D = Fn(([p]) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)));
@@ -181,6 +189,8 @@ export function createTreeMaterial(leafAtlas, instances) {
   mat.normalNode = normalViewGeometry;
   mat.aoNode = light.ao;
   mat.translucencyNode = light.translucency.mul(isLeaf);
+  const lamp = varying(lampOnTree(instanceMatrix.mul(vec4(positionGeometry, 1.0)).xz, positionGeometry.y), 'vTreeLamp');
+  mat.emissiveNode = lamplit(mat.colorNode.rgb, lamp);
   return mat;
 }
 
@@ -293,6 +303,8 @@ export function createFarTreeMaterial(leafAtlas, farTiles) {
   mat.roughnessNode = select(isCrown, float(0.72).sub(leaf.r.mul(0.1)), float(0.93));
   mat.aoNode = light.ao;
   mat.translucencyNode = select(isCrown, light.translucency, vec3(0.0));
+  const lamp = varying(lampOnTree(P.xz, select(isCrown, S.x.add(g.y.mul(S.z)), g.y.mul(S.x))), 'vFarLamp');
+  mat.emissiveNode = lamplit(mat.colorNode.rgb, lamp);
   return { material: mat, uniforms };
 }
 
@@ -386,5 +398,7 @@ export function createBillboardTreeMaterial(leafAtlas, farTiles, uniforms) {
   mat.roughnessNode = select(isCrown, float(BILLBOARD_ROUGHNESS), float(0.93));
   mat.aoNode = select(isCrown, light.ao, float(0.89));
   mat.translucencyNode = select(isCrown, light.translucency, vec3(0.0));
+  const lamp = varying(lampOnTree(P.xz, select(isCrown, S.x.add(g.y.mul(S.z)), g.y.mul(S.x))), 'vBillboardLamp');
+  mat.emissiveNode = lamplit(mat.colorNode.rgb, lamp);
   return mat;
 }

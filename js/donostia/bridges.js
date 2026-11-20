@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { streetLit } from './street-light.js';
 import {
   Fn, float, vec2, vec3, attribute, positionWorld, mix, smoothstep, step, floor, fract, min, max, sin, cos, dot, fwidth,
   mx_noise_float
@@ -1063,6 +1064,9 @@ function createMaterials() {
     const plain = colour.mul(mx_noise_float(positionWorld.mul(0.7)).mul(0.07).add(1.0));
     return mix(plain, tiles, step(colour.x, -0.5));
   })();
+
+  // the lamps' light on the deck at night (js/donostia/street-light.js: the bridges' own along their axes; zero by day)
+  deck.emissiveNode = streetLit(deck.colorNode.max(0.0), positionWorld.xz, 0.9);
 
   const metal = std({ roughness: 0.5, metalness: 0.25 });
   metal.colorNode = colour;

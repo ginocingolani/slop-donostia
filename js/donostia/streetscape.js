@@ -1,12 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, color, attribute, uv, abs, fract, min, max, mix, length, fwidth, smoothstep, mrt,
-  pow, clamp, atan, cos
+  pow, clamp, atan, cos, varying, positionWorld
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
 import { detail, effectTargets } from './quality.js';
+import { streetLit } from './street-light.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
@@ -451,6 +452,8 @@ function createPaintMaterial() {
   const paint = attribute('aPaint', 'vec4');
   mat.colorNode = paint.xyz;
   mat.roughnessNode = paint.w;
+  // the lamps' light on the furniture at night (js/donostia/street-light.js; zero by day), read per vertex
+  mat.emissiveNode = paint.xyz.mul(varying(streetLit(vec3(1.0), positionWorld.xz, 0.8), 'vPaintLamp'));
   return mat;
 }
 
@@ -515,6 +518,7 @@ function createIronworkMaterial() {
   const coverage = float(1.0).sub(smoothstep(w.negate(), w, d)).mul(min(float(1.0), float(0.036).div(w.add(0.018))));
   const relief = mix(mix(0.78, 1.0, smoothstep(0.0, 0.012, d.negate())), 0.94, smoothstep(0.004, 0.015, w));
   mat.colorNode = vec4(vec3(...WHITE_IRON.slice(0, 3)).mul(relief), coverage);
+  mat.emissiveNode = vec3(...WHITE_IRON.slice(0, 3)).mul(relief).mul(varying(streetLit(vec3(1.0), positionWorld.xz, 0.8), 'vIronLamp'));
   mat.maskShadowNode = coverage.greaterThan(0.4);
   return mat;
 }

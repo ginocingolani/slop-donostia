@@ -25,12 +25,18 @@ export const ANCHORS = [['midnight', -12], ['twilight', -3], ['golden', 11], ['m
 
 const NUMBERS = ['sunIntensity', 'hemiIntensity', 'fogDensity', 'interiorGlow', 'roadWetness', 'envIntensity',
   'canyonBounce', 'turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'cloudCoverage', 'cloudDensity',
-  'skyExposure', 'nightFactor', 'daylight', 'nightSky'];
+  'skyExposure', 'nightFactor', 'daylight', 'nightSky', 'streetLight'];
 const COLORS = ['sunColor', 'hemiSky', 'hemiGround', 'skyTop', 'skyHorizon', 'fogColor'];
 const GRADE = ['exposure', 'contrast', 'saturation', 'bloom', 'threshold'];
 // How much daylight each look stands for (0 night .. 1 day; cityUniforms.uDaylight): presets.js's `daylight`, these
 // for presets without one
 export const DAYLIGHT = { midday: 1, golden: 0.72, twilight: 0.3, midnight: 0.05 };
+// Whether the public lighting is on in each look (cityUniforms.uStreetLight): presets.js's `streetLight`, off for
+// presets without one (a city with no lamps modelled). Between the golden hour and the blue hour the blend would
+// bring the lamps up from the moment the sun stands 11° high; real ones are switched by the daylight, about sunset,
+// and are at full strength in a few minutes: lampsOn() takes the blend to that
+const STREET_LIGHT = 0;
+export const lampsOn = (blend) => smoothstep(0.45, 0.92, blend);
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -209,7 +215,7 @@ export function blendLooks(presets, looks, weights) {
   for (const [id, w] of Object.entries(weights)) {
     if (!w) continue;
     const p = presets[id], g = looks[id];
-    for (const k of NUMBERS) look[k] += w * (p[k] ?? (k === 'daylight' ? DAYLIGHT[id] : 1));
+    for (const k of NUMBERS) look[k] += w * (p[k] ?? (k === 'daylight' ? DAYLIGHT[id] : k === 'streetLight' ? STREET_LIGHT : 1));
     for (const k of COLORS) {
       const c = Array.isArray(p[k]) ? p[k] : srgbToLinear(p[k]);
       for (let i = 0; i < 3; i++) look[k][i] += w * c[i];
@@ -264,6 +270,10 @@ export function timeOfDay({ sun, moon, weather, sky = skyWeather(weather) }, pre
   const ml = moonlight(moon);
   const anchors = { ...presets, midnight: nightLook({ nightSky: 1, daylight: DAYLIGHT.midnight, ...presets.midnight }, ml) };
   const look = blendLooks(anchors, looks, weights);
+  // the lamps: on from about sunset (a blend of 0.45 is the sun 4.5° up, 0.92 just under the horizon), and a degree
+  // or so of sun earlier under a sky dark with cloud, rain or fog
+  const gloom = Math.max(0.6 * sky.overcast, sky.precip, sky.fog);
+  look.streetLight = lampsOn(Math.min(1, look.streetLight + 0.12 * gloom * (1 - weights.midday)));
   applyWeather(look, sky);
 
   // by day the sun (lifted); by night the moon where it stands, or the preset's night sky while it is down

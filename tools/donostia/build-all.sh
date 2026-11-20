@@ -34,6 +34,7 @@ $NODE "$HERE/bake-ground.mjs"        # data/donostia/ground-*.png (after the bri
 $NODE "$HERE/bake-shore.mjs"         # js/donostia/data-shore.js (rocks of the shore; the walls are build.mjs's)
 $NODE "$HERE/bake-marina.mjs"        # js/donostia/data-marina.js (the port's pontoons, gangways, quay fittings, slipway)
 $NODE "$HERE/bake-streetscape.mjs"   # js/donostia/data-streetscape.js (trees, railing, lamps, benches)
+$NODE "$HERE/bake-streetlight.mjs"   # data/donostia/street-light*.png, js/donostia/data-streetlight.js (the public lighting; after the streetscape's lamps)
 $NODE "$HERE/bake-streets.mjs"       # js/donostia/data-streets.js (street names & districts for the HUD)
 $NODE "$HERE/bake-urgull-parts.mjs"  # js/donostia/data-urgull-parts.js
 $NODE "$HERE/bake-funicular.mjs"     # js/donostia/data-funicular.js

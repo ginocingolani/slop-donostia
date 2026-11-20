@@ -9,6 +9,8 @@ import { liveEnabled, liveSnapshot } from './live-state.js';
 import { FIXED_SEA, BAND_HIGH_WATER, HIGH_WATER, seaParams, wavelength, dryPockets } from './sea-state.js';
 import { seaUniforms, channelFloor } from './sea-uniforms.js';
 import { createSpray } from './spray.js';
+import { lampMirrored, LAMP_COLOUR } from './street-light.js';
+import { cityUniforms } from '../city-uniforms.js';
 
 // js/donostia/water.js
 // The Bay of Biscay, La Concha, the Urumea and the ponds, on one sea plane at the tide's level plus pond surfaces.
@@ -557,6 +559,17 @@ function createWaterMaterial(terrain, fieldsTex) {
   const viewDir = normalize(cameraPosition.sub(p));
   const fresnel = pow(float(1.0).sub(clamp(dot(waterNormal, viewDir), 0.0, 1.0)), 5.0).mul(0.98).add(0.02);
   mat.metalnessNode = clamp(fresnel.mul(1.6), 0.0, 0.9).mul(float(1.0).sub(foam));
+
+  // The promenade's and the quays' lamps mirrored in the water at night (js/donostia/street-light.js), drawn out
+  // towards the eye and broken by the ripples; a uniform branch, skipped by day
+  mat.emissiveNode = Fn(() => {
+    const e = vec3(0.0).toVar();
+    If(cityUniforms.uStreetLight.greaterThan(0.0), () => {
+      const mirrored = lampMirrored(p, cameraPosition, { height: 6, reach: 90, wobble: waterNormal.xz.mul(4.0) });
+      e.assign(vec3(...LAMP_COLOUR).mul(mirrored).mul(fresnel.mul(0.85).add(0.15)).mul(float(1.0).sub(foam)).mul(0.9));
+    });
+    return e;
+  })();
 
   mat.colorNode = Fn(() => {
     // (the harbour's water as deep as its dredged basins, not the LiDAR's shallow bed)
