@@ -1223,7 +1223,7 @@ body.touch-enabled #compile-note { bottom: calc(var(--safe-b) + var(--dock-h) + 
 
 /* ------------------------------------------------------------------------------------------------------------------
    The cookie choice (index.html #consent-card, js/donostia/consent.js): a small card in the HUD's glass with the
-   carved hairline, a teja beside its title, while the choice is pending; the yes in the sandstone. It never covers a
+   carved hairline, while the choice is pending; the yes in the sandstone. It never covers a
    control: over the controls hint on a desktop; on touch screens between the stick's pad and the Up / Down buttons,
    over the note of the background compile; on an upright phone, where there is no room between them, across the
    screen above the stick, clear of the bar. Centred with `translate`, which clean view's `transform` leaves alone.
@@ -1270,35 +1270,13 @@ body.hud-minimized .hud-consent { transform: translateY(12px); }
 
 .consent[hidden] { display: none; }
 
-.consent-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 7px;
-}
-
 .consent .pop-title {
-  margin: 0;
+  margin: 0 0 7px;
   padding: 0;
   border: 0;
   font-size: 14px;
   line-height: 1.25;
 }
-
-/* the teja (index.html #i-teja): drawn like the HUD's icons, in the sandstone, the biscuit's back lightly filled */
-.consent-teja {
-  width: 40px;
-  height: 28px;
-  color: var(--harri);
-  stroke-width: 1.5;
-}
-
-.teja-body {
-  fill: rgba(220, 181, 116, 0.2);
-  stroke: none;
-}
-
-.teja-almond { stroke-width: 1.35; }
 
 .consent-text {
   margin: 0 0 12px;
@@ -1381,6 +1359,6 @@ body.touch-enabled .link-btn { padding: 12px 8px; margin: -12px -4px; }
 /* (a short one, e.g. 375 x 550 with the browser's bars: tighter, to leave more of the radar card under it) */
 @media (max-width: 620px) and (min-height: 501px) and (max-height: 620px) {
   body.touch-enabled .consent { padding: 10px 13px 12px; }
-  body.touch-enabled .consent-head { margin-bottom: 5px; }
+  body.touch-enabled .consent .pop-title { margin-bottom: 5px; }
   body.touch-enabled .consent-text { margin-bottom: 9px; font-size: 12.5px; line-height: 1.4; }
 }

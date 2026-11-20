@@ -278,9 +278,9 @@ test("the card's words are the owner's, in the three languages, with the fuller 
   for (const old of ['Bai · Vale', 'Ez · Sin cookie', 'aldatu · cambiar', 'Cookie bat · Una cookie', 'Erabilera neurtzeko', 'galdetu gabe']) {
     assert.ok(!html.includes(old) && !consent.includes(old), `the old card's "${old}" is gone`);
   }
-  // the teja: a drawn symbol of the sprite, beside the title
-  assert.match(html, /<symbol id="i-teja" viewBox="[^"]+">\s*<path/);
-  assert.match(html, /<div class="consent-head">\s*<svg class="icon consent-teja"[^>]*aria-hidden="true"><use href="#i-teja"\/><\/svg>\s*<div id="consent-title"/);
+  // no drawing beside the title: the card is its words and its two buttons (the teja's symbol and styles are gone)
+  assert.ok(!/i-teja|consent-teja|consent-head/.test(html), 'no teja in the page');
+  assert.ok(!/teja-|consent-teja|consent-head/.test(fs.readFileSync(`${root}css/donostia.css`, 'utf8')), 'nor in the stylesheet');
 });
 
 test('a disabled tracker never loads the SDK and drops everything', async () => {

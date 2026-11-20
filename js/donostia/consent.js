@@ -1,9 +1,9 @@
 import { t, onLang } from './i18n.js';
 
 // js/donostia/consent.js
-// The cookie choice for the usage analytics (js/donostia/analytics.js): a small card, with a teja beside its title (the
-// curved almond biscuit of Tolosa: the Basque and the Spanish titles offer one with the coffee), a moment after the
-// city first shows and until it is answered. The first button sets PostHog's first-party cookie, so the same visitor
+// The cookie choice for the usage analytics (js/donostia/analytics.js): a small card, a moment after the city first
+// shows and until it is answered (its Basque and Spanish titles offer a teja with the coffee, the curved almond
+// biscuit of Tolosa; the card itself draws none). The first button sets PostHog's first-party cookie, so the same visitor
 // is the same person tomorrow; the second keeps the cookieless hash: counted, never recognised, which is also how it
 // is until the card is answered. Either answer is remembered (localStorage) and the card does not come back; the data
 // popover shows the answer with a button to choose again, which brings the card back.
