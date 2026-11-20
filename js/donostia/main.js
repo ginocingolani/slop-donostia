@@ -60,7 +60,11 @@ import { getLang, t } from './i18n.js';
 // says so on the loading screen, and after repeated deaths at the lowest tier stops with a message and a button
 // instead of loading itself to death again.
 
-const STORAGE_KEY = 'donostia-god-camera';
+const STORAGE_KEY = 'donostia-god-camera'; // (the camera's last position, kept until November 2026: cleared now)
+const START_KEY = 'donostia-start'; // localStorage: the view the last visit opened on
+// The views a visit may open on (GEO.teleports ids): the bay from Igeldo and from Urgull, La Concha's promenade, the
+// City Hall from Alderdi Eder, the Kursaal and Zurriola, and Miramar
+const START_VIEWS = ['igeldo', 'urgull', 'kontxa', 'udaletxea', 'kursaal', 'miramar'];
 const COMPILE_SHADOW_MS = 500; // after a shader compile, the frames the frame-rate governor is not fed
 
 // --- the world -----------------------------------------------------------------------------------------------------------
@@ -1174,15 +1178,21 @@ async function initApp() {
   god.colliders = createColliders(GEO.buildings);
   markInit('colliders');
   const camera = god.camera;
-  let saved = null;
+  // Every visit opens on one of the city's postcard views, picked at random (never the one the last visit opened on).
+  // The camera's last position is no longer kept: it left visitors where they had stopped, which could be a patch of
+  // sand. (The old saved view is cleared.)
+  const starts = START_VIEWS.map((id) => GEO.teleports.find((t) => t.id === id)).filter(Boolean);
+  let lastStart = null;
   try {
-    saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch { /* storage unavailable, or not JSON */ }
-  // the last view, if it is one (a corrupt save or one off the edge of the map starts at Urgull, as a first visit)
-  if (!god.restore(saved)) god.flyTo(GEO.teleports.find((t) => t.id === 'urgull') || GEO.teleports[0], 0.001);
+    lastStart = localStorage.getItem(START_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* storage unavailable */ }
+  const fresh = starts.filter((t) => t.id !== lastStart);
+  const pool = fresh.length ? fresh : starts;
+  const start = pool[Math.floor(Math.random() * pool.length)] || GEO.teleports[0];
+  try { localStorage.setItem(START_KEY, start.id); } catch { /* storage unavailable */ }
+  god.flyTo(start, 0.001);
   god.update(0.001);
-  const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(god.state)); } catch { /* storage unavailable */ } };
-  window.addEventListener('pagehide', save);
 
   const view = createView(renderer, world, camera, { settings });
   const { grade } = view;
@@ -1472,7 +1482,6 @@ async function initApp() {
       fpsTime = 0;
     }
     if (now > saveAt) {
-      save();
       saveAt = now + 4000;
       // the crash guard's heartbeat: alive, at this tier, in real time or not
       guard.beat({ tier: quality.get().tier, realTime: live.liveEnabled() });
