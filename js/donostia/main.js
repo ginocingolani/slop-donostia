@@ -981,7 +981,7 @@ async function initApp() {
   // (its looks in a style element ahead of the page's stylesheets, so a rule of theirs for #compile-note wins)
   const noteStyle = document.createElement('style');
   noteStyle.textContent = '#compile-note{position:fixed;left:50%;bottom:calc(8px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);' +
-    'z-index:4;padding:3px 11px;border-radius:999px;background:rgba(10,16,22,0.62);color:#fff;font:500 11px/1.4 system-ui,sans-serif;' +
+    'z-index:20;padding:3px 11px;border-radius:999px;background:rgba(10,16,22,0.62);color:#fff;font:500 11px/1.4 system-ui,sans-serif;' +
     'letter-spacing:0.02em;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.35s}#compile-note.is-on{opacity:1}';
   document.head.prepend(noteStyle);
   document.body.appendChild(note);
@@ -1000,10 +1000,30 @@ async function initApp() {
     renderer.setPixelRatio(ratio);
   };
   // The structural settings the world and the view are built for, and their change in the running city: the world's
-  // part (applyWorldStructure()), the passes again, then the shaders as at start-up: the first view's while the canvas
-  // holds its last frame under the note, the rest in the background. The camera, the time of day and the HUD are not
-  // touched. One at a time: a pick made meanwhile is applied when this one is through.
-  let built = settings, restructuring = false, shown = false, warmed = null;
+  // part (applyWorldStructure()), the passes again, then the shaders as at start-up: the first view's under the note,
+  // the rest in the background. The camera, the time of day and the HUD are not touched. One at a time: a pick made
+  // meanwhile is applied when this one is through.
+  // The view does not go black meanwhile (the new passes' first frame is an empty one): a copy of the last frame, on a
+  // 2D canvas over the WebGPU one, stands in until the rebuilt city has drawn its first.
+  let built = settings, restructuring = false, paused = false, shown = false, warmed = null, framed = null;
+  const still = document.createElement('canvas');
+  still.setAttribute('aria-hidden', 'true');
+  still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
+  container.appendChild(still);
+  const holdFrame = () => new Promise((resolve) => {
+    // (the loop copies the frame in the task that drew it; none comes in a hidden tab)
+    const timer = setTimeout(() => { framed = null; resolve(); }, 400);
+    framed = () => {
+      clearTimeout(timer);
+      try {
+        still.width = renderer.domElement.width;
+        still.height = renderer.domElement.height;
+        still.getContext('2d').drawImage(renderer.domElement, 0, 0);
+        still.style.display = 'block';
+      } catch { /* no copy: the view shows the empty frame for a moment */ }
+      resolve();
+    };
+  });
   const releaseGeometry = (tries) => {
     if (deviceLost || !built.releaseGeometry) return;
     if (releaseUploadedGeometry(renderer, [world.modules.terrain, world.modules.buildings]) > 0 && tries > 0) setTimeout(releaseGeometry, 4000, tries - 1);
@@ -1015,7 +1035,9 @@ async function initApp() {
     try {
       for (let state = quality.get(); needsRebuild(built, state.boot) && !deviceLost; state = quality.get()) {
         say('applying');
-        // (a frame for the note to show before the main thread gets busy)
+        if (!paused) await holdFrame();
+        paused = true;
+        // (a moment for the note to show before the main thread gets busy)
         await new Promise((resolve) => setTimeout(resolve, 50));
         const next = state.boot;
         await applyWorldStructure(world, renderer, next, built);
@@ -1033,7 +1055,9 @@ async function initApp() {
     } catch (e) {
       console.error('[quality]', e);
     } finally {
-      restructuring = false;
+      restructuring = paused = false;
+      still.style.display = 'none';
+      still.width = still.height = 1;
       quality.busy(false);
       if (!view.compiler.pending) say('done');
     }
@@ -1150,7 +1174,7 @@ async function initApp() {
     const raw = (now - last) / 1000;
     last = now;
     const dt = Math.min(Math.max(raw, 0.001), 0.05);
-    if ((hud.mapOpen || restructuring) && !first && !warmed) {
+    if ((hud.mapOpen || paused) && !first && !warmed) {
       // The full map covers the whole view: no world to simulate or draw (the canvas keeps its last frame). The
       // camera still finishes a flight. Nor while a quality tier is being applied: the scene is between two states.
       god.update(dt);
@@ -1165,6 +1189,10 @@ async function initApp() {
         warmed = null;
       }
       view.render();
+      if (framed) {
+        framed();
+        framed = null;
+      }
       // the governor: the frame rate of the frames that drew the world (a hidden tab's or a hitch's interval is not
       // one, and it sorts those out itself)
       if (governing) quality.frame(now - lastFrame);
