@@ -10,6 +10,7 @@ import { BEACH_ACCESS } from './data-beach-access.js';
 import { HARRESIA } from './data-harresia.js';
 import { seaUniforms } from './sea-uniforms.js';
 import { detail } from './quality.js';
+import { takeStreetLight } from './street-light.js';
 
 // js/donostia/shore.js
 // The shore: the masonry of the sea & river walls the terrain now steps down at (GEO.terrain.walls, found in the LiDAR by
@@ -343,7 +344,10 @@ function wallMaterial() {
   mat.normalNode = bumpNormal(joint.mul(-0.012).add(grain.mul(0.004)).mul(float(1).sub(max(open, col))));
   // (the sky lights the face, not the gallery under the deck)
   mat.aoNode = float(1).sub(open.mul(float(1).sub(col)).mul(0.55));
-  return mat;
+  // the street lamps on the walls (the shore's and the quays', the old city wall's, the beaches' stairs and ramps, which
+  // share this material): what the ground before each face gets, fading up it (js/donostia/street-light.js); half of
+  // it, since most of these faces look away from the lamps on the walk above them
+  return takeStreetLight(mat, 0.5);
 }
 
 // Appends geometry b (the same layout, arc optional) to a; either may be null
@@ -672,6 +676,9 @@ function rockMaterials(seaLevel) {
     return mix(c, vec3(0.75, 0.78, 0.78), swash(p.y.sub(seaLevel)));
   })();
   concrete.normalNode = bumpNormal(n2.mul(0.01));
+  // (the street lamps' light where a rock or a block lies by a lit quay: js/donostia/street-light.js)
+  takeStreetLight(rock);
+  takeStreetLight(concrete);
   return { rock, concrete };
 }
 

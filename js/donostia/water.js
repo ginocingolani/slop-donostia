@@ -565,8 +565,8 @@ function createWaterMaterial(terrain, fieldsTex) {
   mat.emissiveNode = Fn(() => {
     const e = vec3(0.0).toVar();
     If(cityUniforms.uStreetLight.greaterThan(0.0), () => {
-      const mirrored = lampMirrored(p, cameraPosition, { height: 6, reach: 90, wobble: waterNormal.xz.mul(4.0) });
-      e.assign(vec3(...LAMP_COLOUR).mul(mirrored).mul(fresnel.mul(0.85).add(0.15)).mul(float(1.0).sub(foam)).mul(0.9));
+      const mirrored = lampMirrored(p, cameraPosition, { height: 6, reach: 90, wobble: waterNormal.xz.mul(2.0), lod: 0, core: [0.35, 0.9] });
+      e.assign(vec3(...LAMP_COLOUR).mul(mirrored).mul(fresnel.mul(0.85).add(0.15)).mul(float(1.0).sub(foam)).mul(1.1));
     });
     return e;
   })();

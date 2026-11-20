@@ -364,7 +364,8 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   const tidalWet = float(0).toVar('groundTidalWet');
 
   // the public lighting here (js/donostia/street-light.js; a filtered read, so in the main flow with the rest)
-  const lamplight = streetLight(xz).toVar();
+  // (not the seabed: the light that spills over the water is in the map for the boats and the pontoons)
+  const lamplight = streetLight(xz).mul(float(1).sub(eq(wid, S.seabed))).toVar();
 
   // TSL keeps a shared node in the variable it was first assigned to: one first built inside a branch would be stale
   // wherever that branch didn't run (see facade-material.js). Everything the branches share is built up front here.
@@ -627,7 +628,7 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   // The public lighting (js/donostia/street-light.js): at night the ground gives back the lamps' light in its own
   // colour, in pools under each lamp; by day the term is zero. The map comes in its own time (the coarse one with the
   // terrain's classes, the lowest quality tier's ground)
-  loadStreetLight({ coarse: prefetched === CLASSES_ONLY });
+  loadStreetLight({ coarse: prefetched === CLASSES_ONLY, terrain });
   // (asphalt's albedo here is half a real road's under a lamp: lifted a little, the paving kept). Where the ground is
   // wet (the looks' damp streets, the real-time rain) the puddles and the film mirror the lamps beyond them
   mat.emissiveNode = Fn(() => {
