@@ -4,7 +4,7 @@ import { cityUniforms } from '../city-uniforms.js';
 import { FERRY } from './data-boats.js';
 import { Builder, addHull, V, P, HULL, DECK, GLASS, STEEL, DARK, LIGHT, SLOTS, createBoatMaterial, srgb } from './boats.js';
 import { ferryRounds, SERVICE } from './ferry-timeline.js';
-import { detail } from './quality.js';
+import { effectTargets } from './quality.js';
 
 // js/donostia/ferries.js
 // The two island ferries, the Motoras de la Isla, shuttling between the north basin's ferry pier and Santa Klara's jetty
@@ -130,7 +130,10 @@ function ferryBody() {
 const WAKE = { samples: 40, step: 2.5, life: 40, lift: 0.06, wash: 45, arms: 110, full: 4 };
 
 function createWakeMaterial() {
-  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  // (forceSinglePass: three draws a transparent double-sided material twice, back faces then front, each a pipeline
+  // of its own that renderer.compileAsync() cannot build ahead (js/donostia/main.js's createCompiler()). The wake is a
+  // flat ribbon, seen whole from one side or the other: one pass draws the same)
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
   // aWake: across the ribbon (-1..1), the arms' opacity, the wash's, the wash's half-width as a share of the ribbon's
   const w = attribute('aWake', 'vec4'), across = abs(w.x);
   const wash = w.z.mul(float(1).sub(smoothstep(w.w.mul(0.55), w.w, across)));
@@ -138,7 +141,7 @@ function createWakeMaterial() {
   mat.colorNode = vec3(0.92, 0.95, 0.95).mul(float(1).sub(smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow).mul(0.8)));
   mat.opacityNode = wash.max(arms);
   // (as streetscape.js's pools of lamplight: the water's normal & glossiness under the foam go, so it reflects no sky)
-  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  effectTargets(mat, mrt({ normal: vec4(0.0), metalRough: vec4(0.0) }));
   return mat;
 }
 

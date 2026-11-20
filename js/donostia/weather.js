@@ -9,7 +9,7 @@ import { weatherUniforms } from './weather-uniforms.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
 import { precipitation, windVector, gustFactor, wetnessTarget, stepWetness, strikeRate, Lightning } from './weather-model.js';
 import { pointInRing } from './landmarks/geom.js';
-import { detail } from './quality.js';
+import { effectTargets } from './quality.js';
 
 // js/donostia/weather.js
 // The real-time weather's effects (the HUD's real-time switch; live-state.js's weather, its numbers worked out by
@@ -96,7 +96,7 @@ function precipitationMesh(shelter) {
   // (double-sided in one pass: three draws a transparent double-sided material twice otherwise, back faces first)
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
   mat.name = 'WeatherPrecipitation';
-  if (detail.mrt) mat.mrtNode = effectMRT;
+  effectTargets(mat, effectMRT);
 
   const i = float(instanceIndex);
   const r = hash31(i.add(0.37));
@@ -300,7 +300,7 @@ function boltMesh() {
   });
   mat.name = 'WeatherBolt';
   mat.fog = false; // dimmed by the rain's visibility on the CPU instead
-  if (detail.mrt) mat.mrtNode = effectMRT;
+  effectTargets(mat, effectMRT);
   const T = attribute('aTangent', 'vec4'); // xyz direction, w: width share (thinner down the branches) x side
   const vSide = varying(T.w.sign(), 'vBoltSide');
   mat.positionNode = Fn(() => {

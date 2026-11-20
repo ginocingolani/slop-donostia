@@ -589,9 +589,7 @@ function instanced(geo, mat, matrices, name, shadows = true) {
   if (!n) return null;
   const mesh = new THREE.InstancedMesh(geo, mat, n);
   mesh.instanceMatrix.array.set(matrices);
-  // a storage buffer (as js/donostia/streetscape.js): small instanced meshes otherwise keep their matrices in a uniform
-  // buffer re-uploaded every draw
-  mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
+  // (the matrices are instanced vertex attributes, as js/donostia/streetscape.js: main.js's shareInstancedPrograms())
   mesh.computeBoundingSphere();
   mesh.name = name;
   mesh.castShadow = shadows;

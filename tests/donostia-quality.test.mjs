@@ -128,7 +128,7 @@ test('readEnvironment survives a browser that tells nothing', () => {
   assert.equal(Q.detectTier(full).tier, 'high');
 });
 
-test('the device\'s limits trim the boot settings; a reload is asked only for what cannot change live', () => {
+test('the device\'s limits trim the boot settings; nothing takes a reload, the structural settings a rebuild', () => {
   // WebGPU's compatibility mode: 4096 px textures. No 4200 x 5120 ground map, cascades of 2048
   const compat = Q.bootSettings('ultra', { maxTextureDimension2D: 4096 });
   assert.equal(compat.groundMaps, 'classes');
@@ -136,12 +136,17 @@ test('the device\'s limits trim the boot settings; a reload is asked only for wh
   assert.equal(Q.bootSettings('ultra', { maxTextureDimension2D: 8192 }).shadowMapSize, 3072);
   assert.equal(Q.bootSettings('high', null).groundMaps, 'full');
   const b = (name) => Q.bootSettings(name);
-  assert.equal(Q.needsReload(b('ultra'), b('ultra')), false);
-  assert.equal(Q.needsReload(b('ultra'), b('high')), false, 'high differs from ultra in live settings only');
-  assert.equal(Q.needsReload(b('high'), b('medium')), true, 'MSAA');
-  assert.equal(Q.needsReload(b('medium'), b('low')), true, 'shadows, ground maps');
-  assert.equal(Q.needsReload({ ...b('high'), ssr: true }, { ...b('high'), ssr: false }), false, 'SSR turns off live');
-  assert.equal(Q.needsReload({ ...b('high'), ssr: false }, { ...b('high'), ssr: true }), true, 'but not on');
+  assert.equal(Q.needsRebuild(b('ultra'), b('ultra')), false);
+  assert.equal(Q.needsRebuild(b('ultra'), b('high')), false, 'high differs from ultra in live settings only');
+  assert.equal(Q.needsRebuild(b('high'), b('medium')), true, 'MSAA');
+  assert.equal(Q.needsRebuild(b('medium'), b('low')), true, 'shadows, ground maps');
+  assert.equal(Q.needsRebuild({ ...b('high'), ssr: true }, { ...b('high'), ssr: false }), false, 'SSR turns off live');
+  assert.equal(Q.needsRebuild({ ...b('high'), ssr: false }, { ...b('high'), ssr: true }), true, 'but not on');
+  // every pair of tiers, either way: the city changes in place
+  for (const from of TIER_NAMES) for (const to of TIER_NAMES) assert.equal(Q.needsReload(b(from), b(to)), false, `${from} -> ${to}`);
+  assert.deepEqual(Object.keys(Q.structural(b('low'))), [...Q.STRUCTURAL]);
+  // the phone tiers show the first view and compile the rest behind it; the desktop waits for all of it, as before
+  assert.deepEqual(TIER_NAMES.map((name) => TIERS[name].progressive), [true, true, true, false]);
 });
 
 test('the governor lowers the scale when the frame rate stays under the target, then the tier', () => {
@@ -262,15 +267,26 @@ test('the controller: URL, stored choice, auto, set() and change events', () => 
   const off = q.onChange((state) => seen.push(state.tier));
   q.attach((state) => applied.push([state.tier, state.pixelRatio, state.settings.shadows, state.settings.treeMid]));
   s = q.set('low');
-  assert.deepEqual([s.mode, s.tier, s.needsReload, s.pixelRatio], ['low', 'low', true, 1.25]);
+  assert.deepEqual([s.mode, s.tier, s.needsReload, s.pixelRatio], ['low', 'low', false, 1.25]);
   assert.equal(store.getItem('donostia-quality'), 'low');
-  // (booted at medium: the shadows stay until the reload, the trees' reach changes at once)
-  assert.deepEqual(applied.at(-1), ['low', 1.25, true, TIERS.low.treeMid]);
+  // (booted at medium: the whole tier applies in the running city, its structural settings too: no shadows on low)
+  assert.deepEqual(applied.at(-1), ['low', 1.25, false, TIERS.low.treeMid]);
+  assert.deepEqual([s.boot.shadows, s.boot.groundMaps, s.boot.terrainMesh, s.boot.msaa], [false, 'classes', 'coarse', false]);
   s = q.set('high');
-  assert.deepEqual([s.tier, s.needsReload, s.settings.ssr, s.settings.msaa], ['high', true, false, false], 'booted without SSR & MSAA: they wait for the reload');
+  assert.deepEqual([s.tier, s.needsReload, s.settings.ssr, s.settings.msaa], ['high', false, true, true], 'SSR & MSAA come with the tier, no reload');
+  assert.deepEqual(s.boot, Q.structural(TIERS.high));
   assert.equal(s.settings.shadowMapSize, 2048, 'the shadow map resizes live');
+  // main.js says when it is rebuilding for a pick: listeners hear it, the applier is not called again
+  const calls = applied.length, heard = seen.length;
+  q.busy(true);
+  assert.deepEqual([q.get().applying, applied.length, seen.length], [true, calls, heard + 1]);
+  q.busy(true);
+  q.busy(false);
+  assert.deepEqual([q.get().applying, applied.length, seen.length], [false, calls, heard + 2]);
+  seen.length = heard;
   s = q.set('auto');
   assert.deepEqual([s.mode, s.tier, s.needsReload], ['auto', 'medium', false]);
+  assert.deepEqual(s.boot, Q.structural(TIERS.medium));
   assert.equal(store.getItem('donostia-quality'), null);
   assert.deepEqual(seen, ['low', 'high', 'medium']);
   off();
@@ -302,6 +318,8 @@ test('the controller on auto: the governor moves the tier, and the next visit st
   assert.equal(q.get().tier, 'low');
   assert.ok(applied.length >= 3 && applied.some(([tier, scale]) => tier === 'medium' && scale < 1), JSON.stringify(applied));
   assert.equal(q.get().needsReload, false, 'auto never asks for a reload');
+  // (the governor's steps are the live settings only: the city booted at medium keeps its shadows on low)
+  assert.deepEqual([q.get().boot.shadows, q.get().settings.shadows, q.get().settings.treeMid], [true, true, TIERS.low.treeMid]);
   // it could not hold the tier it booted with, from the start: the next visit boots low and stays at most there
   let memo = JSON.parse(store.getItem('donostia-quality-auto'));
   assert.deepEqual([memo.detected, memo.tier, memo.ceiling], ['medium', 'low', 'low']);

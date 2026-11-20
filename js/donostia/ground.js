@@ -620,5 +620,11 @@ export async function createGroundMaterial(terrain, prefetched = null) {
     return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)).add(rings));
   })();
 
+  // (a quality tier picked in a running city swaps the baked maps for the classes or back: main.js makes another
+  // material and lets this one's maps go, 86 MB of them on the GPU)
+  mat.userData.release = () => {
+    for (const map of [maps.ground, maps.orient, maps.crossings]) map?.dispose?.();
+    mat.dispose();
+  };
   return mat;
 }

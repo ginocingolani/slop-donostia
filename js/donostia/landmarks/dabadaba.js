@@ -10,7 +10,7 @@ import { createFacadeMaterial, createRoofMaterial } from '../facade-material.js'
 import { wound, simplifyRing, signedArea } from '../facade-geometry.js';
 import { pointInRing } from './geom.js';
 import { PaintBuilder, FINISH } from './paint.js';
-import { detail } from '../quality.js';
+import { effectTargets } from '../quality.js';
 
 // js/donostia/landmarks/dabadaba.js
 // The way into Dabadaba, the music club of Egia (Mundaitz kalea 8), across Mundaitz kalea from the Cristina Enea park:
@@ -699,9 +699,12 @@ function neonMaterial() {
 // Light that falls on surfaces: additive discs, brightest at their middle (uv (0.5, 0.5)) and fading to their rim, off
 // by day. aGlow = (linear rgb with its strength, flicker group).
 function glowMaterial() {
-  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  // (forceSinglePass: three draws a transparent double-sided material twice, back faces then front, each a pipeline
+  // of its own that renderer.compileAsync() cannot build ahead (js/donostia/main.js's createCompiler()). Added
+  // light sums the same in one pass)
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true });
   mat.fog = false;
-  if (detail.mrt) mat.mrtNode = effectMRT;
+  effectTargets(mat, effectMRT);
   const g = attribute('aGlow', 'vec4');
   const r = length(uv().sub(0.5)).mul(2.0);
   const fall = pow(clamp(float(1.0).sub(r), 0.0, 1.0), 2.0);
