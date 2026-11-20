@@ -108,6 +108,113 @@ described above. Every generated file names its sources and licences: the extrac
 `Copyright` and `Comment` text chunks. The app credits the sources in its data popover (the ⓘ button) and on the full
 map.
 
+## Analytics
+
+The app sends a few usage events to PostHog Cloud EU (`js/donostia/analytics.js`; nothing on the New York page), to
+know whether it loads, how it runs and where people fly. It is cookieless unless the visitor accepts the cookie, on a
+small card a moment after the city shows (`js/donostia/consent.js`). Cookieless: no cookie and no identifier in the
+browser, and who a visitor is comes from a hash of the IP, the user agent and a salt of the day computed on PostHog's
+servers and never stored, the IP dropped there, so one visitor is one "person" for one day and nobody can be followed
+from a day to the next or across devices; it holds from the first event, before the card is answered and after a
+"no". With a "yes", PostHog's first-party cookie (`ph_<token>_posthog`, with its copies in `localStorage` and
+`sessionStorage`): the same visitor is the same person tomorrow (the events before it stay under that day's hash).
+The SDK runs in PostHog's `cookieless_mode: 'on_reject'`, which sends nothing until told the choice, so the tracker
+tells it "rejected" as it loads and "accepted" on a yes; the answer itself is ours, in `localStorage` under
+`donostia-cookies` (`yes` / `no`; absent, the card asks). Without a yes the browser holds that answer once given and
+the SDK's own note of its mode (`localStorage` `__ph_opt_in_out_<token>` = `0`, from the first event; it reads it back
+on every capture): neither says who the visitor is. The events before the SDK is there wait in a queue (bounded,
+`QUEUE_MAX`) and go with their timestamps. No autocapture, no session replay, no heatmaps of the page, no feature
+flags, no surveys; the SDK's slim bundle, pinned on jsDelivr (`posthog-js@1.447.3`), is imported off the critical path
+once the app's own module runs.
+
+Off on localhost, `file:` and `*.local`, with `?debug`, under a WebDriver harness (the headless renders; a harness
+that drives Chrome by CDP alone should pass `?debug` or `?analytics=0`), and for a browser that says Do Not Track or
+Global Privacy Control: nothing is loaded and nothing is sent. `?analytics=1` forces it on to test from localhost
+(DNT/GPC still win). PostHog's SDK also drops everything from a browser whose user agent says headless or bot, so a
+headless test of the real SDK needs a visitor's user agent, and must cut `eu.i.posthog.com` off (stub `fetch` and
+`sendBeacon` in the page, or intercept by CDP) so that no test event reaches the project.
+
+The card (`#consent-card` in `index.html`, `.hud-consent` in `css/donostia.css`) says in the HUD's language, with a
+teja beside its title, what the cookie is for; its words are in `js/donostia/i18n.js` (`consent.*`), English, Basque
+and Spanish. It shows 2.5 s after the city does (it does not wait for the background compile) and never again once
+answered, by either button. It covers no control: over the controls hint on a desktop, between the stick and the Up /
+Down buttons on a tablet or a phone on its side, above the stick and clear of the bar on an upright phone. The data
+popover (ⓘ; on a phone, Settings › Data sources) says what is sent (`credits.usage`), shows the answer and offers to
+change it, which brings the card back.
+
+On every event, as PostHog super-properties (registered with the SDK and refreshed when they change; ours are also
+stamped on each event as it happens, so one that waited in the queue says what was true then):
+
+- the SDK's coarse device fields: `$browser`, `$os`, `$device_type`, `$screen_*`;
+- the device: `gpu_vendor`, `gpu_arch` (as WebGPU reports them, never the model), `cpu_cores`, `memory_gb`, `dpr`,
+  `touch` (the screen can be touched at all);
+- the quality (`js/donostia/quality.js`): `quality_mode` (`auto`, or the tier picked by hand), `quality_tier` (the
+  tier in force: `low` / `medium` / `high` / `ultra`), `render_scale` (the governor's share of the tier's resolution,
+  0.6 to 1), `fps_capped` (the frame rate is held from outside, e.g. Low Power Mode), `quality_detected` (the tier
+  this device starts at on auto). From `quality.init()` on: the page view and `app_start` are sent before it;
+- the interface: `lang` (`en` / `eu` / `es`), `input` (`touch`: the stick and the phone layouts are on; `mouse`
+  otherwise), `orientation` (`portrait` / `landscape`, the window's), `display_mode` (`browser`; `standalone`: opened
+  from the home screen; `fullscreen`: a browser tab gone full screen).
+
+The events (the reference is the header of `js/donostia/analytics.js`; a test keeps the two and the code in step):
+
+- the load funnel: `$pageview` (ours, queued like the rest: the SDK's own goes before it is told the choice, and is
+  dropped) → `app_start { webgpu }` → `world_built` → `shaders_compiled` → `app_ready { ms_<step>…, ms_total,
+  shaders_pending, shaders_total }` → `details_ready { ms_since_ready, ms_total, shaders_total, quality_changed }` →
+  `first_move { after_s, by }`. The load is progressive: `app_ready` is "the city shows" (the first view's shaders are
+  compiled, with the init timings `main.js` logs; on the phone tiers `shaders_pending` of the `shaders_total` jobs
+  still compile behind it), `details_ready` the end of that background compile (at once, with `ms_since_ready` 0,
+  where nothing was left; `quality_changed`: a tier was picked by hand meanwhile, and the time includes applying it).
+  `first_move`'s `by` is `fly` (the keys or the stick moved the camera) or `look` (a drag on the view or the arrow
+  keys turned it), whichever came first; `input` says whether by touch. Where it breaks: `app_unsupported { reason }`
+  (`no_api`, `no_adapter` or `no_device`: no WebGPU, the page says so and stops), `app_error { after, message }` and
+  `gpu_lost { after, reason, hidden }` (`after`: the last init step that completed; `hidden`: the page was in the
+  background, where a phone takes the GPU's memory back);
+- the answer: `cookie_consent { cookies, changed, lang }` (`changed`: from the popover, after a first answer; `lang`:
+  the language the card was read in);
+- flying: `fps_sample` every minute (`fps`, `fps_min`, `fps_bucket`, `altitude`) and `cell_visit { cell_x, cell_z,
+  altitude }` once the camera has dwelt 2 s in a cell of a 100 m grid of the frame (`cellOf()`: the heatmap of where
+  people fly, `cell_x * 100` is the cell's west edge in frame metres);
+- quality: `quality_change { from, to, by, from_mode, to_mode }` when the mode or the tier in force changes: by
+  `user` (a pick in the settings sheet; `from` / `to` are the tiers in force before and after, `from_mode` / `to_mode`
+  what was asked for, `auto` or a tier) or by `governor` (on auto, the tier stepped for the frame rate; with `steps`,
+  how many of its steps the event stands for). The governor's are rate-limited: one at once, then at most one every
+  30 s that sums up the steps since (none if they came back to where they were), and 20 a visit. A change of the
+  render scale alone is no event: `render_scale` on the next events says it;
+- the HUD: `teleport { id }`, `time_preset { id }`, `live_toggle { on }`, `map_open`, `hud_hide { hidden }`,
+  `language_change { from, to }`, `fullscreen_toggle { on }`;
+- leaving: `session_end { visit_id, seq, reason, ready, seconds, hidden_s, fps_avg, fps_min, teleports, time_presets,
+  live_toggles, map_opens, cells, moved, details }`, the visit's summary so far, by beacon every time the page is
+  hidden (`reason` `hidden`: the tab or the browser put in the background, the phone locked) or unloads (`pagehide`).
+  A phone kills a tab in the background without a word, so the summary cannot wait for the unload; if the visitor
+  comes back the visit carries on, and the next hide sends the summary again, brought up to date. An unload right
+  after a hide sends nothing more. `seconds` is the time since the city showed with the page in view, `hidden_s` the
+  time it was hidden since; neither the fps nor a cell's dwell counts hidden time. `ready`: the city had shown
+  (false: left during the load, `seconds` 0); `details`: the background compile had ended. And `$pageleave` (the
+  SDK's own, on unload only: a phone often never sends it, so nothing should be built on it).
+
+**Counting visits and their length.** One visit is one load of the page, and may send several `session_end`: they
+share `visit_id` (a random id made as the page loads and kept in memory only: on no other event, in no storage,
+another on the next load) and count up in `seq` from 1. Every figure in a summary is the whole visit's so far, never
+a part's: keep the one with the highest `seq` of each `visit_id` and leave the others out; never add them up.
+
+- visits that left a summary: `count(distinct properties.visit_id)` over `session_end` (all visits: `$pageview`; the
+  ones that saw the city: `app_ready`, or the summaries with `ready`);
+- session length: per `visit_id`, `max(seconds)`, which is the last summary's (it only grows), then the median or the
+  average of those over the visits with `ready`. In HogQL:
+  `SELECT median(s) FROM (SELECT properties.visit_id AS v, max(toFloat(properties.seconds)) AS s FROM events WHERE
+  event = 'session_end' AND properties.ready GROUP BY v)`;
+- any other figure of the visit (`moved`, `teleports`, `cells`, `fps_avg`, `details`…): the same way, with
+  `argMax(properties.<figure>, toInt(properties.seq))` per `visit_id`.
+
+An insight that averages `seconds` over every `session_end` counts a visit once per hide and weighs the short early
+summaries in: it reads too low, the more so on phones.
+
+The PostHog project ("Default project", EU, id 337682) has cookieless tracking enabled in its settings; without it the
+events are discarded at ingestion. The project token in `analytics.js` is public by design (it can only write events).
+`tests/donostia-analytics.test.mjs` covers the switch, the queue, the session's figures, the super-properties, the
+governor's rate limit, the card and its words, and the page's wiring.
+
 ## Notes
 
 - The LiDAR terrain stores the sea surface as exactly 0 m; `build.mjs` floods it from the open sea and lays the

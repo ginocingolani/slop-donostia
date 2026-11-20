@@ -3,6 +3,7 @@ import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
 import * as live from './live-state.js';
 import { initTouchControls } from './touch.js';
 import { LANGS, LANG_NAMES, t, getLang, setLang, onLang, placeName, compassNames } from './i18n.js';
+import { track } from './analytics.js';
 
 // js/donostia/hud.js
 // HUD wiring for index.html: time of day and the real-time switch ("Now") with its readout, the fly-to list, clean
@@ -14,6 +15,8 @@ import { LANGS, LANG_NAMES, t, getLang, setLang, onLang, placeName, compassNames
 // initHud({ GEO, god, terrain, lighting, grade, liveSky, renderer, quality }) -> { update(fps), setReady(), mapOpen }:
 // main.js calls update() four times a second and setReady() once the city first shows; mapOpen says the full map
 // covers the view. `quality` is js/donostia/quality.js where there is one (see initQualityControl).
+// What the visitor does with the HUD goes to the usage analytics by track() (js/donostia/analytics.js, where the events
+// are listed; nothing happens where they are off).
 
 const TIMES = ['golden', 'midday', 'twilight', 'midnight'];
 const LIVE_KEY = 'donostia-live'; // localStorage: '1' while the real-time switch is on
@@ -77,6 +80,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   };
   // picking a time turns real time off and shows that look, as it always has
   const selectTime = (id) => {
+    track('time_preset', { id });
     if (liveShown) {
       time = id; // (the look real time hands back to)
       setLive(false);
@@ -113,7 +117,12 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     if (ready) live.setLiveEnabled(on);
     else showLive(on);
   };
-  liveButton?.addEventListener('click', () => { setLive(!liveShown); openTimes(false); });
+  // (the switch itself, by the button or key 5; a preset turning it off is a time_preset)
+  const toggleLive = () => {
+    track('live_toggle', { on: !liveShown });
+    setLive(!liveShown);
+  };
+  liveButton?.addEventListener('click', () => { toggleLive(); openTimes(false); });
   // the state may change from elsewhere too (slopDebug.live): the switch follows it, and real time turned off brings
   // back the preset picked last
   live.onLive((snap) => {
@@ -137,6 +146,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     sub.className = 'pop-sub';
     btn.append(name, sub);
     btn.addEventListener('click', () => {
+      track('teleport', { id: place.id });
       god.flyTo(place);
       document.getElementById('teleport-popover')?.hidePopover?.();
     });
@@ -161,6 +171,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   hudToggle?.addEventListener('click', () => {
     const min = document.body.classList.toggle('hud-minimized');
     hudToggle.setAttribute('aria-pressed', String(min));
+    track('hud_hide', { hidden: min });
     openTimes(false);
   });
 
@@ -332,6 +343,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   const fullMap = new FullMap({
     layers, index, god, describe, onFly: flyToGround, bounds: GEO.frame?.core,
     onToggle(open) {
+      if (open) track('map_open');
       god.enabled = !open;
       touch.setEnabled(!open);
       if (radar) { radar.hidden = open; radar.invalidate(); }
@@ -363,7 +375,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     else if (e.key === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
     else if (e.key === 'Escape') openTimes(false);
     const digit = /^Digit([1-5])$/.exec(e.code);
-    if (digit?.[1] === '5') setLive(!liveShown);
+    if (digit?.[1] === '5') toggleLive();
     else if (digit) selectTime(TIMES[digit[1] - 1]);
   });
 
@@ -597,7 +609,11 @@ function initLanguageControl() {
     b.dataset.lang = id;
     b.lang = id;
     b.textContent = LANG_NAMES[id];
-    b.addEventListener('click', () => setLang(id));
+    b.addEventListener('click', () => {
+      const from = getLang();
+      // (after the change, so the event says its new language like every one after it)
+      if (setLang(id) !== from) track('language_change', { from, to: id });
+    });
     row.append(b);
     return b;
   });
@@ -648,7 +664,16 @@ function initFullscreenControl() {
       Promise.resolve(on() ? exit.call(document) : request.call(el, { navigationUI: 'hide' })).catch(() => {});
     } catch { /* refused: the page stays as it is */ }
   });
-  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(type, show);
+  // (a browser may send both events for one change: the analytics hear of it once, whoever asked: the button, Esc or
+  // the browser's own gesture)
+  let was = on();
+  const changed = () => {
+    show();
+    if (on() === was) return;
+    was = on();
+    track('fullscreen_toggle', { on: was });
+  };
+  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(type, changed);
   show();
   return show;
 }
