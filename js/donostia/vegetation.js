@@ -405,7 +405,10 @@ export async function buildVegetation(GEO, terrain) {
   group.userData.shadowReach = () => lodMid - SHADOW_MARGIN;
   // The sun: the scene's shadow-casting light, looked up once the trees are in the scene. The far & billboard crowns
   // shade their own sunless side beyond the view depth its shadow maps reach (trees-material.js)
-  let sun;
+  // A quality tier picked in the running city turns the sun's shadows on or off (js/donostia/quality.js): without a
+  // casting light yet the scene is looked through again every couple of seconds, and a sun that stopped casting leaves
+  // the crowns as a city started without shadows has them (their own shade everywhere, lit from above).
+  let sun, looked = 0;
   const findSun = () => {
     let root = group;
     while (root.parent) root = root.parent;
@@ -417,10 +420,13 @@ export async function buildVegetation(GEO, terrain) {
   group.userData.update = (dt, elapsed, camera) => {
     const cam = camera.position;
     far.uniforms.view.value.copy(cam);
-    if (sun === undefined) sun = findSun();
-    if (sun) {
+    if (sun === undefined || (sun === null && ++looked % 120 === 0)) sun = findSun();
+    if (sun && sun.castShadow) {
       far.uniforms.sunDir.value.copy(sun.position).normalize();
       far.uniforms.shadowEnd.value = sun.shadow.camera.far;
+    } else if (sun) {
+      far.uniforms.sunDir.value.set(0, 1, 0);
+      far.uniforms.shadowEnd.value = 0;
     }
     if (cam.distanceToSquared(lastPick) >= REPICK * REPICK) pick(cam);
     const reach = group.userData.shadowReach();
