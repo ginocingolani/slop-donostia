@@ -8,6 +8,7 @@ import { MARINA } from './data-marina.js';
 import { seaUniforms } from './sea-uniforms.js';
 import { LOW_WATER, GANGWAY_FOOT, pontoonLevel, gangwayPitch } from './sea-state.js';
 import { detail } from './quality.js';
+import { takeStreetLight } from './street-light.js';
 
 // js/donostia/marina.js
 // The port's moorings, from tools/donostia/bake-marina.mjs (js/donostia/data-marina.js):
@@ -124,7 +125,7 @@ function surfaceMaterial(seaLevel) {
   })();
   mat.roughnessNode = mix(mix(float(0.8), float(0.88), isSlabs.add(isGrooves)), float(0.35), fall(0.2, 1.2, h).mul(wet));
   mat.normalNode = bumpNormal(gap.mul(-0.006).sub(joint.mul(0.006)).sub(groove.mul(0.004)).add(n1.mul(0.0015)));
-  return mat;
+  return takeStreetLight(mat); // the quays' lamps on the pontoons, gangways and the slipway (js/donostia/street-light.js)
 }
 
 // Painted & bare metal, timber (aPaint: linear rgb + roughness; aWet: how far the tidal band reaches it)
@@ -133,6 +134,7 @@ function paintMaterial(seaLevel) {
   const paint = attribute('aPaint', 'vec4'), wet = attribute('aWet', 'float');
   const n = mx_noise_float(positionWorld.mul(1.7));
   mat.colorNode = mix(paint.xyz, tidal(paint.xyz, positionWorld.y.sub(bandLevel(seaLevel)), n.mul(2)), wet);
+  takeStreetLight(mat); // the quays' lamps on the fittings (js/donostia/street-light.js)
   mat.roughnessNode = paint.w;
   return mat;
 }

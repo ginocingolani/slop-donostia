@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { streetLit, takeStreetLight, raiseStreetGround } from './street-light.js';
 import {
   Fn, float, vec2, vec3, attribute, positionWorld, mix, smoothstep, step, floor, fract, min, max, sin, cos, dot, fwidth,
   mx_noise_float
@@ -1064,6 +1065,9 @@ function createMaterials() {
     return mix(plain, tiles, step(colour.x, -0.5));
   })();
 
+  // the lamps' light on the deck at night (js/donostia/street-light.js: the bridges' own along their axes; zero by day)
+  deck.emissiveNode = streetLit(deck.colorNode.max(0.0), positionWorld.xz, 0.9);
+
   const metal = std({ roughness: 0.5, metalness: 0.25 });
   metal.colorNode = colour;
   // gilded groups shine, patinated ones stay dark
@@ -1073,6 +1077,9 @@ function createMaterials() {
   lamp.colorNode = vec3(0.82, 0.79, 0.7);
   // lanterns light up as the city's windows do (uInteriorGlow: 0.24 midday .. 1.55 night)
   lamp.emissiveNode = vec3(1.0, 0.74, 0.42).mul(smoothstep(0.55, 1.3, cityUniforms.uInteriorGlow).mul(9.0));
+  // the parapets, the lamp standards and the sculpture stand in the deck's light; the piers and the arches below it
+  // do not (js/donostia/street-light.js knows the decks' heights: raiseStreetGround() in bridgeGroup())
+  for (const m of [masonry, concrete, metal, bronze]) takeStreetLight(m);
   return { deck, masonry, concrete, metal, bronze, lamp };
 }
 
@@ -1103,5 +1110,12 @@ function bridgeGroup(terrain) {
     group.add(mesh);
   }
   group.userData.deckAt = (x, z) => deckHeight(decks, x, z);
+  // the decks are streets above the terrain, for what the street lamps light (js/donostia/street-light.js)
+  raiseStreetGround(decks.map((d) => {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, z] of d.fr.pts) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); }
+    const m = 24; // (wider than any deck's half-width)
+    return { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m, heightAt: (x, z) => deckHeight([d], x, z) };
+  }));
   return group;
 }

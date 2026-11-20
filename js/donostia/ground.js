@@ -9,6 +9,7 @@ import { weatherUniforms } from './weather-uniforms.js';
 import { seaUniforms, channelFloor } from './sea-uniforms.js';
 import { decodePNGOffThread } from './png.js';
 import { releaseImageData } from './terrain.js';
+import { loadStreetLight, streetLight, lamplit, lampMirrored, LAMP_COLOUR } from './street-light.js';
 
 // js/donostia/ground.js
 // Ground surfaces over the LiDAR terrain, one material for every terrain chunk. In the core the baked maps of
@@ -362,10 +363,14 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   const { uSeaLevel, uTideMark, uTideLive } = seaUniforms;
   const tidalWet = float(0).toVar('groundTidalWet');
 
+  // the public lighting here (js/donostia/street-light.js; a filtered read, so in the main flow with the rest)
+  // (not the seabed: the light that spills over the water is in the map for the boats and the pontoons)
+  const lamplight = streetLight(xz).mul(float(1).sub(eq(wid, S.seabed))).toVar();
+
   // TSL keeps a shared node in the variable it was first assigned to: one first built inside a branch would be stale
   // wherever that branch didn't run (see facade-material.js). Everything the branches share is built up front here.
   const shared = [fw, fwY, slope, inCore, nM, nL, nXL, fwM, ci, cj, t.x, best, sid, edgeMix, surfW.x, flagsW.x, group,
-    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, wetness, film, y, ...texels.map((k) => k.id), ...scores];
+    rK, kerbed, roadShare, needsNatural, ang, q.x, slot, wetness, film, y, lamplight, ...texels.map((k) => k.id), ...scores];
 
   const mat = new THREE.MeshStandardNodeMaterial();
   // Live: the low-water channels dredged into the terrain (sea-uniforms.js; the water's sea floor follows them)
@@ -618,6 +623,21 @@ export async function createGroundMaterial(terrain, prefetched = null) {
       rings.assign(rainRings(xz, time).mul(puddle).mul(weatherUniforms.uRainfall.min(1)).mul(fade(0.03, 0.006)));
     });
     return bumpNormal(relief.add(kerbStep).add(asphaltGrain).add(zebra.mul(0.0015)).add(rings));
+  })();
+
+  // The public lighting (js/donostia/street-light.js): at night the ground gives back the lamps' light in its own
+  // colour, in pools under each lamp; by day the term is zero. The map comes in its own time (the coarse one with the
+  // terrain's classes, the lowest quality tier's ground)
+  loadStreetLight({ coarse: prefetched === CLASSES_ONLY, terrain });
+  // (asphalt's albedo here is half a real road's under a lamp: lifted a little, the paving kept). Where the ground is
+  // wet (the looks' damp streets, the real-time rain) the puddles and the film mirror the lamps beyond them
+  mat.emissiveNode = Fn(() => {
+    const e = lamplit(mat.colorNode.mul(0.85).add(0.03), lamplight).toVar();
+    If(cityUniforms.uStreetLight.greaterThan(0.0).and(wetness.greaterThan(0.1)), () => {
+      const gloss = max(puddle, film.mul(0.3).mul(hard).mul(float(1).sub(damp.mul(0.5))));
+      e.addAssign(vec3(...LAMP_COLOUR).mul(lampMirrored(p, cameraPosition, { height: 5, reach: 45 })).mul(gloss).mul(fresnel.mul(0.9).add(0.1)).mul(0.55));
+    });
+    return e;
   })();
 
   // (a quality tier picked in a running city swaps the baked maps for the classes or back: main.js makes another

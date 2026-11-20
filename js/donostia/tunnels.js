@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { TUNNELS } from './data-tunnels.js';
+import { takeStreetLight } from './street-light.js';
 
 // js/donostia/tunnels.js
 // The tunnels' portals (tools/donostia/tunnels.mjs, written by tools/donostia/build.mjs to js/donostia/data-tunnels.js).
@@ -307,12 +308,12 @@ function faceMaterial() {
   mat.colorNode = mix(masonry, vec3(0.0), open);
   mat.emissiveNode = bore.mul(open);
   mat.roughnessNode = mix(mix(float(0.88), float(0.95), concrete), float(1), open);
-  return mat;
+  return takeStreetLight(mat); // the street's lamps on the portal's face (js/donostia/street-light.js)
 }
 
 function trimMaterial() {
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.8, metalness: 0, vertexColors: true });
-  return mat;
+  return takeStreetLight(mat);
 }
 
 /**

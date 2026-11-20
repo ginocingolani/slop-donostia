@@ -17,7 +17,10 @@ const cityUniforms = {
   uCanyonBounce: uniform(0.52),
   // how much daylight there is, 0 (night) .. 1 (a clear day): the preset's (presets' `daylight`, 1 when they have
   // none), or the real time of day and weather with js/donostia's real-time switch (js/donostia/time-of-day.js)
-  uDaylight: uniform(1.0)
+  uDaylight: uniform(1.0),
+  // the public lighting, 0 (off: by day, and wherever a city has none modelled) .. 1 (on): the presets' `streetLight`,
+  // or the real time of day (js/donostia/time-of-day.js); read by js/donostia/street-light.js
+  uStreetLight: uniform(0.0)
 };
 
 export { cityUniforms };

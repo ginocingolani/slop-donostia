@@ -8,6 +8,7 @@ import { cityUniforms } from '../city-uniforms.js';
 import { SEAMARKS } from './data-seamarks.js';
 import { seamarkClock, freezeSeamarkClock, RISE, FALL } from './seamark-timing.js';
 import { effectTargets } from './quality.js';
+import { takeStreetLight } from './street-light.js';
 
 // js/donostia/seamarks.js
 // The aids to navigation (js/donostia/data-seamarks.js, baked by tools/donostia/bake-seamarks.mjs from OpenStreetMap's
@@ -266,7 +267,7 @@ function createCarrierMaterial(uClock, seaLevel) {
   // a buoy's parts ride the tide and the swell (the same heave as its light's glow)
   const heave = sin(uClock.mul(0.9).add(f.y.mul(0.37))).mul(HEAVE).add(seaLevel).mul(f.x);
   mat.positionNode = positionGeometry.add(vec3(0.0, heave, 0.0));
-  return mat;
+  return takeStreetLight(mat); // a quay's lamps on the pierhead lights' towers (js/donostia/street-light.js)
 }
 
 // --- build -----------------------------------------------------------------------------------------------------------------
