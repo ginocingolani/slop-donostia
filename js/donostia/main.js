@@ -440,8 +440,10 @@ async function initApp() {
   };
 
   // The loading screen's last word when the city cannot start (or stops): no progress bar, the message, a way on
-  // (.is-halted is there for the stylesheet: the message is the whole page now)
-  const halt = (text) => {
+  // (.is-halted and data-error are there for the stylesheet: the message is the whole page now; 'webgpu' also shows
+  // index.html's note on what the city needs)
+  const halt = (text, kind = 'load') => {
+    if (loadingOverlay) loadingOverlay.dataset.error = kind;
     loadingOverlay?.removeAttribute('aria-busy');
     loadingOverlay?.classList.remove('hidden');
     loadingOverlay?.classList.add('is-halted');
@@ -454,7 +456,7 @@ async function initApp() {
   if (!adapter) {
     unsupported = true;
     if (loadingFill?.parentElement) loadingFill.parentElement.style.visibility = 'hidden';
-    halt(reason);
+    halt(reason, 'webgpu');
     return;
   }
 
@@ -476,7 +478,7 @@ async function initApp() {
     // (the adapter gave no device: three is on its WebGL 2 fallback)
     unsupported = true;
     renderer.domElement.remove();
-    halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.');
+    halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.', 'webgpu');
     return;
   }
   // A lost GPU device (a driver reset, the GPU process crashing...) leaves three drawing nothing: the view would freeze

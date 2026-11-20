@@ -524,6 +524,9 @@ function qualityApi(q = globalThis.slopQuality) {
       return { choice: String(v), tier: v === 'auto' ? q.tier ?? q.active ?? q.effective ?? null : v };
     },
     set: (id) => q.set(id),
+    // some settings (shadows at all, the terrain's mesh…) are built at start-up: true while a pick waits for a reload
+    needsReload: () => { const v = q.get(); return !!(v && typeof v === 'object' && v.needsReload); },
+    reload: () => (typeof q.reload === 'function' ? q.reload() : location.reload()),
     watch(fn) {
       if (typeof q.onChange === 'function') q.onChange(fn);
       else if (typeof q.subscribe === 'function') q.subscribe(fn);
@@ -557,7 +560,18 @@ function initQualityControl(quality) {
     }
     // Auto says which tier it settled on for this device
     const settled = choice === 'auto' && tier != null ? api.tiers.find((t) => t.id === String(tier)) : null;
-    if (note) note.textContent = settled ? `Auto: ${name(settled)}` : '';
+    if (note) {
+      note.textContent = settled ? `Auto: ${name(settled)}` : '';
+      if (api.needsReload()) {
+        const again = document.createElement('button');
+        again.type = 'button';
+        again.className = 'seg-btn quality-reload';
+        again.textContent = 'Berrabiarazi · Recargar para aplicar';
+        again.addEventListener('click', () => api.reload());
+        if (note.textContent) note.append(' · ');
+        note.append(again);
+      }
+    }
   }
   api.watch(() => show());
   show();
