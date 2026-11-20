@@ -25,10 +25,11 @@ import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
-import { quality, readEnvironment, detail, TIERS, needsRebuild } from './quality.js';
+import { quality, readEnvironment, detectTier, detail, TIERS, needsRebuild } from './quality.js';
+import { createCrashGuard } from './crash-guard.js';
 import { initAnalytics, deviceInfo, interfaceReader, MOVE_SPEED } from './analytics.js';
 import { initConsent } from './consent.js';
-import { getLang } from './i18n.js';
+import { getLang, t } from './i18n.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -50,10 +51,17 @@ import { getLang } from './i18n.js';
 // have.
 //
 // Shaders: nothing is drawn before its pipelines are compiled (createCompiler()). The loading screen lifts once the
-// first view's are; on the phone tiers that is what the camera sees and what is everywhere, and the rest follow in the
-// background, nearest first.
+// first view's are; on the phone tiers, and on a phone or tablet at any tier, that is what the camera sees and what
+// is everywhere, and the rest follow in the background, nearest first.
+//
+// A page that dies: a phone's browser kills a tab that takes too much memory and loads it again, with no word to the
+// page. js/donostia/crash-guard.js keeps a note in localStorage while the page lives; initApp() reads the last one
+// before it builds anything, starts a tier lower when that visit died in view (js/donostia/quality.js's recovery),
+// says so on the loading screen, and after repeated deaths at the lowest tier stops with a message and a button
+// instead of loading itself to death again.
 
 const STORAGE_KEY = 'donostia-god-camera';
+const COMPILE_SHADOW_MS = 500; // after a shader compile, the frames the frame-rate governor is not fed
 
 // --- the world -----------------------------------------------------------------------------------------------------------
 
@@ -313,6 +321,13 @@ const EVERYWHERE = ['terrain', 'water', 'sky', 'buildings', 'vegetation'];
 // qualifies only the FIRST_FEW nearest materials are taken, so a start in the thick of the landmarks is no slower
 // than one on the hill: each is some 45 kB of WGSL, half a second or so of a phone's compiler.
 const NEAR = 160, LARGE = 0.25, SPREAD = 500, FIRST_FEW = 6;
+// The background's pacing where a compile stalls the frames (createCompiler()'s header). STALL_COSTLY: the running
+// mean of the stalls (ms) from which the device is taken for one that stalls; STILL_MS: how long the camera has to
+// have been still for the queue to run freely; REST_SHARE: the rest after a compile, times its stall, while the
+// camera moves (between REST_MIN and REST_MAX ms); NEEDED_NEAR / NEEDED_AHEAD: what is compiled even then (m from
+// the camera, in view; m from where a flight ends); WAIT_MS: how often the queue looks again while it holds back
+const STALL_COSTLY = 12, STILL_MS = 600, REST_SHARE = 6, REST_MIN = 100, REST_MAX = 1500, NEEDED_NEAR = 400, NEEDED_AHEAD = 400, WAIT_MS = 150;
+const LATER = Symbol('later');
 // three's shadow pass draws a front-sided caster's back faces (r186.1's _shadowSide)
 const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
 
@@ -334,6 +349,18 @@ const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE
  * showed it. The order is worked out again for every job, so flying or teleporting brings what is there to the front.
  * adopt() takes in what a module adds to the scene later (the sea's spray).
  *
+ * The background paces itself by what a compile costs here. Chrome on a desktop makes a pipeline off the main thread
+ * and a frame is hardly late for it; WebKit on a phone stalls a frame or more for each (an iPhone 15 Pro: 7 to 20 fps
+ * at the worst through 27 s of background compile). So every background compile is timed by the frames around it
+ * (the longest gap between two animation frames while it ran, over the usual one: its stall), and where the stalls
+ * are long (a running mean over STALL_COSTLY ms) the visitor's hands come first: while the camera moves or turns,
+ * only what is in view and near, or where a flight is heading, is compiled, with a rest after each compile of
+ * REST_SHARE times its stall, so the stalls take a seventh of the time at most; once the camera has been still for
+ * STILL_MS, or the view is covered (the full map, a sheet: `covered`), the queue runs at a compile a frame again.
+ * Where a compile costs nothing the pace is a compile a frame throughout, as it always was. The stalls are counted
+ * (stats: compiles, blockedMs, maxStallMs) for the analytics, and lastWork (the time of the last compile's end)
+ * tells main.js which frames not to judge the device by.
+ *
  * (three r186.1 internals, here and in precompile(): the renderer's render contexts, _getShadowNodes, the shape of
  * the shadow pass's material, and compileAsync() projecting its object before its first await.)
  */
@@ -346,6 +373,51 @@ function createCompiler(renderer, world, camera, passes) {
   const frustum = new THREE.Frustum(), matrix = new THREE.Matrix4(), sphere = new THREE.Sphere();
   const listeners = new Set();
   let jobs = [], byMaterial = new Map(), run = 0, working = false;
+  // the pacing (see the header)
+  const stats = { compiles: 0, blockedMs: 0, maxStallMs: 0 };
+  const lastPosition = new THREE.Vector3(Infinity, 0, 0), lastTurn = new THREE.Quaternion();
+  let usual = 1000 / 60, meanStall = 0, lastMotion = -Infinity, lastWork = -Infinity, coveredNow = () => false;
+  const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // (every frame, from adopt(): the camera moved or turned since the last one)
+  const watchCamera = () => {
+    if (camera.position.distanceToSquared(lastPosition) < 1e-4 && 1 - Math.abs(camera.quaternion.dot(lastTurn)) < 1e-7) return;
+    lastPosition.copy(camera.position);
+    lastTurn.copy(camera.quaternion);
+    lastMotion = clock();
+  };
+  const costly = () => meanStall > STALL_COSTLY;
+  const covered = () => { try { return Boolean(coveredNow()) || globalThis.document?.visibilityState === 'hidden'; } catch { return false; } };
+  const flying = () => clock() - lastMotion < STILL_MS;
+  // The frames around one background compile: returns a function that stops the watch and answers the compile's
+  // stall (ms): the longest gap between two animation frames while it ran, over the usual gap (itself learnt from
+  // the gaps that were not stalls). No frames (a hidden tab), no stall
+  const watchFrames = () => {
+    if (typeof requestAnimationFrame !== 'function') return () => 0;
+    let last = clock(), worst = 0, on = true, whole = false;
+    const tick = () => {
+      if (!on) return;
+      const now = clock(), gap = now - last;
+      last = now;
+      if (gap > worst) worst = gap;
+      // (the first gap began mid-frame: it may hold the stall, but it is no measure of a usual frame)
+      if (whole && gap > 4 && gap < usual * 1.5) usual += (gap - usual) * 0.05;
+      whole = true;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return () => {
+      on = false;
+      return Math.max(0, worst - usual);
+    };
+  };
+  const timed = (stall) => {
+    stats.compiles++;
+    stats.blockedMs += stall;
+    if (stall > stats.maxStallMs) stats.maxStallMs = stall;
+    meanStall += (stall - meanStall) * 0.3;
+    lastWork = clock();
+  };
 
   const drawable = (o) => (o.isMesh || o.isLine || o.isPoints || o.isSprite) && o.material && o.geometry;
   const hold = (o) => { if (!held.has(o)) { held.set(o, o.layers.mask); o.layers.mask = 0; } };
@@ -380,6 +452,7 @@ function createCompiler(renderer, world, camera, passes) {
 
   // What a module added since: it waits like the rest (called every frame; a few thousand nodes to walk)
   const adopt = () => {
+    watchCamera();
     if (!started) return;
     let added = false;
     scene.traverse((o) => {
@@ -571,29 +644,39 @@ function createCompiler(renderer, world, camera, passes) {
     const casters = groups.map((group) => group.filter(castsShadows)).filter((group) => group.length);
     total += casters.reduce((n, group) => n + group.length, 0);
     await pool(casters, true);
+    lastWork = clock();
     if (mine !== run) return;
     for (const job of wanted) finish(job);
     progress();
   }
 
   // The next job for the background: what is shown and in view first, then by distance (to the camera, or to where a
-  // flight is heading: `ahead`), and what is hidden last
-  const nextJob = (ahead) => {
+  // flight is heading: `ahead`), and what is hidden last. With `onlyNeeded` (the camera is being flown on a device
+  // where a compile stalls) only what cannot wait: shown, and in view within NEEDED_NEAR metres or large on screen,
+  // or within NEEDED_AHEAD of where the flight ends; LATER when something waits but nothing of that kind
+  const nextJob = (ahead, onlyNeeded = false) => {
     look();
-    let best = null, bestScore = Infinity;
+    let best = null, bestScore = Infinity, waiting = false;
     for (const job of jobs) {
       if (job.done || job.busy) continue;
-      let score = Infinity;
+      waiting = true;
+      let score = Infinity, needed = false;
       for (const o of job.objects) {
-        const p = place(o, camera.position);
+        const p = place(o, camera.position), visible = shown(o);
         let d = p.seen ? p.distance : p.distance + 4000;
-        if (ahead) d = Math.min(d, place(o, ahead).distance);
-        if (!shown(o)) d += 1e6;
+        if (visible && p.seen && (p.distance < NEEDED_NEAR || p.size > LARGE)) needed = true;
+        if (ahead) {
+          const there = place(o, ahead).distance;
+          d = Math.min(d, there);
+          if (visible && there < NEEDED_AHEAD) needed = true;
+        }
+        if (!visible) d += 1e6;
         if (d < score) score = d;
       }
+      if (onlyNeeded && !needed) continue;
       if (score < bestScore) { bestScore = score; best = job; }
     }
-    return best;
+    return best || (onlyNeeded && waiting ? LATER : null);
   };
 
   let aheadOf = () => null;
@@ -604,15 +687,26 @@ function createCompiler(renderer, world, camera, passes) {
     const mine = run;
     try {
       for (;;) {
-        const job = mine === run ? nextJob(aheadOf()) : null;
+        // (see the header: where compiles stall, the camera in motion gets only what it is about to see)
+        const hurried = costly() && flying() && !covered();
+        const job = mine === run ? nextJob(aheadOf(), hurried) : null;
+        if (job === LATER) {
+          await pause(WAIT_MS);
+          continue;
+        }
         if (!job) break;
         job.busy = true;
         for (const o of units(job)) {
           await nextTask();
           if (mine !== run) return;
+          const stalled = watchFrames();
           await precompile(o, false);
           if (mine === run && castsShadows(o)) await precompile(o, true);
           await nextFrame();
+          const stall = stalled();
+          timed(stall);
+          // the rest after a compile that stalled, while the camera is in motion
+          if (mine === run && costly() && flying() && !covered()) await pause(Math.min(REST_MAX, Math.max(REST_MIN, stall * REST_SHARE)));
         }
         if (mine !== run) return;
         finish(job);
@@ -643,6 +737,14 @@ function createCompiler(renderer, world, camera, passes) {
     onProgress(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     /** fn() -> Vector3 | null: where the camera is flying to, if it is (its objects come first). */
     set ahead(fn) { aheadOf = fn; },
+    /** fn() -> boolean: something covers the view (the full map, a sheet): the background need not spare the frames. */
+    set covered(fn) { coveredNow = fn; },
+    /** The background compiles so far: { compiles, blockedMs (the sum of their stalls), maxStallMs } (see the header). */
+    get stats() { return { compiles: stats.compiles, blockedMs: Math.round(stats.blockedMs), maxStallMs: Math.round(stats.maxStallMs) }; },
+    /** When the last compile ended (performance.now()'s clock; -Infinity before any): the frames around it stall. */
+    get lastWork() { return lastWork; },
+    /** For ?debug: the pacing as it stands. */
+    get pace() { return { meanStallMs: +meanStall.toFixed(1), usualFrameMs: +usual.toFixed(1), costly: costly(), flying: flying(), covered: covered() }; },
     get pending() { return jobs.reduce((n, job) => n + (job.done ? 0 : 1), 0); },
     get total() { return jobs.length; },
     /** For ?debug: the jobs as they stand. */
@@ -905,14 +1007,67 @@ async function initApp() {
     return;
   }
 
-  // The quality tier the city boots with: ?quality=, the choice remembered, or what the device looks like
-  const booted = quality.init({ env: readEnvironment(adapter), search: location.search });
+  // What the last visit left behind (js/donostia/crash-guard.js): whether it died in view, loading or running, and
+  // how many boots in a row have
+  const env = readEnvironment(adapter);
+  const storageOf = (name) => { try { return window[name] || null; } catch { return null; } };
+  const guard = createCrashGuard({ storage: storageOf('localStorage'), session: storageOf('sessionStorage'), mobile: detectTier(env).mobile });
+  const lastVisit = guard.previous;
+  // (sent at once, not with the next batch a few seconds on: this load may die where the last one did)
+  const URGENT = { send_instantly: true };
+  const recoveryProps = (toTier) => ({
+    from_tier: lastVisit.failedTier, to_tier: toTier, last_stage: lastVisit.lastStage, fails: lastVisit.fails, shown: lastVisit.shown,
+    real_time: lastVisit.lastLive, ran_s: Math.round(lastVisit.ranMs / 1000), after_s: Math.round(lastVisit.agoMs / 1000), same_tab: lastVisit.sameTab
+  });
+  if (lastVisit.halt) {
+    // The lowest tier died too, more than once in a row: no further attempt on its own. The message, and a button
+    // for one more (the note is left as it is: a reload shows this again)
+    analytics.track('app_recovered', { ...recoveryProps(null), lowered: false, halted: true }, URGENT);
+    if (loadingFill?.parentElement) loadingFill.parentElement.style.visibility = 'hidden';
+    halt('This device ran out of memory for the city, even at the lowest quality. Close other tabs and apps, then try again.', 'memory');
+    const retry = document.createElement('button');
+    retry.id = 'loading-retry';
+    retry.type = 'button';
+    retry.className = 'panel tool-btn';
+    retry.style.marginTop = '14px';
+    retry.textContent = t('loading.retry');
+    retry.addEventListener('click', () => {
+      guard.retry();
+      location.reload();
+    });
+    (loadingStatus || loadingOverlay)?.after(retry);
+    return;
+  }
+
+  // The quality tier the city boots with: ?quality=, the choice remembered, or what the device looks like; lighter
+  // than the tier that died if the last visit did
+  const booted = quality.init({
+    env, search: location.search,
+    recovery: lastVisit.fails > 0 ? { failedTier: lastVisit.failedTier, fails: lastVisit.fails, dropPick: lastVisit.dropPick } : null
+  });
+  // From here on this load keeps its own note: every step of the load, a heartbeat once the city shows, and the
+  // clean ways out (a reload, a closed tab, the back/forward cache), which are not deaths
+  guard.begin({ tier: booted.tier, mode: booted.mode, pick: booted.source === 'stored' ? booted.mode : null, hidden: document.visibilityState === 'hidden' });
+  window.addEventListener('pagehide', () => guard.leave());
+  window.addEventListener('pageshow', (e) => { if (e.persisted) guard.resume(); });
+  document.addEventListener('visibilitychange', () => guard.hidden(document.visibilityState === 'hidden'));
+  if (booted.recovered) {
+    // said under the loading screen's line, in the HUD's language, for as long as the load takes
+    const line = document.getElementById('loading-recovery');
+    if (line) {
+      const tier = t(`quality.${booted.tier}`);
+      line.textContent = t(booted.recovered.to !== booted.recovered.from ? 'recovery.lowered' : 'recovery.again', { tier });
+      line.hidden = false;
+    }
+  }
   const settings = booted.settings;
   const pixelRatioNow = () => quality.viewport(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
   console.log(`[quality] ${booted.tier} (${booted.source}${booted.mode === 'auto' ? `: ${quality.debug().detected.reasons.join('; ')}` : ''}), pixel ratio ${pixelRatioNow()}`);
   // the quality on every event from here on, and its changes (a pick in the settings sheet, a step of the governor)
   analytics.setQuality(quality.get());
   quality.onChange((state) => analytics.setQuality(state));
+  // (a death found now: one event, with the tier this load starts at in its place)
+  if (lastVisit.failed) analytics.track('app_recovered', { ...recoveryProps(booted.tier), lowered: booted.tier !== lastVisit.failedTier, halted: false }, URGENT);
 
   status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
   const renderer = new THREE.WebGPURenderer({ antialias: settings.msaa, powerPreference: 'high-performance', reversedDepthBuffer: true });
@@ -981,6 +1136,7 @@ async function initApp() {
     timings.push(`${label} ${Math.round(now - mark)}ms`);
     analytics.mark(label, now - mark);
     mark = now;
+    guard.stage(label);
   };
 
   const world = await buildWorld(renderer, { status, mark: markInit, settings });
@@ -1026,7 +1182,9 @@ async function initApp() {
     note.classList.toggle('is-on', stage !== 'done');
     try { window.dispatchEvent(new CustomEvent('slop-compile', { detail: { stage, done, total } })); } catch { /* no events here */ }
     // (the analytics' details_ready: the first time nothing is left to compile behind the city)
-    if (stage === 'done') analytics.details({ shaders_total: view.compiler.total });
+    if (stage === 'done') analytics.details({ shaders_total: view.compiler.total, ...compileStats() });
+    // the crash guard's stage once the city shows: 'details' while shaders compile behind it, 'applying', 'running'
+    if (shown) guard.stage(stage === 'done' ? 'running' : stage);
   };
 
   // Quality changes in the running city (a pick in the HUD, a step of the governor): the tier's live settings, the
@@ -1108,6 +1266,13 @@ async function initApp() {
     else if (!restructuring) built = { ...built, releaseGeometry: state.boot.releaseGeometry, progressive: state.boot.progressive };
   });
   view.compiler.ahead = () => god.flight?.p1 || null;
+  // (the full map, or a sheet or popover open over the view: nobody watches the frames behind it)
+  view.compiler.covered = () => hud.mapOpen || Boolean(document.querySelector('[popover]:popover-open'));
+  // the background compile's cost, for the analytics' details_ready
+  const compileStats = () => {
+    const { compiles, blockedMs, maxStallMs } = view.compiler.stats;
+    return { bg_compiles: compiles, bg_blocked_ms: blockedMs, bg_stall_max_ms: maxStallMs };
+  };
   view.compiler.onProgress(({ done, total, pending }) => {
     if (restructuring || !shown) return;
     say(pending ? 'details' : 'done', done, total);
@@ -1203,6 +1368,7 @@ async function initApp() {
   await view.compile((p) => {
     loadingOverlay?.setAttribute('aria-busy', 'true');
     status(`Compiling shaders… ${Math.round(p * 100)}%`, 0.6 + 0.35 * p);
+    guard.beat();
   });
   markInit('compile');
   if (deviceLost) return;
@@ -1232,8 +1398,9 @@ async function initApp() {
         framed = null;
       }
       // the governor: the frame rate of the frames that drew the world (a hidden tab's or a hitch's interval is not
-      // one, and it sorts those out itself)
-      if (governing) quality.frame(now - lastFrame);
+      // one, and it sorts those out itself). Not the frames around a shader compile: a phone's browser stalls for
+      // every pipeline, which says nothing of what the device holds once they are made (js/donostia/quality.js)
+      if (governing && performance.now() - view.compiler.lastWork > COMPILE_SHADOW_MS) quality.frame(now - lastFrame);
       lastFrame = now;
     }
     if (first) {
@@ -1252,8 +1419,11 @@ async function initApp() {
         consent.setReady();
         governing = true;
         shown = true;
+        // (the boot succeeded: the count of failed boots starts again)
+        guard.shown();
         if (view.compiler.pending) say('details', view.compiler.total - view.compiler.pending, view.compiler.total);
-        else analytics.details({ shaders_total: view.compiler.total }); // (nothing was left for the background)
+        else analytics.details({ shaders_total: view.compiler.total, ...compileStats() }); // (nothing was left for the background)
+        if (!view.compiler.pending) guard.stage('running');
         // the CPU copies of the terrain's & the buildings' vertex buffers, now on the GPU; the stragglers (what the
         // warm-up frame did not draw) every few seconds until none is left
         releaseGeometry(30);
@@ -1268,13 +1438,19 @@ async function initApp() {
       hud.update(fps);
       // (under the full map, or while a tier is applied, nothing renders: that rate is not the city's)
       analytics.tick({
+        compiling: view.compiler.pending > 0,
         fps: hud.mapOpen || paused ? NaN : fps, x: god.position.x, z: god.position.z, altitude: god.position.y,
         moving: !god.flight && god.velocity.length() > MOVE_SPEED, yaw: god.yaw, pitch: god.pitch, flight: Boolean(god.flight)
       });
       frames = 0;
       fpsTime = 0;
     }
-    if (now > saveAt) { save(); saveAt = now + 4000; }
+    if (now > saveAt) {
+      save();
+      saveAt = now + 4000;
+      // the crash guard's heartbeat: alive, at this tier, in real time or not
+      guard.beat({ tier: quality.get().tier, realTime: live.liveEnabled() });
+    }
   });
 }
 

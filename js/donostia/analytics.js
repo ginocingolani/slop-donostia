@@ -30,8 +30,11 @@
 // - the quality, qualityInfo() of js/donostia/quality.js's state: quality_mode ('auto', or the tier picked by hand),
 //   quality_tier (the tier in force: 'low' | 'medium' | 'high' | 'ultra'), render_scale (the governor's share of the
 //   tier's resolution, 0.6 .. 1), fps_capped (the frame rate is held from outside, e.g. Low Power Mode),
-//   quality_detected (the tier this device starts at on auto). From quality.init() on: the page view and app_start
-//   are sent before it;
+//   quality_detected (the tier this device starts at on auto), quality_boot_reason (what decided the tier this visit
+//   booted with: 'url' (?quality=), 'stored' (a pick by hand, remembered), 'detected' (auto, the detected tier),
+//   'remembered' (auto, moved from the detected tier by what it learnt on earlier visits: the tier its governor
+//   settled at, or a tier that proved too much), 'crash_recovery' (under the tier at which the last visit died); it
+//   does not change during the visit). From quality.init() on: the page view and app_start are sent before it;
 // - the interface, interfaceInfo(): lang ('en' | 'eu' | 'es'), input ('touch': the stick and the phone layouts are
 //   on; 'mouse' otherwise), orientation ('portrait' | 'landscape', the window's), display_mode ('browser';
 //   'standalone': opened from the home screen; 'fullscreen': a browser tab gone full screen).
@@ -40,18 +43,34 @@
 // - the load funnel: $pageview (ours, queued like the rest: the SDK's own goes before it is told the choice, and is
 //   dropped) → app_start { webgpu } → world_built → shaders_compiled → app_ready { ms_<step>… (the init timings
 //   main.js logs), ms_total, shaders_pending, shaders_total } → details_ready { ms_since_ready, ms_total,
-//   shaders_total, quality_changed } → first_move { after_s, by }. The load is progressive: app_ready is "the city
+//   shaders_total, bg_compiles, bg_blocked_ms, bg_stall_max_ms, quality_changed } → first_move { after_s, by }. The load is progressive: app_ready is "the city
 //   shows" (the first view's shaders are compiled; on the phone tiers shaders_pending of the shaders_total jobs
 //   still compile behind it), details_ready the end of that background compile (at once, with ms_since_ready 0,
-//   where nothing was left; quality_changed: a tier was picked by hand meanwhile, and the time includes applying it).
+//   where nothing was left; quality_changed: a tier was picked by hand meanwhile, and the time includes applying it;
+//   bg_compiles: the pipelines compiled behind the city, bg_blocked_ms: the time they held the frames up between
+//   them, bg_stall_max_ms: the longest single stall, each compile's stall being the longest gap between two frames
+//   while it ran over the usual gap, as main.js's compiler measures it: near nothing where pipelines are made off
+//   the main thread, a frame or more each on a phone's WebKit).
 //   first_move's `by` is 'fly' (the keys or the stick moved the camera) or 'look' (a drag on the view or the arrow
 //   keys turned it), whichever came first: the super-property `input` says whether by touch.
 //   Where it breaks: app_unsupported { reason: 'no_api' | 'no_adapter' | 'no_device' } (no WebGPU: the page says so
 //   and stops), app_error { after, message } and gpu_lost { after, reason, hidden } (`after`: the last init step that
 //   completed; `hidden`: the page was in the background, where a phone takes the GPU's memory back);
+//   A page the browser killed (for its memory, on a phone) can send nothing: the load after it does, from the note
+//   js/donostia/crash-guard.js left: app_recovered { from_tier, to_tier, last_stage, fails, shown, real_time, ran_s,
+//   after_s, same_tab, lowered, halted }. from_tier: the tier the dead visit ran; to_tier: the tier this load starts
+//   at (null with `halted`); last_stage: the last init step the dead visit completed, or once its city showed
+//   'details' (shaders still compiling behind it), 'running' or 'applying' (a tier being applied); fails: the boots
+//   that died in a row, that one included; shown: its city had shown (false: it died loading); real_time: the
+//   real-time switch was on at its last heartbeat (null: it never got that far); ran_s: how long it lived; after_s:
+//   how long ago it wrote its last note; same_tab: this is that tab, reloaded; lowered: this load starts lower
+//   than from_tier (false at the lowest tier, or with ?quality= in the URL); halted: the lowest tier died too and
+//   the page stopped at a message with a "Try again" button instead of loading again. It comes after app_start
+//   (after the tier is decided), with this load's quality on it like every other event;
 // - the answer: cookie_consent { cookies, changed, lang } (`changed`: from the popover, after a first answer; `lang`:
 //   the language the card was read in);
-// - flying: fps_sample every minute (fps, fps_min, fps_bucket, altitude) and cell_visit { cell_x, cell_z, altitude }
+// - flying: fps_sample every minute (fps, fps_min, fps_bucket, altitude, compiling: shaders were compiling behind
+//   the city at some point of that minute, so its fps_min is the compile's) and cell_visit { cell_x, cell_z, altitude }
 //   when the camera has dwelt DWELL_S in a cell of the CELL_SIZE grid (where people fly, for a heatmap of the map);
 // - quality: quality_change { from, to, by, from_mode, to_mode } when the mode or the tier in force changes: by
 //   'user' (a pick in the settings sheet; from / to are the tiers in force before and after, from_mode / to_mode
@@ -159,6 +178,7 @@ export function qualityInfo(state) {
   if (Number.isFinite(state.scale)) props.render_scale = Math.round(state.scale * 100) / 100;
   props.fps_capped = Boolean(state.capped);
   if (state.detected != null) props.quality_detected = String(state.detected);
+  if (state.bootReason != null) props.quality_boot_reason = String(state.bootReason);
   return props;
 }
 
@@ -214,7 +234,7 @@ const turned = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 export function createSession() {
   let startAt = null, moved = false, heading = null;
   let hiddenAt = null, hiddenMs = 0; // while the page is hidden, and the hidden time so far (not counting that)
-  const all = { sum: 0, n: 0, min: Infinity }, minute = { sum: 0, n: 0, min: Infinity };
+  const all = { sum: 0, n: 0, min: Infinity }, minute = { sum: 0, n: 0, min: Infinity, compiling: false };
   let sampleAt = 0, cellKey = null, cellAt = 0, cellPending = false, cells = 0;
   const counts = { teleports: 0, time_presets: 0, live_toggles: 0, map_opens: 0 };
   const add = (acc, fps) => { acc.sum += fps; acc.n++; acc.min = Math.min(acc.min, fps); };
@@ -238,14 +258,16 @@ export function createSession() {
     },
     get paused() { return hiddenAt !== null; },
     // { fps, x, z, altitude, moving (the camera is flown: main.js's speed over MOVE_SPEED), yaw, pitch (where it looks,
-    // rad), flight (on its way to a viewpoint: neither a move nor a look) }
-    tick(t, { fps, x, z, altitude, moving = false, yaw, pitch, flight = false } = {}) {
+    // rad), flight (on its way to a viewpoint: neither a move nor a look), compiling (shaders are compiling behind
+    // the city: the frames stall for it) }
+    tick(t, { fps, x, z, altitude, moving = false, yaw, pitch, flight = false, compiling = false } = {}) {
       if (startAt === null || hiddenAt !== null) return [];
       const events = [];
       if (Number.isFinite(fps) && fps > 0) { add(all, fps); add(minute, fps); }
+      if (compiling) minute.compiling = true;
       if (t - sampleAt >= FPS_SAMPLE_S * 1000) {
-        if (minute.n) events.push(['fps_sample', { fps: avg(minute), fps_min: minute.min, fps_bucket: fpsBucket(avg(minute)), altitude: Math.round(altitude ?? 0) }]);
-        Object.assign(minute, { sum: 0, n: 0, min: Infinity });
+        if (minute.n) events.push(['fps_sample', { fps: avg(minute), fps_min: minute.min, fps_bucket: fpsBucket(avg(minute)), altitude: Math.round(altitude ?? 0), compiling: minute.compiling }]);
+        Object.assign(minute, { sum: 0, n: 0, min: Infinity, compiling: false });
         sampleAt = t;
       }
       if (Number.isFinite(x) && Number.isFinite(z)) {
@@ -316,11 +338,12 @@ export function createTracker({ enabled = true, loadSdk = null, storage = null, 
     if (!sdk) { if (queue.length < QUEUE_MAX) queue.push([name, props, { ...options, timestamp: new Date(now()) }]); return; }
     try { sdk.capture(name, props, options); } catch (e) { onError(e); }
   };
-  const track = (name, props = {}) => {
+  // (options: the SDK's, e.g. { send_instantly: true } for an event that must not wait for the next batch)
+  const track = (name, props = {}, options = undefined) => {
     if (off()) return;
     session.count(name);
     refreshInterface();
-    capture(name, { ...quality, ...face, ...props });
+    capture(name, { ...quality, ...face, ...props }, options);
   };
   // the governor's steps since its last event, as one (none if the tier is back where it was)
   const flushGoverned = (force = false) => {

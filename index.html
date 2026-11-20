@@ -114,6 +114,9 @@
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <!-- main.js writes its lines here in English; js/donostia/i18n.js says them in the language picked -->
       <div id="loading-status">Starting…</div>
+      <!-- After a visit that died (the browser killed the page for its memory): js/donostia/main.js says here that
+           this one starts at a lighter quality -->
+      <div id="loading-recovery" hidden></div>
       <!-- Shown by #loading-overlay[data-error='webgpu'] (css/donostia.css): js/donostia/main.js sets the attribute
            where the browser has no WebGPU, and any other data-error value stills the bar under its own message -->
       <div class="loader-note loader-webgpu">

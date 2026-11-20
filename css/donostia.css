@@ -830,6 +830,18 @@ body[data-mode='god'] .gauge-alt {
   color: var(--warn);
 }
 
+/* after a visit that died: this one starts lighter (js/donostia/main.js), said small under the status line */
+#loading-recovery {
+  max-width: min(440px, 100%);
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+  text-wrap: pretty;
+}
+
+#loading-recovery[hidden] { display: none; }
+
 @media (max-width: 440px) {
   .loader-title { font-size: clamp(24px, 8.2vw, 34px); }
   .rosette.loader-rosette { width: 56px; height: 56px; margin-bottom: 20px; }
