@@ -80,6 +80,8 @@ export function createLiveSky({ lighting, presets }) {
     // true: the next switch-on shows the live look at once, without the fade from the preset (the HUD sets it when
     // real time is on as the city first shows)
     skipFade: false,
+    // the least time between two bakes of the environment map (s): a quality knob (js/donostia/quality.js)
+    bakeGap: BAKE_GAP,
     attachGrade(g) { grade = g; },
 
     // Every frame (main.js's view.simulate)
@@ -119,7 +121,7 @@ export function createLiveSky({ lighting, presets }) {
       lighting.applyLook(look);
       grade.applyLook(look.grade);
       const key = skyKey(look);
-      if (clock - bakedAt >= BAKE_GAP && due(key)) {
+      if (clock - bakedAt >= self.bakeGap && due(key)) {
         bake();
         baked = key;
       }

@@ -4,6 +4,7 @@ import { cityUniforms } from '../city-uniforms.js';
 import { FERRY } from './data-boats.js';
 import { Builder, addHull, V, P, HULL, DECK, GLASS, STEEL, DARK, LIGHT, SLOTS, createBoatMaterial, srgb } from './boats.js';
 import { ferryRounds, SERVICE } from './ferry-timeline.js';
+import { detail } from './quality.js';
 
 // js/donostia/ferries.js
 // The two island ferries, the Motoras de la Isla, shuttling between the north basin's ferry pier and Santa Klara's jetty
@@ -137,7 +138,7 @@ function createWakeMaterial() {
   mat.colorNode = vec3(0.92, 0.95, 0.95).mul(float(1).sub(smoothstep(0.35, 1.3, cityUniforms.uInteriorGlow).mul(0.8)));
   mat.opacityNode = wash.max(arms);
   // (as streetscape.js's pools of lamplight: the water's normal & glossiness under the foam go, so it reflects no sky)
-  mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
   return mat;
 }
 

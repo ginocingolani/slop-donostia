@@ -13,6 +13,10 @@ import { wallSnaps, snapPosition } from './shore-walls.js';
 // Along the shore walls (GEO.terrain.walls, js/donostia/shore-walls.js) the core samples on either side of each wall line
 // move onto it, so the ground steps down vertically at the wall instead of ramping over a 2 m cell; js/donostia/shore.js
 // faces the step with masonry.
+// A quality tier short of memory (js/donostia/quality.js: terrainMesh 'coarse') builds the core's chunks from every
+// second sample (4 m), but for the chunks a shore wall runs through: a quarter of the vertex buffers, which are the
+// largest thing the city puts on the GPU (107 MB for the core). Such a chunk is what a full one shows from 200 m on;
+// heightAt() and everything standing on it still read every sample.
 
 const QUADS = 256; // quads per chunk side
 const LOD_STRIDES = [1, 2, 4, 8, 16];
@@ -158,20 +162,32 @@ function chunkIndex(cols, rows, stride, keep = null) {
 
 // The vertex buffers of the chunk whose grid starts at sample (i0, j0) and spans cols x rows quads (exactly: edge
 // chunks are smaller, not padded), or null for a chunk wholly under the sea (Terrain.update would never show it).
-// sink(x, z): samples sunk 0.8 m (the context grid under the core's edge).
-function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
+// sink(x, z): samples sunk 0.8 m (the context grid under the core's edge). step: 2 takes every second sample (and the
+// last of each side), for a grid of ceil(cols / 2) x ceil(rows / 2) quads; the bounds are still every sample's.
+function chunkGeometry(field, i0, j0, cols, rows, sink = null, step = 1) {
   const { heights, w, h } = field;
-  const nx = cols + 1, nz = rows + 1;
+  const us = steps(cols, step), vs = steps(rows, step);
+  const nx = us.length, nz = vs.length;
   const ys = new Float64Array(nx * nz); // (the skirts' drop is taken off before rounding to 32 bits, as for every vertex)
   let minY = Infinity, maxY = -Infinity;
   for (let j = 0, v = 0; j < nz; j++) {
-    const row = (j0 + j) * w + i0, z = field.sampleZ(j0 + j);
+    const row = (j0 + vs[j]) * w + i0, z = field.sampleZ(j0 + vs[j]);
     for (let i = 0; i < nx; i++, v++) {
-      let y = heights[row + i];
-      if (sink !== null && sink(field.sampleX(i0 + i), z)) y -= 0.8;
+      let y = heights[row + us[i]];
+      if (sink !== null && sink(field.sampleX(i0 + us[i]), z)) y -= 0.8;
       ys[v] = y;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
+    }
+  }
+  if (step > 1) {
+    for (let j = 0; j <= rows; j++) {
+      const row = (j0 + j) * w + i0;
+      for (let i = 0; i <= cols; i++) {
+        const y = heights[row + i];
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
     }
   }
   if (maxY < SUBMERGED) return null;
@@ -193,7 +209,7 @@ function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
     return 0;
   };
   const put = (v, i, j, drop) => {
-    const ii = i0 + i, jj = j0 + j, k = jj * w + ii;
+    const ii = i0 + us[i], jj = j0 + vs[j], k = jj * w + ii;
     const m = moved ? moved.get(k) : undefined;
     if (m) shifted = true;
     pos[3 * v] = m ? m[0] : field.sampleX(ii);
@@ -211,11 +227,11 @@ function chunkGeometry(field, i0, j0, cols, rows, sink = null) {
   const north = nx * nz, south = north + nx, west = south + nx, east = west + nz;
   for (let t = 0; t < nx; t++) {
     put(north + t, t, 0, SKIRT);
-    put(south + t, t, rows, SKIRT);
+    put(south + t, t, nz - 1, SKIRT);
   }
   for (let t = 0; t < nz; t++) {
     put(west + t, 0, t, SKIRT);
-    put(east + t, cols, t, SKIRT);
+    put(east + t, nx - 1, t, SKIRT);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -264,8 +280,20 @@ export class Terrain {
     for (const chunk of this.chunks) for (const mesh of chunk.meshes) if (mesh) mesh.material = material;
   }
 
-  build(material = null) {
+  // coarse: the core's chunks without a shore wall from every second sample (see the header)
+  build(material = null, { coarse = false } = {}) {
     material ||= new THREE.MeshBasicNodeMaterial();
+    // the core chunks a wall runs through (a sample on a chunk's edge belongs to both chunks)
+    const walled = new Set();
+    if (coarse && this.core.moved) {
+      const w = this.core.w;
+      for (const k of this.core.moved.keys()) {
+        const i = k % w, j = (k - i) / w;
+        for (const ci of i % QUADS === 0 && i > 0 ? [i / QUADS - 1, i / QUADS] : [Math.floor(i / QUADS)]) {
+          for (const cj of j % QUADS === 0 && j > 0 ? [j / QUADS - 1, j / QUADS] : [Math.floor(j / QUADS)]) walled.add(`${ci},${cj}`);
+        }
+      }
+    }
     // one set of index buffers per chunk layout (the full one and the edge chunks' smaller ones), core & context alike
     const layouts = new Map();
     const layoutIndices = (cols, rows) => {
@@ -295,10 +323,12 @@ export class Terrain {
             if (!any) continue;
             if (!all) keep = outside;
           }
-          const base = chunkGeometry(field, i0, j0, cols, rows, kind === 'context' ? insideCore : null);
+          const step = coarse && kind === 'core' && !walled.has(`${ci},${cj}`) ? 2 : 1;
+          const base = chunkGeometry(field, i0, j0, cols, rows, kind === 'context' ? insideCore : null, step);
           if (!base) continue; // under the sea for good
-          const indices = keep ? LOD_STRIDES.map((s) => chunkIndex(cols, rows, s, keep)) : layoutIndices(cols, rows);
-          const chunk = { box: base.boundingBox, res: field.res, lod: -1, meshes: [] };
+          const indices = keep ? LOD_STRIDES.map((s) => chunkIndex(cols, rows, s, keep))
+            : layoutIndices(Math.ceil(cols / step), Math.ceil(rows / step));
+          const chunk = { box: base.boundingBox, res: field.res * step, lod: -1, meshes: [] };
           indices.forEach((index) => {
             if (!index) { chunk.meshes.push(null); return; }
             const geo = new THREE.BufferGeometry();

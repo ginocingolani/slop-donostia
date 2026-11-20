@@ -7,6 +7,7 @@ import { cityUniforms } from '../city-uniforms.js';
 import { MARINA } from './data-marina.js';
 import { seaUniforms } from './sea-uniforms.js';
 import { LOW_WATER, GANGWAY_FOOT, pontoonLevel, gangwayPitch } from './sea-state.js';
+import { detail } from './quality.js';
 
 // js/donostia/marina.js
 // The port's moorings, from tools/donostia/bake-marina.mjs (js/donostia/data-marina.js):
@@ -610,12 +611,14 @@ class DistanceCulled {
     this.inside = new Uint8Array(this.n).fill(1);
   }
 
-  update(cam) {
+  // scale: the quality tier's draw distance, times the kind's own (js/donostia/quality.js's detail.distance)
+  update(cam, scale = 1) {
     const src = this.src;
     let changed = false;
+    const max2 = this.max2 * scale * scale;
     for (let i = 0; i < this.n; i++) {
       const dx = src[16 * i + 12] - cam.x, dy = src[16 * i + 13] - cam.y, dz = src[16 * i + 14] - cam.z;
-      const inside = dx * dx + dy * dy + dz * dz < this.max2 ? 1 : 0;
+      const inside = dx * dx + dy * dy + dz * dz < max2 ? 1 : 0;
       if (inside !== this.inside[i]) { this.inside[i] = inside; changed = true; }
     }
     if (!changed) return;
@@ -717,7 +720,7 @@ export async function buildMarina(GEO, terrain, water = null) {
 
     const culled = Object.entries(CULL).filter(([k]) => meshes[k]).map(([k, d]) => new DistanceCulled(meshes[k], d));
     const last = V3(Infinity, Infinity, Infinity);
-    let level = NaN;
+    let level = NaN, scale = detail.distance;
     group.userData.update = (dt, elapsed, camera) => {
       if (footings) footings.visible = seaUniforms.uTideLive.value > 0;
       // the pontoons follow the water down to where they settle on the bed
@@ -728,9 +731,10 @@ export async function buildMarina(GEO, terrain, water = null) {
         gangways?.userData.lay(y);
       }
       // (everything stays drawn for the shader compile behind the loading screen, elapsed 0)
-      if (!elapsed || camera.position.distanceToSquared(last) < RECULL * RECULL) return;
+      if (!elapsed || (camera.position.distanceToSquared(last) < RECULL * RECULL && scale === detail.distance)) return;
       last.copy(camera.position);
-      for (const c of culled) c.update(camera.position);
+      scale = detail.distance;
+      for (const c of culled) c.update(camera.position, scale);
     };
     group.userData.update(0, 0, null);
     return group;

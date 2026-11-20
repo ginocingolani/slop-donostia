@@ -747,6 +747,8 @@ export async function createWater(terrain) {
   let pocketsAt = null;
   const SEA_EASE = 4, BLEND = 1.5, READ = 0.25;
   const EASED = ['surf', 'surfPeriodA', 'surfPeriodB', 'swell', 'swellPeriod', 'chop', 'calm', 'whitecaps', 'spray', 'windSpeed'];
+  // a quality knob (js/donostia/quality.js): false keeps the swell's spray against the shore from being built or drawn
+  group.userData.spray = true;
   group.userData.seaState = () => ({ ...shown, blend });
   group.userData.update = (dt) => {
     let y = tide.level;
@@ -789,11 +791,11 @@ export async function createWater(terrain) {
         if (sea.geometry !== plane) sea.geometry.dispose();
         sea.geometry = high == null ? plane : holedSeaPlane(dryPockets([terrain.core, terrain.context], high));
       }
-      if (shown.spray > 0.01 && !spray && fields.image.width > 1) {
+      if (shown.spray > 0.01 && !spray && group.userData.spray && fields.image.width > 1) {
         spray = createSpray({ fields: fields.image, context: terrain.context, terrain, seaLevel: uSeaLevel }) || { update() {} };
         if (spray.mesh) group.add(spray.mesh);
       }
-      spray?.update(shown.spray, shown.swell, shown.swellPeriod);
+      spray?.update(group.userData.spray ? shown.spray : 0, shown.swell, shown.swellPeriod);
       y = shown.level;
       mark = shown.mark;
     }

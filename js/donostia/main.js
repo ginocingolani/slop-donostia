@@ -5,7 +5,7 @@ import { createPostProcessing } from '../post-processing.js';
 import { LightingSystem } from '../lighting.js';
 import { GEO } from './geodata.js';
 import { Terrain } from './terrain.js';
-import { createGroundMaterial, prefetchGroundMaps } from './ground.js';
+import { createGroundMaterial, prefetchGroundMaps, CLASSES_ONLY } from './ground.js';
 import { createWater } from './water.js';
 import { buildDonostiaBuildings } from './buildings.js';
 import { buildLandmarks } from './landmarks/index.js';
@@ -25,6 +25,7 @@ import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
+import { quality, readEnvironment, detail, TIERS } from './quality.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -36,6 +37,12 @@ import { createLiveSky } from './live-sky.js';
 //
 // buildWorld() and createView() hold everything but the page (DOM, HUD, god camera), so a headless benchmark can run
 // the very same scene and render pipeline; initApp() wires them to index.html.
+//
+// Quality (js/donostia/quality.js): the tier's settings reach the scene in two steps. The boot ones are options of
+// buildWorld() and createView() (shadows at all, the ground maps, the MRT targets SSR reads) and of the renderer (MSAA);
+// the live ones are applyWorldQuality() and view.setPost(), which initApp() calls whenever the controller's state
+// changes (a pick in the HUD, a step of the frame-rate governor). Without options both build the desktop picture
+// (TIERS.ultra), as they always have.
 
 const STORAGE_KEY = 'donostia-god-camera';
 
@@ -48,10 +55,16 @@ const STORAGE_KEY = 'donostia-god-camera';
  * Returns { scene, lighting, liveSky, terrain, modules: { name: Object3D }, updaters }: liveSky is the real-time
  * switch's time of day (js/donostia/live-sky.js), idle while the switch is off.
  * status(text, progress?) reports progress; mark(label) is called after each step (init timings).
+ * settings: a quality tier's (js/donostia/quality.js); of those, shadows, shadowMapSize, shadowFar, groundMaps,
+ * terrainMesh and releaseGeometry shape the build, and applyWorldQuality() sets the rest.
  */
-export async function buildWorld(renderer, { status = () => {}, mark = () => {} } = {}) {
+export async function buildWorld(renderer, { status = () => {}, mark = () => {}, settings = TIERS.ultra } = {}) {
   const scene = new THREE.Scene();
-  const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS);
+  // (before any material is made: the effects' materials name the SSR targets only where the scene pass has them)
+  detail.mrt = Boolean(settings.ssr);
+  const lighting = new LightingSystem(scene, renderer, DONOSTIA_PRESETS, {
+    shadows: settings.shadows, shadowMapSize: settings.shadowMapSize, shadowFar: settings.shadowFar
+  });
   const liveSky = createLiveSky({ lighting, presets: DONOSTIA_PRESETS });
   mark('lighting');
 
@@ -64,13 +77,18 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   };
 
   status('Loading LiDAR terrain & sea floor…');
-  // the ground maps download & decode while the terrain does
-  const groundMaps = prefetchGroundMaps();
+  // The ground maps download & decode while the terrain does. On the tiers that watch their memory (phones) they
+  // wait for the terrain instead: the core map alone is 86 MB decoded, on top of the terrain's own decode and the
+  // 130 MB of chunks, and it is the peak, not the total, that gets a tab killed on iOS. The lowest tier leaves the
+  // baked maps out altogether
+  const frugal = settings.releaseGeometry;
+  let groundMaps = settings.groundMaps === 'classes' ? CLASSES_ONLY : frugal ? null : prefetchGroundMaps();
   const terrain = await Terrain.load(GEO.terrain);
   mark('terrain data');
   status('Building the bay, the hills & the streets…');
   // the chunks first, while the ground maps finish decoding off the main thread
-  const terrainGroup = terrain.build();
+  const terrainGroup = terrain.build(null, { coarse: settings.terrainMesh === 'coarse' });
+  if (!groundMaps) groundMaps = prefetchGroundMaps();
   const [groundMaterial, water] = await Promise.all([createGroundMaterial(terrain, groundMaps), createWater(terrain)]);
   terrain.setMaterial(groundMaterial);
   add('terrain', terrainGroup);
@@ -129,7 +147,48 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {} 
   modules.water?.traverse((o) => { o.renderOrder = 1; });
   lighting.sky.renderOrder = 2;
 
-  return { scene, lighting, liveSky, terrain, modules, updaters };
+  const world = { scene, lighting, liveSky, terrain, modules, updaters };
+  applyWorldQuality(world, settings);
+  return world;
+}
+
+/**
+ * A quality tier's live settings on a built world: the shadow map's size & reach, the terrain's and the trees' levels of
+ * detail, the props' draw distance, the rain's drops, the sea's spray and the environment map's bake rate. Cheap, and
+ * safe every time the quality changes: what has not changed is left alone.
+ */
+export function applyWorldQuality(world, settings) {
+  const { lighting, liveSky, terrain, modules } = world;
+  lighting.setShadowQuality({ mapSize: settings.shadowMapSize, far: settings.shadowFar });
+  terrain.lodScale = settings.terrainLod;
+  modules.vegetation?.userData.setDetail({
+    near: settings.treeNear, mid: settings.treeMid, billboards: settings.treeBillboards, far: settings.treeFar
+  });
+  detail.distance = settings.detailDistance;
+  modules.weather?.userData.setDropShare(settings.rain);
+  if (modules.water) modules.water.userData.spray = settings.spray;
+  liveSky.bakeGap = settings.envBakeGap;
+}
+
+// The terrain's and the buildings' vertex buffers are 190 MB that only the GPU reads once they are uploaded (the
+// camera's ground and the colliders work from the height field and the map, not the meshes). Called after the warm-up
+// frame and now and then after it, this swaps the CPU copy of each uploaded attribute for an empty array of its type
+// (three still asks the array for its type when it builds a pipeline). Index buffers stay: the terrain's levels share
+// them and most are not uploaded until their level shows. Returns how many attributes still wait for their upload.
+export function releaseUploadedGeometry(renderer, roots) {
+  const backend = renderer.backend;
+  let waiting = 0;
+  for (const root of roots) {
+    root?.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh) return;
+      for (const attribute of Object.values(o.geometry.attributes)) {
+        if (!attribute.isBufferAttribute || attribute.isInstancedBufferAttribute || attribute.isStorageBufferAttribute || !attribute.array.length) continue;
+        if (backend.has(attribute) && backend.get(attribute).buffer) attribute.array = new attribute.array.constructor(0);
+        else waiting++;
+      }
+    });
+  }
+  return waiting;
 }
 
 // --- the view: render pipeline, shader compilation, frame ------------------------------------------------------------------
@@ -167,40 +226,82 @@ const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield
 /**
  * The render pipeline of `world` seen through `camera`, as in js/main.js: an MRT scene pass, half-resolution SSR on
  * glossy surfaces, bloom & colour grading. Returns { pipeline, grade, scenePass, sceneMRT, ssrPass, simulate(dt),
- * render(), compile(onProgress), warmUp() }.
+ * render(), compile(onProgress), warmUp(), setPost({ ssr, bloom }) }; pipeline is the one in use.
+ * settings: a quality tier's (js/donostia/quality.js). ssr: false builds the scene pass without the normal &
+ * metalness targets SSR reads (two fewer attachments to fill, two thirds of the pass's colour memory): it cannot be
+ * turned on later. With them, setPost() turns SSR and bloom off and on in a running view: each combination is a render
+ * pipeline of its own over the same scene pass, built the first time it is asked for, so nothing in the scene
+ * recompiles.
  */
-export function createView(renderer, world, camera) {
+export function createView(renderer, world, camera, { settings = TIERS.ultra } = {}) {
   const { scene, lighting, liveSky, terrain, updaters } = world;
   shareOpaqueShadowPrograms(renderer);
 
   const scenePass = pass(scene, camera);
   scenePass.renderTarget.storeMultisampledColorBuffer = false;
-  const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
   const maxSSRRoughness = 0.75;
-  const sceneMRT = mrt({
-    output,
-    normal: normalView,
-    metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
-  });
-  sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
-  sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
-  scenePass.setMRT(sceneMRT);
+  let sceneMRT = null, ssrPass = null, reflections = null;
+  if (settings.ssr) {
+    const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+    sceneMRT = mrt({
+      output,
+      normal: normalView,
+      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+    });
+    sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+    sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
+    scenePass.setMRT(sceneMRT);
+  }
   const color = scenePass.getTextureNode('output');
-  const metalRough = scenePass.getTextureNode('metalRough');
-  const ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
-    metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
-  });
-  ssrPass.resolutionScale = 0.5;
-  ssrPass.blurQuality = 1;
-  ssrPass.maxDistance.value = 60;
-  ssrPass.thickness.value = 0.85;
-  ssrPass.quality.value = 0.25;
-  ssrPass.binaryRefine = true;
-  ssrPass.intensity.value = 0.5;
-  ssrPass.screenEdgeFadeBlack = true;
-  const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
-  const grade = createPostProcessing(renderer, color, ssrPass.mul(reflectionMask), DONOSTIA_CAMERA);
-  const pipeline = new THREE.RenderPipeline(renderer, grade.outputNode);
+  if (settings.ssr) {
+    const metalRough = scenePass.getTextureNode('metalRough');
+    ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
+      metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
+    });
+    ssrPass.resolutionScale = 0.5;
+    ssrPass.blurQuality = 1;
+    ssrPass.maxDistance.value = 60;
+    ssrPass.thickness.value = 0.85;
+    ssrPass.quality.value = 0.25;
+    ssrPass.binaryRefine = true;
+    ssrPass.intensity.value = 0.5;
+    ssrPass.screenEdgeFadeBlack = true;
+    const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
+    reflections = ssrPass.mul(reflectionMask);
+  }
+
+  // The post-processing variants (SSR or not, bloom or not), each with its colour grade; `grade` speaks to all of
+  // them, and to the ones built later through the preset or look applied last
+  const variants = new Map();
+  let post = null, lastLook = null, lastPreset = null;
+  const variant = (withSsr, withBloom) => {
+    const key = `${withSsr ? 's' : '-'}${withBloom ? 'b' : '-'}`;
+    let v = variants.get(key);
+    if (!v) {
+      const g = createPostProcessing(renderer, color, withSsr ? reflections : null, { ...DONOSTIA_CAMERA, bloom: withBloom });
+      if (lastPreset) g.applyPreset(lastPreset);
+      if (lastLook) g.applyLook(lastLook);
+      v = { grade: g, pipeline: new THREE.RenderPipeline(renderer, g.outputNode) };
+      variants.set(key, v);
+    }
+    return v;
+  };
+  const setPost = ({ ssr: withSsr = true, bloom: withBloom = true } = {}) => {
+    post = variant(Boolean(withSsr && reflections), Boolean(withBloom));
+  };
+  setPost(settings);
+  const grade = {
+    looks: post.grade.looks,
+    applyPreset(id) {
+      lastPreset = id;
+      lastLook = null;
+      for (const v of variants.values()) v.grade.applyPreset(id);
+    },
+    applyLook(look) {
+      lastLook = look;
+      for (const v of variants.values()) v.grade.applyLook(look);
+    }
+  };
   liveSky?.attachGrade(grade);
 
   let elapsed = 0;
@@ -220,7 +321,7 @@ export function createView(renderer, world, camera) {
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
     scene.visible = false;
-    pipeline.render();
+    post.pipeline.render();
     scene.visible = true;
     simulate(0); // pick the terrain's levels of detail & the trees in reach for this camera
     const culled = [], jobs = [], jobByMaterial = new Map();
@@ -273,16 +374,43 @@ export function createView(renderer, world, camera) {
     scene.traverse((o) => {
       if (o.frustumCulled && !o.userData.sharesPipelineWith) { culled.push(o); o.frustumCulled = false; }
     });
-    pipeline.render();
+    post.pipeline.render();
     for (const o of culled) o.frustumCulled = true;
   }
 
-  return { pipeline, grade, scenePass, sceneMRT, ssrPass, simulate, render: () => pipeline.render(), compile, warmUp };
+  return {
+    get pipeline() { return post.pipeline; },
+    grade, scenePass, sceneMRT, ssrPass, simulate, render: () => post.pipeline.render(), compile, warmUp, setPost
+  };
 }
 
 // --- the page --------------------------------------------------------------------------------------------------------------
 
 let deviceLost = false; // (its message outranks the "Could not start" of a load it breaks)
+let unsupported = false; // (so does "no WebGPU")
+
+// sessionStorage: when the page last reloaded itself after losing the GPU in the background (not twice in a row)
+const RELOADED_KEY = 'donostia-gpu-reload';
+
+// Whether this browser can run the city: its WebGPU adapter, or the reason there is none, in words for the loading
+// screen. Without this three.js falls back to its WebGL 2 backend, on which the city took a quarter of a minute to
+// start and then drew black: the page says what is missing instead.
+async function probeWebGPU() {
+  const ua = navigator.userAgent || '';
+  const hint = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'On iPhone and iPad it comes with iOS 26 (Safari 26).'
+    : /Android/.test(ua) ? 'On Android it needs Chrome 121 or later on Android 12 or later.'
+      : 'Try a current Chrome or Edge, or Safari 26 or later.';
+  if (!navigator.gpu) {
+    const insecure = window.isSecureContext === false ? ' WebGPU also needs a secure (https) page.' : '';
+    return { adapter: null, reason: `This browser has no WebGPU, which Slop Donostia needs to draw the city. ${hint}${insecure}` };
+  }
+  let adapter = null;
+  try {
+    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  } catch { /* as none */ }
+  if (!adapter) return { adapter: null, reason: `WebGPU is there, but this device's graphics are not supported by it (or it is turned off). ${hint}` };
+  return { adapter, reason: null };
+}
 
 async function initApp() {
   const container = document.getElementById('canvas-container');
@@ -297,24 +425,69 @@ async function initApp() {
     }
   };
 
-  status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
+  // The loading screen's last word when the city cannot start (or stops): no progress bar, the message, a way on
+  // (.is-halted is there for the stylesheet: the message is the whole page now)
+  const halt = (text) => {
+    loadingOverlay?.removeAttribute('aria-busy');
+    loadingOverlay?.classList.remove('hidden');
+    loadingOverlay?.classList.add('is-halted');
+    loadingFill?.parentElement?.classList.remove('is-indeterminate');
+    status(text);
+  };
+
   const DEBUG = new URLSearchParams(location.search).has('debug');
-  const renderer = new THREE.WebGPURenderer({ antialias: true, powerPreference: 'high-performance', reversedDepthBuffer: true });
-  renderer.setPixelRatio(1.0);
+  const { adapter, reason } = await probeWebGPU();
+  if (!adapter) {
+    unsupported = true;
+    if (loadingFill?.parentElement) loadingFill.parentElement.style.visibility = 'hidden';
+    halt(reason);
+    return;
+  }
+
+  // The quality tier the city boots with: ?quality=, the choice remembered, or what the device looks like
+  const booted = quality.init({ env: readEnvironment(adapter), search: location.search });
+  const settings = booted.settings;
+  const pixelRatioNow = () => quality.viewport(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
+  console.log(`[quality] ${booted.tier} (${booted.source}${booted.mode === 'auto' ? `: ${quality.debug().detected.reasons.join('; ')}` : ''}), pixel ratio ${pixelRatioNow()}`);
+
+  status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
+  const renderer = new THREE.WebGPURenderer({ antialias: settings.msaa, powerPreference: 'high-performance', reversedDepthBuffer: true });
+  let pixelRatio = pixelRatioNow();
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = settings.shadows;
   container.appendChild(renderer.domElement);
   await renderer.init();
+  if (!renderer.backend.isWebGPUBackend) {
+    // (the adapter gave no device: three is on its WebGL 2 fallback)
+    unsupported = true;
+    renderer.domElement.remove();
+    halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.');
+    return;
+  }
   // A lost GPU device (a driver reset, the GPU process crashing...) leaves three drawing nothing: the view would freeze
   // on its last frame under a HUD that still moves. Stop, and say so over the loading screen.
   const threeDeviceLost = renderer.onDeviceLost;
+  // On a phone the usual cause is the system taking the GPU's memory back, most often while the page is in the
+  // background: the page then reloads itself when it is looked at again (once: a second loss within a minute stays on
+  // the message), and on auto the next start is a quality tier lower (quality.deviceLost()).
   renderer.onDeviceLost = (info) => {
     threeDeviceLost.call(renderer, info); // (logs it, stops rendering)
     deviceLost = true;
     renderer.setAnimationLoop(null);
-    loadingOverlay?.removeAttribute('aria-busy');
-    loadingOverlay?.classList.remove('hidden');
-    status(`The GPU was reset (${info.message || info.reason || 'device lost'}). Reload the page to continue.`);
+    quality.deviceLost();
+    halt(`The GPU was reset (${info.message || info.reason || 'device lost'}). Reload the page to continue.`);
+    if (document.visibilityState === 'hidden') {
+      let last = 0;
+      try { last = Number(sessionStorage.getItem(RELOADED_KEY)) || 0; } catch { /* storage unavailable */ }
+      if (Date.now() - last > 60000) {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState !== 'visible') return;
+          try { sessionStorage.setItem(RELOADED_KEY, String(Date.now())); } catch { /* storage unavailable */ }
+          location.reload();
+        });
+      }
+    }
     if (loadingOverlay && !document.getElementById('loading-reload')) {
       const reload = document.createElement('button');
       reload.id = 'loading-reload';
@@ -337,7 +510,7 @@ async function initApp() {
   let mark = performance.now();
   const markInit = (label) => { const now = performance.now(); timings.push(`${label} ${Math.round(now - mark)}ms`); mark = now; };
 
-  const world = await buildWorld(renderer, { status, mark: markInit });
+  const world = await buildWorld(renderer, { status, mark: markInit, settings });
   const { scene, lighting, terrain, updaters } = world;
 
   const god = new GodCamera(renderer.domElement, terrain);
@@ -355,16 +528,32 @@ async function initApp() {
   const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(god.state)); } catch { /* storage unavailable */ } };
   window.addEventListener('pagehide', save);
 
-  const view = createView(renderer, world, camera);
-  const { pipeline, grade } = view;
+  const view = createView(renderer, world, camera, { settings });
+  const { grade } = view;
 
-  const hud = initHud({ GEO, god, terrain, lighting, grade, liveSky: world.liveSky, renderer });
-  window.addEventListener('resize', () => {
-    god.onResize(window.innerWidth, window.innerHeight);
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  // Quality changes in the running city (a pick in the HUD, a step of the governor): the tier's live settings, and
+  // the drawing buffer's size when the pixel ratio moved
+  const setPixelRatio = (ratio) => {
+    if (ratio === pixelRatio) return;
+    pixelRatio = ratio;
+    renderer.setPixelRatio(ratio);
+  };
+  quality.attach((state) => {
+    applyWorldQuality(world, state.settings);
+    view.setPost(state.settings);
+    setPixelRatio(state.pixelRatio);
   });
 
+  const hud = initHud({ GEO, god, terrain, lighting, grade, liveSky: world.liveSky, renderer, quality });
+  const onResize = () => {
+    god.onResize(window.innerWidth, window.innerHeight);
+    setPixelRatio(pixelRatioNow());
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  };
+  window.addEventListener('resize', onResize);
+
   let last = performance.now(), frames = 0, fpsTime = 0, saveAt = 0, first = true;
+  let governing = false, lastFrame = 0; // (the governor starts once the city shows)
   const simulate = (dt) => {
     god.update(dt);
     view.simulate(dt);
@@ -380,7 +569,12 @@ async function initApp() {
   if (DEBUG) {
     const device = renderer.backend.device;
     window.slopDebug = {
-      THREE, renderer, scene, camera, god, terrain, lighting, pipeline, updaters, GEO, world, view,
+      THREE, renderer, scene, camera, god, terrain, lighting, updaters, GEO, world, view,
+      // (the render pipeline in use: SSR and bloom are each a variant, js/donostia/quality.js)
+      get pipeline() { return view.pipeline; },
+      // the quality controller (js/donostia/quality.js): quality.get(), quality.set('low' | 'medium' | 'high' | 'ultra' |
+      // 'auto'), quality.tiers, quality.onChange(fn), quality.debug() (how the tier was chosen, where the governor is)
+      quality,
       // the real-time state (js/donostia/live-state.js): live.setLiveEnabled(true), live.setLiveOverride({ time, rate,
       // weather, sea }), live.liveSnapshot()
       live,
@@ -410,7 +604,7 @@ async function initApp() {
           const target = renderer.getRenderTarget(), targetMRT = renderer.getMRT();
           renderer.setRenderTarget(null);
           renderer.setMRT(null);
-          pipeline.render();
+          view.render();
           renderer.setRenderTarget(target);
           renderer.setMRT(targetMRT);
           cpu += performance.now() - c0;
@@ -451,7 +645,11 @@ async function initApp() {
         view.warmUp();
         markInit('warm-up');
       }
-      pipeline.render();
+      view.render();
+      // the governor: the frame rate of the frames that drew the world (a hidden tab's or a hitch's interval is not
+      // one, and it sorts those out itself)
+      if (!first && governing) quality.frame(now - lastFrame);
+      lastFrame = now;
     }
     if (first) {
       first = false;
@@ -464,6 +662,17 @@ async function initApp() {
         loadingOverlay?.removeAttribute('aria-busy');
         loadingOverlay?.classList.add('hidden');
         hud.setReady();
+        governing = true;
+        // the CPU copies of the terrain's & the buildings' vertex buffers, now on the GPU; the stragglers (what the
+        // warm-up frame did not draw) every few seconds until none is left
+        if (settings.releaseGeometry) {
+          const roots = [world.modules.terrain, world.modules.buildings];
+          const release = (tries) => {
+            if (deviceLost) return;
+            if (releaseUploadedGeometry(renderer, roots) > 0 && tries > 0) setTimeout(release, 4000, tries - 1);
+          };
+          release(30);
+        }
       });
     }
     frames++;
@@ -481,7 +690,7 @@ async function initApp() {
 if (typeof window !== 'undefined') {
   initApp().catch((e) => {
     console.error(e);
-    if (deviceLost) return; // (already explained)
+    if (deviceLost || unsupported) return; // (already explained)
     document.getElementById('loading-overlay')?.removeAttribute('aria-busy');
     const s = document.getElementById('loading-status');
     if (s) s.textContent = `Could not start: ${e.message}`;

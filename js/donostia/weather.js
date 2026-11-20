@@ -9,6 +9,7 @@ import { weatherUniforms } from './weather-uniforms.js';
 import { liveEnabled, liveSnapshot } from './live-state.js';
 import { precipitation, windVector, gustFactor, wetnessTarget, stepWetness, strikeRate, Lightning } from './weather-model.js';
 import { pointInRing } from './landmarks/geom.js';
+import { detail } from './quality.js';
 
 // js/donostia/weather.js
 // The real-time weather's effects (the HUD's real-time switch; live-state.js's weather, its numbers worked out by
@@ -95,7 +96,7 @@ function precipitationMesh(shelter) {
   // (double-sided in one pass: three draws a transparent double-sided material twice otherwise, back faces first)
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
   mat.name = 'WeatherPrecipitation';
-  mat.mrtNode = effectMRT;
+  if (detail.mrt) mat.mrtNode = effectMRT;
 
   const i = float(instanceIndex);
   const r = hash31(i.add(0.37));
@@ -299,7 +300,7 @@ function boltMesh() {
   });
   mat.name = 'WeatherBolt';
   mat.fog = false; // dimmed by the rain's visibility on the CPU instead
-  mat.mrtNode = effectMRT;
+  if (detail.mrt) mat.mrtNode = effectMRT;
   const T = attribute('aTangent', 'vec4'); // xyz direction, w: width share (thinner down the branches) x side
   const vSide = varying(T.w.sign(), 'vBoltSide');
   mat.positionNode = Fn(() => {
@@ -401,6 +402,10 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
   const thunderListeners = new Set();
   const thunders = []; // { at (s of `elapsed`), strike }
   let clock = 0, compiled = false, wetOverride = null;
+  // a quality knob (js/donostia/quality.js): the share of the drops drawn (the rain thins out; every drop is a
+  // blended quad over the whole view's depth)
+  let dropShare = 1;
+  group.userData.setDropShare = (share) => { dropShare = Math.min(Math.max(share, 0), 1); };
 
   const scene = () => {
     let root = group;
@@ -555,7 +560,7 @@ export function buildWeather({ GEO = null, terrain, lighting, renderer = null, s
     }
     s.rainfall = ease(s.rainfall, p.particle === 'rain' ? p.density : 0, dt, EASE);
     W.uRainfall.value = s.rainfall;
-    const count = Math.round(MAX_DROPS * s.density);
+    const count = Math.round(MAX_DROPS * s.density * dropShare);
     rain.visible = count > 0;
     if (rain.visible) {
       rain.geometry.instanceCount = count;

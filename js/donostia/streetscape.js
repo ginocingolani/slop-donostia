@@ -6,6 +6,7 @@ import {
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
+import { detail } from './quality.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
@@ -537,7 +538,7 @@ function createPoolMaterial() {
     return color(0xffc890).mul(falloff.mul(night()).mul(0.3));
   })();
   mat.opacityNode = float(1.0);
-  mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
   return mat;
 }
 
@@ -570,12 +571,14 @@ class DistanceCulled {
     this.inside = new Uint8Array(this.n).fill(1);
   }
 
-  update(cam) {
+  // scale: the quality tier's draw distance, times the kind's own (js/donostia/quality.js's detail.distance)
+  update(cam, scale = 1) {
     const src = this.src;
     let changed = false;
+    const max2 = this.max2 * scale * scale;
     for (let i = 0; i < this.n; i++) {
       const dx = src[16 * i + 12] - cam.x, dy = src[16 * i + 13] - cam.y, dz = src[16 * i + 14] - cam.z;
-      const inside = dx * dx + dy * dy + dz * dz < this.max2 ? 1 : 0;
+      const inside = dx * dx + dy * dy + dz * dz < max2 ? 1 : 0;
       if (inside !== this.inside[i]) { this.inside[i] = inside; changed = true; }
     }
     if (!changed) return;
@@ -678,10 +681,12 @@ export async function buildStreetscape(GEO, terrain) {
   const culled = [[streetPosts, CULL.streetPosts], [wallFrames, CULL.wallLanterns], [benchMesh, CULL.benches], [poolMesh, CULL.pools]]
     .filter(([mesh]) => mesh).map(([mesh, d]) => new DistanceCulled(mesh, d));
   const last = new THREE.Vector3(Infinity, Infinity, Infinity);
+  let scale = detail.distance;
   group.userData.update = (dt, elapsed, camera) => {
-    if (camera.position.distanceToSquared(last) < RECULL * RECULL) return;
+    if (camera.position.distanceToSquared(last) < RECULL * RECULL && scale === detail.distance) return;
     last.copy(camera.position);
-    for (const c of culled) c.update(camera.position);
+    scale = detail.distance;
+    for (const c of culled) c.update(camera.position, scale);
   };
   return group;
 }
