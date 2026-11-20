@@ -61,9 +61,19 @@
 //   QUALITY_MAX a visit. A change of the render scale alone is no event: render_scale on the next events says it;
 // - the HUD: teleport { id }, time_preset { id }, live_toggle { on }, map_open, hud_hide { hidden },
 //   language_change { from, to }, fullscreen_toggle { on };
-// - leaving: session_end { seconds, fps_avg, fps_min, teleports, time_presets, live_toggles, map_opens, cells,
-//   moved, details } sent with a beacon on pagehide (`details`: the background compile had ended), and $pageleave
-//   (the SDK's own).
+// - leaving: session_end { visit_id, seq, reason, ready, seconds, hidden_s, fps_avg, fps_min, teleports,
+//   time_presets, live_toggles, map_opens, cells, moved, details }, the visit's summary so far, sent with a beacon
+//   every time the page is hidden (reason 'hidden': the tab or the browser put in the background, the phone locked)
+//   or unloads (reason 'pagehide'). A phone kills a tab in the background without a word, so the summary cannot wait
+//   for the unload: it goes when the page is hidden, and if the visitor comes back the visit carries on and the next
+//   hide sends it again, brought up to date. One visit (one load of the page) may so send several: they share
+//   visit_id (a random id made as the page loads, kept in memory only: it is on no other event, in no storage, and
+//   the next load has another) and count up in seq, from 1. The one with the highest seq of a visit_id is the visit's
+//   summary: every figure in it is the whole visit's so far, never a part's, so the earlier ones are to be left
+//   out, not added up. An unload right after a hide sends nothing more. `seconds` is the time since the city showed
+//   with the page in view; hidden_s the time it was hidden since; neither the fps nor a cell's dwell counts hidden
+//   time. `ready`: the city had shown (false: the visitor left during the load, and seconds is 0); `details`: the
+//   background compile had ended. And $pageleave (the SDK's own, on unload only: a phone often never sends it).
 //
 // initAnalytics(options) decides, loads and returns the tracker; track(name, props) sends on it from anywhere (hud.js).
 // createTracker() and the helpers take their environment as arguments, so tests/donostia-analytics.test.mjs runs them
@@ -203,6 +213,7 @@ const turned = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 // the first move, the HUD's counts. tick() returns the events the latest figures call for. Times in ms.
 export function createSession() {
   let startAt = null, moved = false, heading = null;
+  let hiddenAt = null, hiddenMs = 0; // while the page is hidden, and the hidden time so far (not counting that)
   const all = { sum: 0, n: 0, min: Infinity }, minute = { sum: 0, n: 0, min: Infinity };
   let sampleAt = 0, cellKey = null, cellAt = 0, cellPending = false, cells = 0;
   const counts = { teleports: 0, time_presets: 0, live_toggles: 0, map_opens: 0 };
@@ -213,10 +224,23 @@ export function createSession() {
     get started() { return startAt !== null; },
     get startedAt() { return startAt; },
     count(name) { if (COUNTED[name]) counts[COUNTED[name]]++; },
+    // The page is hidden, then in view again: the time between counts for nothing (the session's length, the fps
+    // minute, a cell's dwell, the first move's delay), and the camera's heading starts afresh
+    pause(t) { if (startAt !== null && hiddenAt === null) hiddenAt = t; },
+    resume(t) {
+      if (hiddenAt === null) return;
+      const gap = Math.max(0, t - hiddenAt);
+      hiddenAt = null;
+      hiddenMs += gap;
+      sampleAt += gap;
+      cellAt += gap;
+      heading = null;
+    },
+    get paused() { return hiddenAt !== null; },
     // { fps, x, z, altitude, moving (the camera is flown: main.js's speed over MOVE_SPEED), yaw, pitch (where it looks,
     // rad), flight (on its way to a viewpoint: neither a move nor a look) }
     tick(t, { fps, x, z, altitude, moving = false, yaw, pitch, flight = false } = {}) {
-      if (startAt === null) return [];
+      if (startAt === null || hiddenAt !== null) return [];
       const events = [];
       if (Number.isFinite(fps) && fps > 0) { add(all, fps); add(minute, fps); }
       if (t - sampleAt >= FPS_SAMPLE_S * 1000) {
@@ -240,13 +264,15 @@ export function createSession() {
       heading = looking ? [yaw, pitch] : null;
       if ((moving || looked) && !moved) {
         moved = true;
-        events.push(['first_move', { after_s: Math.round((t - startAt) / 100) / 10, by: moving ? 'fly' : 'look' }]);
+        events.push(['first_move', { after_s: Math.round((t - startAt - hiddenMs) / 100) / 10, by: moving ? 'fly' : 'look' }]);
       }
       return events;
     },
     summary(t) {
+      const hidden = hiddenMs + (hiddenAt === null ? 0 : Math.max(0, t - hiddenAt));
       return {
-        seconds: startAt === null ? 0 : Math.round((t - startAt) / 1000),
+        seconds: startAt === null ? 0 : Math.round((t - startAt - hidden) / 1000),
+        hidden_s: Math.round(hidden / 1000),
         fps_avg: avg(all), fps_min: all.n ? all.min : null,
         ...counts, cells, moved
       };
@@ -259,21 +285,23 @@ export function createSession() {
  * storage holds the answer (localStorage; anything with getItem/setItem). clock() is a monotonic ms time
  * (performance.now), now() the wall clock (Date.now) for the queued events' timestamps. readInterface() answers the
  * interface's super-properties (interfaceReader()): asked before every event, so each says the language, the input
- * and the display mode of its moment.
+ * and the display mode of its moment. visitId is the visit's id on its summaries (makeVisitId() unless given).
  */
-export function createTracker({ enabled = true, loadSdk = null, storage = null, clock = () => performance.now(), now = () => Date.now(), readInterface = null, onError = () => {} } = {}) {
+export function createTracker({ enabled = true, loadSdk = null, storage = null, clock = () => performance.now(), now = () => Date.now(), readInterface = null, visitId = makeVisitId(), onError = () => {} } = {}) {
   const t0 = clock();
   const session = createSession();
   const device = {};
   const marks = {};
   const listeners = [];
-  let sdk = null, failed = false, ended = false, queue = [], lastMark = 'start';
+  let sdk = null, failed = false, queue = [], lastMark = 'start';
+  let readyAt = null; // the city showed (the session's own clock leaves the hidden time out)
+  let summaries = 0, summarised = false, skipFps = false; // the visit's summaries sent; one stands for this hide
   let choice = readChoice(storage);
   // the super-properties that change: the quality (null until quality.js has booted) and the interface
   let quality = null, face = {};
   let detailsAt = null, picked = false; // the background compile's end; a tier picked by hand before it
   let governed = null, governedAt = null, governedSent = 0; // the governor's steps not yet said, and its last event
-  const off = () => !enabled || failed || ended;
+  const off = () => !enabled || failed;
   const register = (props) => { try { sdk?.register(props); } catch (e) { onError(e); } };
   const refreshInterface = () => {
     if (!readInterface) return;
@@ -342,7 +370,7 @@ export function createTracker({ enabled = true, loadSdk = null, storage = null, 
     onConsent(fn) { listeners.push(fn); if (sdk && !failed) fn(status()); },
     // the answer: the cookie (true) or cookieless (false); again later to change it
     decide(cookies) {
-      if (!sdk || failed || ended) return;
+      if (!sdk || failed) return;
       const before = status();
       choice = cookies ? 'yes' : 'no';
       try { storage?.setItem(CHOICE_KEY, choice); } catch { /* storage unavailable */ }
@@ -365,7 +393,7 @@ export function createTracker({ enabled = true, loadSdk = null, storage = null, 
       if (before && same(before, next)) return;
       quality = next;
       register(quality);
-      if (!before || ended) return;
+      if (!before) return;
       if (before.quality_mode !== next.quality_mode) {
         flushGoverned(true); // (in the order they happened)
         if (session.started && detailsAt === null) picked = true;
@@ -383,30 +411,61 @@ export function createTracker({ enabled = true, loadSdk = null, storage = null, 
     ready(props = {}) {
       if (session.started) return;
       const timings = Object.fromEntries(Object.entries(marks).map(([k, v]) => [`ms_${k.replace(/[^a-z0-9]+/gi, '_')}`, v]));
-      track('app_ready', { ...timings, ms_total: Math.round(clock() - t0), ...props });
-      session.start(clock());
+      readyAt = clock();
+      track('app_ready', { ...timings, ms_total: Math.round(readyAt - t0), ...props });
+      session.start(readyAt);
     },
     // the background compile ended (or there was none): once, after ready()
     details(props = {}) {
       if (!session.started || detailsAt !== null) return;
       detailsAt = clock();
-      track('details_ready', { ms_since_ready: Math.round(detailsAt - session.startedAt), ms_total: Math.round(detailsAt - t0), ...props, quality_changed: picked });
+      track('details_ready', { ms_since_ready: Math.round(detailsAt - readyAt), ms_total: Math.round(detailsAt - t0), ...props, quality_changed: picked });
     },
     // a few times a second: { fps, x, z, altitude, moving, yaw, pitch, flight }
-    tick(state) {
-      if (off()) return;
+    tick(state = {}) {
+      if (off() || session.paused) return;
       flushGoverned();
-      for (const [name, props] of session.tick(clock(), state)) track(name, props);
+      // (the first rate after the page was hidden is main.js's frame count over the whole gap: not a frame rate)
+      const fps = skipFps ? NaN : state.fps;
+      skipFps = false;
+      for (const [name, props] of session.tick(clock(), { ...state, fps })) track(name, props);
     },
-    // the page goes: the session's summary, by beacon
-    end() {
-      if (off()) return;
+    // The page is hidden ('hidden') or unloads ('pagehide'): the visit's summary so far, by beacon, since a phone may
+    // never run this page again. Once per hide: the unload that follows a hide adds nothing. Before the SDK is there
+    // it waits in the queue like any event.
+    hide(reason = 'hidden') {
+      if (off() || summarised) return;
+      summarised = true;
+      const t = clock();
       flushGoverned(true);
       refreshInterface();
-      ended = true;
-      if (sdk) capture('session_end', { ...quality, ...face, ...session.summary(clock()), details: detailsAt !== null }, { transport: 'sendBeacon', send_instantly: true });
-    }
+      session.pause(t);
+      capture('session_end', {
+        ...quality, ...face, visit_id: visitId, seq: ++summaries, reason, ready: session.started,
+        ...session.summary(t), details: detailsAt !== null
+      }, { transport: 'sendBeacon', send_instantly: true });
+    },
+    // the page is in view again (the tab brought back, or the page out of the back/forward cache): the visit carries on
+    show() {
+      if (!summarised) return;
+      summarised = false;
+      skipFps = true;
+      session.resume(clock());
+    },
+    // (the unload, as it was called before the summary also went on a hide)
+    end() { this.hide('pagehide'); }
   };
+}
+
+/** A visit's id for its summaries: random, made as the page loads and kept in memory only (never stored, never reused) */
+export function makeVisitId() {
+  try {
+    const bytes = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
+  }
 }
 
 let current = null;

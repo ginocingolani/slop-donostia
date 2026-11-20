@@ -584,7 +584,7 @@ test('the session samples the fps by the minute, counts a cell after a dwell, an
   s.count('fps_sample');
   // (60 55 50 50 60 60 60 30 30 20 10 10: 495 / 12)
   assert.deepEqual(s.summary(1000 + 2 * FPS_SAMPLE_S * 1000 + 400), {
-    seconds: 2 * FPS_SAMPLE_S, fps_avg: 41, fps_min: 10,
+    seconds: 2 * FPS_SAMPLE_S, hidden_s: 0, fps_avg: 41, fps_min: 10,
     teleports: 2, time_presets: 0, live_toggles: 0, map_opens: 1, cells: 3, moved: true
   });
 });
@@ -621,23 +621,108 @@ test('first_move also fires for a look: a drag on the view, by mouse or by finge
   assert.deepEqual(n.tick(250, { fps: 60 }), []);
 });
 
-test('the session ends once, by beacon, with its summary', async () => {
+test("the visit's summary goes by beacon when the page unloads, once", async () => {
   const sdk = fakeSdk();
   const c = clocks();
-  const tracker = createTracker({ loadSdk: () => sdk, ...c });
+  const tracker = createTracker({ loadSdk: () => sdk, visitId: 'v1', ...c });
   await tracker.loading;
   tracker.ready();
   c.advance(90_000);
   tracker.tick({ fps: 58, x: 10, z: 10, altitude: 30, moving: true });
   tracker.track('time_preset', { id: 'midnight' });
+  // the unload: pagehide, and the visibilitychange the browser sends with it
+  tracker.hide('pagehide');
+  tracker.hide('hidden');
   tracker.end();
-  tracker.end();
-  tracker.track('teleport', { id: 'igeldo' });
   const ends = sdk.calls.filter((call) => call[1] === 'session_end');
   assert.equal(ends.length, 1);
-  assert.deepEqual(ends[0][2], { seconds: 90, fps_avg: 58, fps_min: 58, teleports: 0, time_presets: 1, live_toggles: 0, map_opens: 0, cells: 0, moved: true, details: false });
+  assert.deepEqual(ends[0][2], {
+    visit_id: 'v1', seq: 1, reason: 'pagehide', ready: true, seconds: 90, hidden_s: 0, fps_avg: 58, fps_min: 58,
+    teleports: 0, time_presets: 1, live_toggles: 0, map_opens: 0, cells: 0, moved: true, details: false
+  });
   assert.deepEqual(ends[0][3], { transport: 'sendBeacon', send_instantly: true });
-  assert.equal(sdk.calls.at(-1)[1], 'session_end', 'nothing after the end');
+});
+
+test('a phone may never unload the page: the summary goes when it is hidden, and again, brought up to date, if the visitor comes back', async () => {
+  const sdk = fakeSdk();
+  const c = clocks();
+  const tracker = createTracker({ loadSdk: () => sdk, visitId: 'v2', ...c });
+  await tracker.loading;
+  tracker.ready();
+  const ends = () => events(sdk, 'session_end');
+  // 20 s in view, in one cell for the last of it
+  for (let i = 0; i < 80; i++) { c.advance(250); tracker.tick({ fps: 60, x: 150, z: -250, altitude: 40 }); }
+  tracker.track('teleport', { id: 'urgull' });
+  // the phone is locked: the summary so far, at once (the tab may be killed before it is ever seen again)
+  tracker.hide('hidden');
+  assert.equal(ends().length, 1);
+  assert.deepEqual([ends()[0].visit_id, ends()[0].seq, ends()[0].reason, ends()[0].ready, ends()[0].seconds, ends()[0].hidden_s, ends()[0].teleports, ends()[0].cells, ends()[0].fps_min],
+    ['v2', 1, 'hidden', true, 20, 0, 1, 1, 60]);
+  assert.deepEqual(sdk.calls.at(-1)[3], { transport: 'sendBeacon', send_instantly: true });
+  // ten minutes in a pocket: nothing ticks, and a stray tick counts for nothing
+  c.advance(300_000);
+  tracker.tick({ fps: 1, x: 950, z: 950, altitude: 40, moving: true });
+  c.advance(300_000);
+  // a lost GPU while hidden is still said
+  tracker.track('gpu_lost', { after: 'gpu', reason: 'destroyed', hidden: true });
+  assert.equal(captured(sdk).at(-1), 'gpu_lost');
+  // back: the visit carries on. main.js's first rate is its frames over the whole gap: not a frame rate
+  tracker.show();
+  tracker.show();
+  tracker.tick({ fps: 0.001, x: 150, z: -250, altitude: 40 });
+  assert.deepEqual(captured(sdk).filter((n) => n === 'cell_visit' || n === 'fps_sample' || n === 'first_move').length, 1, 'no fps sample of the hidden minutes, no second visit of the cell it never left');
+  // 10 s more in view, flying into another cell
+  for (let i = 0; i < 40; i++) { c.advance(250); tracker.tick({ fps: 30, x: 450, z: -250, altitude: 40, moving: true }); }
+  assert.deepEqual(events(sdk, 'first_move'), [{ after_s: 20.3, by: 'fly' }], 'the delay leaves the hidden time out');
+  tracker.track('teleport', { id: 'igeldo' });
+  // hidden again, then the tab is closed while hidden: one more summary, the whole visit's, and no third
+  tracker.hide('hidden');
+  tracker.hide('pagehide');
+  assert.equal(ends().length, 2);
+  const last = ends()[1];
+  assert.deepEqual([last.visit_id, last.seq, last.reason, last.seconds, last.hidden_s, last.teleports, last.cells, last.moved, last.fps_min, last.fps_avg],
+    ['v2', 2, 'hidden', 30, 600, 2, 2, true, 30, 50]);
+  // the fps minute and the dwell were held over the gap, not reset: 30 s in view is no fps sample yet
+  assert.deepEqual(events(sdk, 'fps_sample'), []);
+  // out of the back/forward cache after an unload: the visit carries on there too
+  tracker.show();
+  c.advance(31_000);
+  tracker.tick({ fps: 60, x: 450, z: -250, altitude: 40 });
+  assert.equal(events(sdk, 'fps_sample').length, 1, 'a minute in view, three stretches of it');
+  tracker.hide('pagehide');
+  assert.deepEqual([ends()[2].seq, ends()[2].reason, ends()[2].seconds, ends()[2].hidden_s], [3, 'pagehide', 61, 600]);
+  // a query keeps the highest seq of each visit_id: the figures are the visit's, never a part's
+  assert.deepEqual(ends().map((e) => e.seconds), [20, 30, 61]);
+});
+
+test('a visit left during the load says so; its id is random, in memory, and on its summaries alone', async () => {
+  const sdk = fakeSdk();
+  let resolve;
+  const pending = new Promise((r) => { resolve = r; });
+  const storage = fakeStorage();
+  const tracker = createTracker({ loadSdk: () => pending, storage, ...clocks() });
+  tracker.track('app_start', { webgpu: true });
+  tracker.hide('hidden'); // (before the SDK is there: it waits in the queue like any event)
+  resolve(sdk);
+  await tracker.loading;
+  const [end] = events(sdk, 'session_end');
+  assert.deepEqual([end.seq, end.reason, end.ready, end.seconds, end.hidden_s, end.moved, end.details], [1, 'hidden', false, 0, 0, false, false]);
+  assert.match(end.visit_id, /^[0-9a-f]{16}$/);
+  assert.equal(storage.items.size, 0, 'nothing stored');
+  assert.ok(!JSON.stringify(sdk.calls.filter((call) => call[1] !== 'session_end')).includes(end.visit_id), 'on no other event, and not registered');
+  // another load of the page is another visit
+  const ids = new Set(Array.from({ length: 50 }, () => analytics.makeVisitId()));
+  assert.equal(ids.size, 50);
+  const other = fakeSdk();
+  const t2 = createTracker({ loadSdk: () => other, ...clocks() });
+  await t2.loading;
+  t2.hide('pagehide');
+  assert.notEqual(events(other, 'session_end')[0].visit_id, end.visit_id);
+  // the page wires both ways out, and the way back
+  const main = fs.readFileSync(`${root}js/donostia/main.js`, 'utf8');
+  assert.match(main, /addEventListener\('pagehide', \(\) => analytics\.hide\('pagehide'\)\)/);
+  assert.match(main, /addEventListener\('visibilitychange', \(\) => \{\s*if \(document\.visibilityState === 'hidden'\) analytics\.hide\('hidden'\);\s*else analytics\.show\(\);/);
+  assert.match(main, /addEventListener\('pageshow', \(e\) => \{ if \(e\.persisted\) analytics\.show\(\); \}\)/);
 });
 
 test('the helpers', () => {
@@ -731,7 +816,7 @@ test('the event list in the header is exact: every event sent is listed, and eve
   for (const [, name] of header.matchAll(/(?:^|[\s(→])([a-z]+(?:_[a-z]+)+) \{/gm)) assert.ok(sent.has(name), `the header lists ${name}, which nothing sends`);
   // the properties new with the phone interface, by name, in both
   for (const prop of ['quality_mode', 'quality_tier', 'render_scale', 'fps_capped', 'quality_detected', 'lang', 'input', 'orientation', 'display_mode',
-    'ms_since_ready', 'shaders_pending', 'shaders_total', 'quality_changed', 'from_mode', 'to_mode', 'steps']) {
+    'ms_since_ready', 'shaders_pending', 'shaders_total', 'quality_changed', 'from_mode', 'to_mode', 'steps', 'visit_id', 'seq', 'hidden_s', 'reason', 'ready']) {
     assert.ok(header.includes(prop), `the header names ${prop}`);
     assert.ok(section.includes(prop), `the README names ${prop}`);
   }
@@ -751,7 +836,6 @@ test('the page wires the analytics in, Donostia only, and says so in the data po
   assert.match(main, /else analytics\.details\(/, 'and at once where nothing was left to compile');
   assert.match(main, /analytics\.setQuality\(quality\.get\(\)\)/);
   assert.match(main, /quality\.onChange\(\(state\) => analytics\.setQuality\(state\)\)/);
-  assert.match(main, /analytics\.end\(\)/);
   assert.match(main, /analytics\.tick\(\{[^}]*yaw: god\.yaw, pitch: god\.pitch, flight: Boolean\(god\.flight\)/, 'the heading, for the first look');
   assert.match(main, /consent\.setReady\(\)/);
   assert.ok(main.indexOf('hud.setReady()') < main.indexOf('consent.setReady()'), 'the card after the city shows');

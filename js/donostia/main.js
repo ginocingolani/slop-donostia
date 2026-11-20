@@ -859,7 +859,14 @@ async function initApp() {
   // tracked. The load funnel starts here, with the page view and whether WebGPU is there at all; every event says
   // the interface it happened in (the language, touch or mouse, the orientation, the display mode).
   analytics = initAnalytics({ readInterface: interfaceReader({ win: window, doc: document, getLang }) });
-  window.addEventListener('pagehide', () => analytics.end());
+  // The visit's summary goes whenever the page is hidden, not only as it unloads: a phone kills a tab in the
+  // background without telling it. Back in view (or out of the back/forward cache), the visit carries on.
+  window.addEventListener('pagehide', () => analytics.hide('pagehide'));
+  window.addEventListener('pageshow', (e) => { if (e.persisted) analytics.show(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') analytics.hide('hidden');
+    else analytics.show();
+  });
   analytics.track('$pageview');
   analytics.track('app_start', { webgpu: Boolean(navigator.gpu) });
   const consent = initConsent(analytics);

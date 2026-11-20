@@ -183,9 +183,32 @@ The events (the reference is the header of `js/donostia/analytics.js`; a test ke
   render scale alone is no event: `render_scale` on the next events says it;
 - the HUD: `teleport { id }`, `time_preset { id }`, `live_toggle { on }`, `map_open`, `hud_hide { hidden }`,
   `language_change { from, to }`, `fullscreen_toggle { on }`;
-- leaving: `session_end { seconds, fps_avg, fps_min, teleports, time_presets, live_toggles, map_opens, cells, moved,
-  details }` by beacon on `pagehide` (`details`: the background compile had ended), and `$pageleave` (the SDK's own).
-  A phone that drops a tab in the background sends neither.
+- leaving: `session_end { visit_id, seq, reason, ready, seconds, hidden_s, fps_avg, fps_min, teleports, time_presets,
+  live_toggles, map_opens, cells, moved, details }`, the visit's summary so far, by beacon every time the page is
+  hidden (`reason` `hidden`: the tab or the browser put in the background, the phone locked) or unloads (`pagehide`).
+  A phone kills a tab in the background without a word, so the summary cannot wait for the unload; if the visitor
+  comes back the visit carries on, and the next hide sends the summary again, brought up to date. An unload right
+  after a hide sends nothing more. `seconds` is the time since the city showed with the page in view, `hidden_s` the
+  time it was hidden since; neither the fps nor a cell's dwell counts hidden time. `ready`: the city had shown
+  (false: left during the load, `seconds` 0); `details`: the background compile had ended. And `$pageleave` (the
+  SDK's own, on unload only: a phone often never sends it, so nothing should be built on it).
+
+**Counting visits and their length.** One visit is one load of the page, and may send several `session_end`: they
+share `visit_id` (a random id made as the page loads and kept in memory only: on no other event, in no storage,
+another on the next load) and count up in `seq` from 1. Every figure in a summary is the whole visit's so far, never
+a part's: keep the one with the highest `seq` of each `visit_id` and leave the others out; never add them up.
+
+- visits that left a summary: `count(distinct properties.visit_id)` over `session_end` (all visits: `$pageview`; the
+  ones that saw the city: `app_ready`, or the summaries with `ready`);
+- session length: per `visit_id`, `max(seconds)`, which is the last summary's (it only grows), then the median or the
+  average of those over the visits with `ready`. In HogQL:
+  `SELECT median(s) FROM (SELECT properties.visit_id AS v, max(toFloat(properties.seconds)) AS s FROM events WHERE
+  event = 'session_end' AND properties.ready GROUP BY v)`;
+- any other figure of the visit (`moved`, `teleports`, `cells`, `fps_avg`, `details`…): the same way, with
+  `argMax(properties.<figure>, toInt(properties.seq))` per `visit_id`.
+
+An insight that averages `seconds` over every `session_end` counts a visit once per hide and weighs the short early
+summaries in: it reads too low, the more so on phones.
 
 The PostHog project ("Default project", EU, id 337682) has cookieless tracking enabled in its settings; without it the
 events are discarded at ingestion. The project token in `analytics.js` is public by design (it can only write events).
