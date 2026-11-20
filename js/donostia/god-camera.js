@@ -20,6 +20,9 @@ const BOUNDS_MARGIN = 500; // m past the context grid
 const CEILING = 5000; // m
 const EYE = 1.7; // m above the ground or the sea
 const RADIUS = 0.8; // m: how near a wall the camera may come (the near plane, 0.3 m, stays clear of it)
+// A flight to a viewpoint (flyTo): FLIGHT_MIN to FLIGHT_MAX seconds, a second more for every FLIGHT_SPEED metres; from
+// HOLD_FROM of its way on it comes in at HOLD_PACE of its pace while its end is not ready, for HOLD_MAX s at the most
+const FLIGHT_MIN = 3, FLIGHT_MAX = 6.5, FLIGHT_SPEED = 500, HOLD_FROM = 0.7, HOLD_PACE = 0.25, HOLD_MAX = 5;
 const MAX_STEPS = 48; // a frame's move cut into at most this many collision steps
 const MOUSE_LOOK = 0.0032; // rad per px dragged, at the default field of view
 // A finger travels less than a mouse: a little more turn per px (a thumb's sweep across a phone is about 90 degrees).
@@ -106,12 +109,17 @@ export class GodCamera {
     return Math.max(0, this.terrain.heightAt(this.position.x, this.position.z));
   }
 
-  // Fly to a station { from: [x, y, z], to: [x, y, z] } in `duration` seconds
-  flyTo(station, duration = 2.2) {
+  // Fly to a station { from: [x, y, z], to: [x, y, z] } in `duration` seconds; without one the flight takes its time
+  // by its length (FLIGHT_MIN s for a hop, FLIGHT_MAX across the city), so what is at the far end can be made ready
+  // on the way. Near its end a flight also asks `this.holdFlight(target)` (main.js: is anything there still waiting
+  // for its shaders?) and, while the answer is yes, comes in at a quarter of its pace, for HOLD_MAX s at the most.
+  flyTo(station, duration) {
     const from = new THREE.Vector3(...station.from), to = new THREE.Vector3(...station.to);
     const dir = to.clone().sub(from).normalize();
+    const timed = duration === undefined;
+    if (timed) duration = THREE.MathUtils.clamp(FLIGHT_MIN + this.position.distanceTo(from) / FLIGHT_SPEED, FLIGHT_MIN, FLIGHT_MAX);
     this.flight = {
-      t: 0, duration,
+      t: 0, duration, held: 0, holds: timed, target: to,
       p0: this.position.clone(), p1: from,
       yaw0: this.yaw, pitch0: this.pitch,
       yaw1: Math.atan2(-dir.x, -dir.z), pitch1: Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1))
@@ -129,7 +137,12 @@ export class GodCamera {
   update(dt) {
     if (this.flight) {
       const f = this.flight;
-      f.t = Math.min(1, f.t + dt / f.duration);
+      let pace = 1;
+      if (f.holds && f.t >= HOLD_FROM && f.held < HOLD_MAX && this.holdFlight?.(f.target)) {
+        pace = HOLD_PACE;
+        f.held += dt;
+      }
+      f.t = Math.min(1, f.t + pace * dt / f.duration);
       const s = f.t * f.t * (3 - 2 * f.t);
       // arc over the city so long hops don't cut through hills
       const lift = Math.sin(Math.PI * s) * Math.min(250, f.p0.distanceTo(f.p1) * 0.25);
