@@ -912,11 +912,12 @@ body {
   box-shadow: var(--shadow), inset 0 0 0 12px rgba(220, 181, 116, 0.08), 0 0 0 4px rgba(220, 181, 116, 0.22);
 }
 
-/* climb & descend stacked under the thumb at the edge, the fast gear's latch beside them */
+/* climb & descend, one over the other under the right thumb at the edge: a column as tall as the stick's ring
+   across from it (the fast gear is the stick pushed past its rim, and has no button) */
 .touch-actions {
-  grid-template-columns: repeat(2, 60px);
-  grid-template-areas: 'boost up' 'boost down';
-  gap: 10px;
+  grid-template-columns: 60px;
+  grid-template-areas: 'up' 'down';
+  gap: 12px;
   padding-bottom: 0;
 }
 
@@ -927,11 +928,8 @@ body {
   user-select: none;
 }
 
-.touch-boost { border-color: rgba(220, 181, 116, 0.6); }
-
 .touch-action[data-touch-action='up'] { grid-area: up; }
 .touch-action[data-touch-action='down'] { grid-area: down; }
-.touch-boost { grid-area: boost; align-self: center; }
 
 body.touch-enabled .settings-more { display: block; }
 body.touch-enabled .hud-bottom-right { display: none; }

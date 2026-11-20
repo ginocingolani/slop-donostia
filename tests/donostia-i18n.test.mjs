@@ -55,7 +55,7 @@ test('every key the page and the scripts ask for is said in the three languages'
     setLang(lang);
     for (const key of asked) {
       assert.notEqual(t(key), key, `${lang}: ${key}`);
-      if (lang !== 'en' && !/^(quality\.(auto|ultra)|gauge\.alt|hint\.map|tool\.map|touch\.fast|hint\.fast)$/.test(key)) {
+      if (lang !== 'en' && !/^(quality\.(auto|ultra)|gauge\.alt|hint\.map|tool\.map|hint\.fast)$/.test(key)) {
         // (a few words are the same in two languages; a whole sentence left in English would not be)
         if (t(key).length > 12) assert.notEqual(t(key), englishOf(key), `${lang}: ${key} is still English`);
       }

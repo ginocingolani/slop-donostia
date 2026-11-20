@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // The god camera's touch input (js/donostia/touch.js): the stick's response and its trailing centre as arithmetic,
 // then the stick & buttons wired to a fake page: always there on a touch screen, pointers captured, held and let go
-// one by one, the fast gear's latch, and a browser bar that slides away mid-flight.
+// one by one, the fast gear that is the stick's alone, and a browser bar that slides away mid-flight.
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const touchModule = await import(pathToFileURL(`${root}js/donostia/touch.js`).href);
@@ -92,7 +92,7 @@ function page({ coarse = true, stored = null } = {}) {
   const media = Object.assign(element(), { matches: coarse });
   win.matchMedia = () => media;
   const rootEl = element(), stick = element(), knob = element();
-  const buttons = Object.fromEntries(['up', 'down', 'boost'].map((a) => [a, element({ touchAction: a })]));
+  const buttons = Object.fromEntries(['up', 'down'].map((a) => [a, element({ touchAction: a })]));
   rootEl.querySelectorAll = () => Object.values(buttons);
   const doc = Object.assign(element(), {
     body: element(), hidden: false,
@@ -179,7 +179,7 @@ test('the stick is relative, captured, and independent of the other fingers', ()
   assert.equal(p.stick.classList.contains('is-pressed'), false);
 });
 
-test('climb and descend are held; the fast gear is a latch', () => {
+test('climb and descend are held; the fast gear is the stick past its rim, with no button and no latch', async () => {
   const p = page();
   p.buttons.up.dispatch('pointerdown', { pointerId: 1 });
   p.buttons.down.dispatch('pointerdown', { pointerId: 2 });
@@ -189,19 +189,26 @@ test('climb and descend are held; the fast gear is a latch', () => {
   p.buttons.down.dispatch('pointerup', { pointerId: 2 });
   assert.equal(p.god.touch.up, 0);
 
-  p.buttons.boost.dispatch('pointerdown', { pointerId: 4 });
-  p.buttons.boost.dispatch('pointerup', { pointerId: 4 });
-  p.buttons.boost.dispatch('click', { detail: 1 }); // (the click a touch also sends: not a second toggle)
-  assert.equal(p.god.touch.boost, 1, 'latched after the finger lifts');
-  assert.equal(p.buttons.boost.attrs['aria-pressed'], 'true');
-  // the stick's own fast gear does not undo the latch
-  p.stick.dispatch('pointerdown', { pointerId: 5 });
-  p.stick.dispatch('pointerup', { pointerId: 5 });
+  // the fast gear follows the stick: in by degrees past the rim, out again as the thumb comes back or lifts
+  p.stick.dispatch('pointerdown', { pointerId: 5, clientX: 66, clientY: 66 });
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius * (1 + STICK.overdrive / 2) });
+  assert.equal(p.god.touch.boost.toFixed(3), '0.500');
+  p.buttons.up.dispatch('pointerdown', { pointerId: 6 });
+  assert.equal(p.god.touch.boost.toFixed(3), '0.500', 'a button pressed meanwhile leaves the gear as the stick has it');
+  p.buttons.up.dispatch('pointerup', { pointerId: 6 });
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius });
+  assert.equal(p.god.touch.boost, 0, 'back at the rim: the normal gear');
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: -400 });
   assert.equal(p.god.touch.boost, 1);
-  // a keyboard's click (detail 0) switches it too
-  p.buttons.boost.dispatch('click', { detail: 0 });
-  assert.equal(p.god.touch.boost, 0);
-  assert.equal(p.buttons.boost.attrs['aria-pressed'], 'false');
+  p.stick.dispatch('pointerup', { pointerId: 5 });
+  assert.equal(p.god.touch.boost, 0, 'nothing stays latched');
+
+  // the page has the two buttons and no third
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(`${root}index.html`, 'utf8');
+  assert.deepEqual([...html.matchAll(/data-touch-action="(\w+)"/g)].map((m) => m[1]), ['up', 'down']);
+  const sources = html + await readFile(`${root}js/donostia/touch.js`, 'utf8') + await readFile(`${root}css/donostia.css`, 'utf8') + await readFile(`${root}js/donostia/i18n.js`, 'utf8');
+  for (const gone of ['touch-boost', 'fastGear', 'touch.fast', "'boost'"]) assert.ok(!sources.includes(gone), `${gone} is still there`);
 });
 
 test('a browser bar sliding away keeps the stick; turning the phone and the full map let go', () => {
@@ -230,10 +237,10 @@ test('a browser bar sliding away keeps the stick; turning the phone and the full
   p.controls.setEnabled(true);
   assert.equal(p.rootEl.hidden, false);
 
-  // the fast gear's latch is a setting: letting go of what is held leaves it on
-  p.buttons.boost.dispatch('pointerdown', { pointerId: 3 });
-  p.buttons.boost.dispatch('pointerup', { pointerId: 3 });
-  push();
+  // letting go of everything leaves nothing on, the fast gear neither
+  p.stick.dispatch('pointerdown', { pointerId: 3, clientX: 66, clientY: 66 });
+  p.stick.dispatch('pointermove', { pointerId: 3, clientX: 66, clientY: -400 });
+  assert.equal(p.god.touch.boost, 1);
   p.controls.reset();
-  assert.deepEqual(p.god.touch, { forward: 0, side: 0, up: 0, boost: 1 });
+  assert.deepEqual(p.god.touch, { forward: 0, side: 0, up: 0, boost: 0 });
 });

@@ -4,8 +4,8 @@
 // The stick and its buttons are always there on a touch screen: there is nothing to turn on, and no other gesture to
 // learn.
 //
-// The stick flies forward / back and sideways; two buttons climb and descend while held, and a third latches the
-// fast gear. The stick is relative: wherever the thumb lands on the pad is neutral and the push from there is the
+// The stick flies forward / back and sideways, and two buttons climb and descend while held. The fast gear has no
+// button: the stick pushed past its rim is the fast gear. The stick is relative: wherever the thumb lands on the pad is neutral and the push from there is the
 // input, so it needs no aim; pushed past its rim it shifts smoothly into the fast gear, and pushed further still its
 // centre trails the thumb, so turning back answers at once. Every control captures its pointer: a finger that slides
 // off its control keeps it until it lifts, and a second or third finger never disturbs the first.
@@ -60,13 +60,13 @@ export function initTouchControls(god, { onChange } = {}) {
   const held = new Map(); // pointerId -> { button, action }
   const media = window.matchMedia('(any-pointer: coarse)');
   let stickPointer = null, origin = null, radius = STICK.radius, overdrive = 0;
-  let enabled = true, available = false, touchSeen = false, fastGear = false;
+  let enabled = true, available = false, touchSeen = false;
   try { localStorage.removeItem(OLD_FLY_KEY); } catch { /* storage unavailable */ }
 
   const canInteract = () => enabled && available && !document.hidden;
   const releaseCapture = (el, id) => { if (el.hasPointerCapture(id)) el.releasePointerCapture(id); };
-  // the fast gear: latched by its button, or as far in as the stick is pushed past its rim
-  const applyBoost = () => { god.touch.boost = Math.max(fastGear ? 1 : 0, overdrive); };
+  // the fast gear: as far in as the stick is pushed past its rim (0..1)
+  const applyBoost = () => { god.touch.boost = overdrive; };
 
   const moveStick = (e) => {
     const point = { x: e.clientX, y: e.clientY };
@@ -94,9 +94,8 @@ export function initTouchControls(god, { onChange } = {}) {
   const applyButtons = () => {
     const actions = new Set([...held.values()].map((h) => h.action));
     god.touch.up = (actions.has('up') ? 1 : 0) - (actions.has('down') ? 1 : 0);
-    applyBoost();
     for (const b of buttons) {
-      const pressed = b.dataset.touchAction === 'boost' ? fastGear : [...held.values()].some((h) => h.button === b);
+      const pressed = [...held.values()].some((h) => h.button === b);
       b.classList.toggle('is-pressed', pressed);
       b.setAttribute('aria-pressed', String(pressed));
     }
@@ -108,7 +107,7 @@ export function initTouchControls(god, { onChange } = {}) {
     releaseCapture(h.button, id);
     applyButtons();
   };
-  // lets go of everything held (the fast gear stays latched: it is a setting, not a press)
+  // lets go of everything held
   const reset = () => {
     releaseStick(stickPointer);
     for (const id of [...held.keys()]) releaseButton(id);
@@ -143,22 +142,13 @@ export function initTouchControls(god, { onChange } = {}) {
       if (!canInteract() || e.button !== 0 || held.has(e.pointerId) || e.pointerId === stickPointer) return;
       e.preventDefault();
       e.stopPropagation();
-      // climbing and descending are held; the fast gear is a latch (holding it would take the looking thumb away)
-      if (action === 'boost') fastGear = !fastGear;
+      // (climbing and descending are held: the keys E & Q do the same for a keyboard)
       held.set(e.pointerId, { button, action });
       button.setPointerCapture(e.pointerId);
       applyButtons();
     });
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
       button.addEventListener(type, (e) => releaseButton(e.pointerId));
-    }
-    // (a keyboard or a switch presses the latch too; the held buttons have the keys E & Q)
-    if (action === 'boost') {
-      button.addEventListener('click', (e) => {
-        if (e.detail !== 0 || !canInteract()) return; // (pointer presses were handled above)
-        fastGear = !fastGear;
-        applyButtons();
-      });
     }
     // a long press must not open the context menu or select the label
     button.addEventListener('contextmenu', (e) => e.preventDefault());
