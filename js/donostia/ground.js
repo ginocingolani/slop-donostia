@@ -628,12 +628,11 @@ export async function createGroundMaterial(terrain, prefetched = null) {
   // colour, in pools under each lamp; by day the term is zero. The map comes in its own time (the coarse one with the
   // terrain's classes, the lowest quality tier's ground)
   loadStreetLight({ coarse: prefetched === CLASSES_ONLY });
-  // (asphalt's albedo here is half a real road's under a lamp: lifted a little, the paving kept)
   // (asphalt's albedo here is half a real road's under a lamp: lifted a little, the paving kept). Where the ground is
   // wet (the looks' damp streets, the real-time rain) the puddles and the film mirror the lamps beyond them
   mat.emissiveNode = Fn(() => {
     const e = lamplit(mat.colorNode.mul(0.85).add(0.03), lamplight).toVar();
-    If(cityUniforms.uStreetLight.greaterThan(0.0), () => {
+    If(cityUniforms.uStreetLight.greaterThan(0.0).and(wetness.greaterThan(0.1)), () => {
       const gloss = max(puddle, film.mul(0.3).mul(hard).mul(float(1).sub(damp.mul(0.5))));
       e.addAssign(vec3(...LAMP_COLOUR).mul(lampMirrored(p, cameraPosition, { height: 5, reach: 45 })).mul(gloss).mul(fresnel.mul(0.9).add(0.1)).mul(0.55));
     });
