@@ -180,12 +180,14 @@
 
 /* Popovers open against their invoker in js/main.js upstream; here they simply hang under the toolbar */
 #teleport-popover,
-#credits-popover {
+#credits-popover,
+#settings-popover {
   position: fixed;
   inset: auto 16px auto auto;
   top: 72px;
   margin: 0;
   max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
   overflow: auto;
 }
 
@@ -646,17 +648,260 @@ body[data-mode='god'] .gauge-alt {
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
-   Touch: stick bottom left, hold buttons bottom right, the radar & signs above the stick; no telemetry cluster
+   Settings sheet: the quality control (js/donostia/hud.js fills it where js/donostia/quality.js is there) and, on
+   touch screens, the tools the bar leaves out
    ------------------------------------------------------------------------------------------------------------------ */
-#touch-controls {
-  bottom: max(var(--edge), env(safe-area-inset-bottom));
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-/* climb & descend stacked under the thumb at the edge, boost beside them */
+.tool-btn[hidden],
+#quality-control[hidden] {
+  display: none;
+}
+
+/* shown by the touch layouts below */
+.dock-only,
+.dock-label,
+.touch-only,
+.settings-more {
+  display: none;
+}
+
+/* the flight stick on, the row of looks open */
+#btn-fly[aria-pressed='true'],
+#btn-time[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--harri);
+}
+
+/* a carved slot of choices, the one in force in sandstone (as the time of day's) */
+.seg {
+  display: flex;
+  gap: 2px;
+  margin: 2px 6px 8px;
+  padding: 3px;
+  border-radius: var(--r-ctl);
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+.seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.seg-btn.active,
+.seg-btn.active:hover {
+  background: var(--harri);
+  color: var(--harri-ink);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.settings-note {
+  padding: 0 10px 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.settings-note:empty {
+  display: none;
+}
+
+.more-item {
+  justify-content: flex-start;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.more-item .icon {
+  color: var(--harri);
+}
+
+.more-item .pop-sub {
+  margin-left: auto;
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Loading screen at phone size, and its errors: [data-error] stills the bar under a message that will not change;
+   [data-error='webgpu'] (set by js/donostia/main.js) adds the note that says what the city needs
+   ------------------------------------------------------------------------------------------------------------------ */
+#loading-overlay {
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+
+.loader {
+  max-width: 100%;
+}
+
+.loader-track {
+  max-width: 100%;
+}
+
+#loading-status {
+  max-width: min(440px, 100%);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.loader-note {
+  display: none;
+  max-width: min(440px, 100%);
+  margin-top: 18px;
+  padding: 14px 18px 15px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-panel);
+  outline: 1px solid var(--carve);
+  outline-offset: -5px;
+  background: rgba(12, 28, 45, 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text-2);
+}
+
+.loader-note strong {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--harri);
+}
+
+#loading-overlay[data-error='webgpu'] .loader-webgpu {
+  display: block;
+}
+
+#loading-overlay[data-error] .loader-track {
+  visibility: hidden;
+  margin: 10px 0 8px;
+}
+
+#loading-overlay[data-error] .loader-rosette {
+  animation: none;
+}
+
+#loading-overlay[data-error] #loading-status {
+  color: var(--warn);
+}
+
+@media (max-width: 440px) {
+  .loader-title { font-size: clamp(24px, 8.2vw, 34px); }
+  .rosette.loader-rosette { width: 56px; height: 56px; margin-bottom: 20px; }
+}
+
+/* a phone on its side: the same screen, shorter */
+@media (max-height: 500px) {
+  .rosette.loader-rosette { width: 44px; height: 44px; margin-bottom: 12px; }
+  .loader-title { font-size: 28px; }
+  .loader-track { margin: 16px 0 10px; }
+  .loader-note { margin-top: 10px; padding: 10px 16px; font-size: 12px; }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   The page under the fingers: it never zooms, scrolls, selects or calls out; only the lists scroll, and the view,
+   the stick and the maps take every gesture for themselves (touch-action: none, set on each). The view fills the
+   box its fixed inset gives it, which follows the browser's bars as they slide (100vh would not)
+   ------------------------------------------------------------------------------------------------------------------ */
+:root {
+  --safe-t: max(var(--edge), env(safe-area-inset-top, 0px));
+  --safe-r: max(var(--edge), env(safe-area-inset-right, 0px));
+  --safe-b: max(var(--edge), env(safe-area-inset-bottom, 0px));
+  --safe-l: max(var(--edge), env(safe-area-inset-left, 0px));
+  --dock-h: 0px; /* the phone's bar and the gap over it, where there is one */
+}
+
+html,
+body {
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: pan-x pan-y; /* no pinch or double-tap zoom, from any panel */
+}
+
+#canvas-container {
+  width: auto;
+  height: auto;
+}
+
+.fullmap-search {
+  -webkit-user-select: text;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Touch (body.touch-enabled, js/donostia/touch.js). The bottom corners belong to the thumbs: the flight stick on the
+   left and its buttons on the right once Hegan turns them on (body.touch-fly), nothing at all until then.
+   ------------------------------------------------------------------------------------------------------------------ */
+#touch-controls {
+  left: var(--safe-l);
+  right: var(--safe-r);
+  bottom: calc(var(--safe-b) + var(--dock-h));
+  align-items: flex-end;
+}
+
+/* The stick is relative (wherever the thumb lands is neutral), so its pad reaches past the ring drawn in it, out to
+   the screen's corner */
+#touch-stick {
+  width: 132px;
+  height: 132px;
+  border-color: rgba(244, 236, 220, 0.24);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#touch-stick::before {
+  content: '';
+  position: absolute;
+  inset: -20px -24px -20px -20px;
+}
+
+#touch-stick-knob {
+  width: 52px;
+  height: 52px;
+}
+
+/* pushed past the rim: the fast gear */
+#touch-stick.is-fast {
+  border-color: var(--harri);
+  box-shadow: var(--shadow), inset 0 0 0 12px rgba(220, 181, 116, 0.08), 0 0 0 4px rgba(220, 181, 116, 0.22);
+}
+
+/* climb & descend stacked under the thumb at the edge, the fast gear's latch beside them */
 .touch-actions {
-  grid-template-columns: repeat(2, 64px);
+  grid-template-columns: repeat(2, 60px);
   grid-template-areas: 'boost up' 'boost down';
+  gap: 10px;
   padding-bottom: 0;
+}
+
+.touch-action {
+  width: 60px;
+  height: 60px;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .touch-boost { border-color: rgba(220, 181, 116, 0.6); }
@@ -665,49 +910,316 @@ body[data-mode='god'] .gauge-alt {
 .touch-action[data-touch-action='down'] { grid-area: down; }
 .touch-boost { grid-area: boost; align-self: center; }
 
-.touch-action {
-  -webkit-user-select: none;
-  user-select: none;
+/* What the fingers do: a line over the bottom controls, gone with the first gesture */
+.touch-hint {
+  position: fixed;
+  z-index: 11;
+  left: 50%;
+  bottom: calc(var(--safe-b) + var(--dock-h) + 10px);
+  translate: -50% 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 6px;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 2 * var(--edge)));
+  padding: 8px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-panel);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--text);
+  pointer-events: none;
+  animation: rise-in 0.4s var(--ease-out) both;
 }
 
+.touch-hint[hidden] {
+  display: none;
+}
+
+/* (each gesture stays whole on its line) */
+.touch-hint span {
+  white-space: nowrap;
+}
+
+.touch-hint span:not(:last-child)::after {
+  content: '·';
+  margin-left: 6px;
+  color: var(--text-3);
+}
+
+/* (over the stick and its buttons while they show) */
+body.touch-fly .touch-hint {
+  bottom: calc(var(--safe-b) + var(--dock-h) + 150px);
+}
+
+body.touch-enabled .touch-only { display: inline-flex; }
+body.touch-enabled .settings-more { display: block; }
 body.touch-enabled .hud-bottom-right { display: none; }
 body.touch-enabled .location-alt { display: inline; }
+body.touch-enabled .tool-btn .icon-sm { display: none; }
+body.touch-enabled .seg-btn { height: 44px; }
+body.touch-enabled .radar-expand { width: 44px; height: 44px; top: 4px; right: 4px; }
+body.touch-enabled .fullmap-close { min-width: 48px; justify-content: center; }
+/* (under 16 px iOS zooms the page into a focused field) */
+body.touch-enabled .fullmap-search { font-size: 16px; }
+
+/* The radar card: in the bottom left corner, lifted over the stick while it shows. Its smaller size has a smaller
+   inscription, so a whole auzo name still fits beside the altitude */
 body.touch-enabled .radar { display: block; width: 176px; height: 116px; }
-/* the narrower card: a smaller inscription, so a whole auzo name still fits beside the altitude */
 body.touch-enabled .location { padding: 8px 11px 7px; }
 body.touch-enabled .location-place { font-size: 15px; letter-spacing: 0.05em; }
 body.touch-enabled .location-place .loc-es { display: none; }
 body.touch-enabled .location-place .loc-eu { flex-shrink: 1; min-width: 0; }
-body.touch-enabled .radar-expand { width: 36px; height: 36px; top: 4px; right: 4px; }
-/* above the stick (136 px) and its caption */
-body.touch-enabled .hud-bottom-left { bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 172px); }
+body.touch-enabled .hud-bottom-left { left: var(--safe-l); bottom: var(--safe-b); }
+body.touch-fly .hud-bottom-left { bottom: calc(var(--safe-b) + 152px); }
 
-@media (max-width: 440px) {
-  /* five 44 px time buttons a row: real time's hairline makes way */
-  body.touch-enabled .toolbar { width: 236px; padding: 4px; }
-  body.touch-enabled .live-btn { margin-left: 0; }
-  body.touch-enabled .live-btn::before { display: none; }
-  body.touch-enabled .tool-btn .icon-sm { display: none; }
+/* The popovers hang under the toolbar, as tall as the screen the browser's bars leave */
+body.touch-enabled #teleport-popover,
+body.touch-enabled #credits-popover,
+body.touch-enabled #settings-popover {
+  top: calc(var(--safe-t) + 60px);
+  right: var(--safe-r);
+  max-height: calc(100dvh - var(--safe-t) - 60px - var(--safe-b));
+}
+
+body.touch-enabled .fullmap-header { top: var(--safe-t); left: var(--safe-l); right: var(--safe-r); }
+body.touch-enabled .map-controls { right: var(--safe-r); }
+body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
+
+/* No room for the brand beside the toolbar: the repository's link is in the settings sheet */
+@media (max-width: 820px), (max-height: 500px) {
+  body.touch-enabled .hud-top-left { display: none; }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Phones on their side: the toolbar keeps the top right; the radar card takes the top left (under the toolbar where
+   the screen is too narrow for both), so the bottom corners stay the thumbs'
+   ------------------------------------------------------------------------------------------------------------------ */
+@media (max-height: 500px) {
+  body.touch-enabled .hud-bottom-left,
+  body.touch-fly .hud-bottom-left {
+    display: flex;
+    flex-direction: column-reverse;
+    top: var(--safe-t);
+    bottom: auto;
+    max-width: 240px;
+  }
+  body.touch-enabled .radar { width: 176px; height: 84px; }
+  body.touch-enabled .radar-expand { display: none; }
+  body.touch-enabled .location { padding: 6px 10px 5px; }
+  body.touch-enabled .location-place { font-size: 13px; }
+  body.touch-enabled .location-poi { display: none; }
+  body.touch-enabled .street-sign { padding: 6px 10px 5px; font-size: 13px; }
+  body.touch-enabled .live-readout { min-height: 30px; padding: 4px 10px; }
+  #touch-stick { width: 120px; height: 120px; }
+  body.touch-fly .touch-hint { bottom: var(--safe-b); }
+}
+
+@media (max-height: 500px) and (max-width: 719px) {
+  body.touch-enabled .hud-bottom-left,
+  body.touch-fly .hud-bottom-left { top: calc(var(--safe-t) + 60px); }
+  body.touch-enabled .live-readout { max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 196px); }
+  body.touch-enabled .live-word,
+  body.touch-enabled .live-sub,
+  body.touch-enabled .live-credit { display: none; }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Phones upright: the city owns the screen. The toolbar becomes a bar along the bottom, under the thumb: the time of
+   day folded behind one button (its five looks open as a row over the bar), Joan, Mapa, the flight stick's switch
+   and the settings sheet, which takes clean view, the credits and the repository. The popovers rise from the bar as
+   sheets. The real-time readout and the radar card are a small column in the top left corner.
+   ------------------------------------------------------------------------------------------------------------------ */
+@media (max-width: 620px) and (min-height: 501px) {
+  body.touch-enabled { --dock-h: 64px; }
+
+  /* (over the stick and its buttons: the row of looks opens across them) */
+  body.touch-enabled .hud-top-right {
+    z-index: 13;
+    top: var(--safe-t);
+    left: var(--safe-l);
+    right: var(--safe-r);
+    align-items: flex-start;
+  }
+
+  body.touch-enabled #hud-toolbar {
+    position: fixed;
+    left: var(--safe-l);
+    right: var(--safe-r);
+    bottom: var(--safe-b);
+    width: auto;
+    height: 56px;
+    padding: 4px;
+    gap: 2px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  body.touch-enabled #hud-toolbar > .tool-btn {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    width: auto;
+    min-width: 44px;
+    height: 48px;
+    min-height: 44px;
+    padding: 0 2px;
+  }
+
+  body.touch-enabled #hud-toolbar > .dock-only { display: inline-flex; }
+  body.touch-enabled #hud-toolbar > #btn-credits,
+  body.touch-enabled #hud-toolbar > #btn-toggle-hud { display: none; }
+
+  body.touch-enabled #hud-toolbar .dock-label,
+  body.touch-enabled #hud-toolbar .tool-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-2);
+  }
+
+  body.touch-enabled #hud-toolbar > .tool-btn[aria-pressed='true'] .dock-label,
+  body.touch-enabled #hud-toolbar > .tool-btn[aria-pressed='true'] .tool-label,
+  body.touch-enabled #hud-toolbar > .tool-btn[aria-expanded='true'] .dock-label { color: inherit; }
+
+  /* the five looks: a row over the bar while the time button is open, each with its name */
+  body.touch-enabled #hud-toolbar .time-switch {
+    display: none;
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: calc(100% + 8px);
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-panel);
+    background: var(--grain), var(--glass-strong);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow);
+    animation: rise-in 0.26s var(--ease-out) both;
+  }
+
+  body.touch-enabled #hud-toolbar.time-open .time-switch { display: flex; }
+
+  body.touch-enabled #hud-toolbar .time-btn,
+  body.touch-enabled #hud-toolbar .time-switch.is-live .time-btn[data-time].active {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    height: 54px;
+    padding: 0 2px;
+  }
+
+  body.touch-enabled #hud-toolbar .time-btn .seg-label {
+    display: block;
+    max-width: 100%;
+    opacity: 1;
+    text-overflow: ellipsis;
+    font-size: 10.5px;
+    line-height: 1.2;
+  }
+
+  body.touch-enabled #hud-toolbar .live-btn { margin-left: 0; }
+  body.touch-enabled #hud-toolbar .live-btn::before { display: none; }
+
+  /* clean view: the bar steps away but for the one button that brings it back */
+  body.touch-enabled.hud-minimized #hud-toolbar { left: auto; width: 56px; }
+  body.touch-enabled.hud-minimized #hud-toolbar > .tool-btn { display: none; }
+  body.touch-enabled.hud-minimized #hud-toolbar > #btn-toggle-hud { display: inline-flex; }
+
+  /* the popovers: sheets over the bar, the lists scrolling under the thumb */
   body.touch-enabled #teleport-popover,
-  body.touch-enabled #credits-popover { top: calc(max(var(--edge), env(safe-area-inset-top)) + 114px); }
-  .touch-look-hint { top: calc(max(var(--edge), env(safe-area-inset-top)) + 118px); }
-  /* (under the real-time readout while it shows) */
-  body:has(.live-readout:not([hidden])) .touch-look-hint { top: calc(max(var(--edge), env(safe-area-inset-top)) + 172px); }
+  body.touch-enabled #credits-popover,
+  body.touch-enabled #settings-popover {
+    inset: auto var(--safe-r) calc(var(--safe-b) + var(--dock-h)) var(--safe-l);
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: min(64dvh, calc(100dvh - var(--safe-t) - var(--safe-b) - var(--dock-h) - 48px));
+    transform-origin: bottom center;
+  }
+
+  body.touch-enabled .popover:not(:popover-open) { transform: translateY(10px) scale(0.99); }
+
+  @starting-style {
+    body.touch-enabled .popover:popover-open { opacity: 0; transform: translateY(10px) scale(0.99); }
+  }
+
+  body.touch-enabled .tp-btn { min-height: 50px; justify-content: center; }
+  body.touch-enabled .credits { font-size: 12.5px; }
+
+  /* top left: the readout, down to its figures on one line, over the radar card and the street's plaque */
+  body.touch-enabled .live-readout {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 4px 10px;
+    max-width: 100%;
+    min-height: 30px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+  body.touch-enabled .live-clock .live-num { font-size: 12.5px; }
+  body.touch-enabled .live-word,
+  body.touch-enabled .live-sub,
+  body.touch-enabled .live-credit { display: none; }
+
+  body.touch-enabled .hud-bottom-left,
+  body.touch-fly .hud-bottom-left {
+    flex-direction: column-reverse;
+    top: var(--safe-t);
+    bottom: auto;
+    gap: 8px;
+    max-width: calc(100% - var(--safe-l) - var(--safe-r));
+  }
+  body.touch-enabled:has(.live-readout:not([hidden])) .hud-bottom-left { top: calc(var(--safe-t) + 38px); }
+  body.touch-enabled .radar { width: 176px; height: 92px; }
+  body.touch-enabled .radar-expand { display: none; }
+  body.touch-enabled .location { padding: 7px 10px 6px; }
+  body.touch-enabled .location-place { font-size: 14px; }
+  body.touch-enabled .location-poi-line { font-size: 11.5px; }
+  body.touch-enabled .street-sign { padding: 7px 10px 6px; font-size: 13px; max-width: 220px; }
+
+  /* The full map: the search along the top, everything else by the thumbs: close in the bottom left corner, the
+     zoom and the centring buttons in the bottom right, the status line and the credits under them */
+  body.touch-enabled .fullmap-title { display: none; }
+  /* (the header dissolves: its search box and its close button are placed on the map themselves) */
+  body.touch-enabled .fullmap-header { display: contents; }
+  body.touch-enabled .fullmap-search-wrap {
+    position: absolute;
+    top: var(--safe-t);
+    left: var(--safe-l);
+    right: var(--safe-r);
+    height: 48px;
+    min-width: 0;
+    padding: 0 14px;
+  }
+  body.touch-enabled .fullmap-close {
+    position: absolute;
+    left: var(--safe-l);
+    bottom: calc(var(--safe-b) + 88px);
+    width: 48px;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+  }
+  body.touch-enabled .map-controls { top: auto; bottom: calc(var(--safe-b) + 88px); translate: none; }
+  body.touch-enabled .fullmap-footer { max-width: calc(100% - var(--safe-l) - var(--safe-r)); width: 100%; }
+  body.touch-enabled .fullmap-status { padding: 8px 14px; font-size: 12px; }
 }
 
 @media (max-width: 360px) {
-  body.touch-enabled .toolbar { width: 236px; }
-}
-
-/* Phones on their side: the signs & a smaller radar sit between the stick and the buttons */
-@media (max-height: 500px) {
-  body.touch-enabled .hud-bottom-left {
-    display: flex;
-    left: calc(max(var(--edge), env(safe-area-inset-left)) + 152px);
-    bottom: max(var(--edge), env(safe-area-inset-bottom));
-    max-width: calc(100% - 2 * var(--edge) - 152px - 150px);
-  }
-  body.touch-enabled .radar { width: 150px; height: 96px; }
-  body.touch-enabled .location-place { font-size: 13px; }
-  body.touch-enabled .location-poi { display: none; }
+  body.touch-enabled #hud-toolbar { width: auto; }
+  body.touch-enabled .live-readout { gap: 4px 7px; padding: 4px 8px; font-size: 11px; }
 }
