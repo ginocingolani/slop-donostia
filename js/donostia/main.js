@@ -331,6 +331,9 @@ const NEAR = 160, LARGE = 0.25, SPREAD = 500, FIRST_FEW = 6;
 // camera moves (between REST_MIN and REST_MAX ms); NEEDED_NEAR / NEEDED_AHEAD: what is compiled even then (m from
 // the camera, in view; m from where a flight ends); WAIT_MS: how often the queue looks again while it holds back
 const STALL_COSTLY = 12, STILL_MS = 600, REST_SHARE = 6, REST_MIN = 100, REST_MAX = 1500, NEEDED_NEAR = 400, NEEDED_AHEAD = 400, WAIT_MS = 150;
+// HOLD_NEAR: within this many metres of where a flight to a viewpoint looks, what is not compiled yet holds the flight
+// back (god-camera.js's flyTo) and is compiled first
+const HOLD_NEAR = 180;
 const LATER = Symbol('later');
 // three's shadow pass draws a front-sided caster's back faces (r186.1's _shadowSide)
 const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
@@ -670,9 +673,11 @@ function createCompiler(renderer, world, camera, passes) {
         let d = p.seen ? p.distance : p.distance + 4000;
         if (visible && p.seen && (p.distance < NEEDED_NEAR || p.size > LARGE)) needed = true;
         if (ahead) {
-          const there = place(o, ahead).distance;
+          const end = place(o, ahead), there = end.distance;
           d = Math.min(d, there);
           if (visible && there < NEEDED_AHEAD) needed = true;
+          // (what stands where the flight ends goes before everything: the flight waits for it, see waitingAt())
+          if (visible && !end.spread && there < HOLD_NEAR) d = there - 1e5;
         }
         if (!visible) d += 1e6;
         if (d < score) score = d;
@@ -710,7 +715,8 @@ function createCompiler(renderer, world, camera, passes) {
           const stall = stalled();
           timed(stall);
           // the rest after a compile that stalled, while the camera is in motion
-          if (mine === run && costly() && flying() && !covered()) await pause(Math.min(REST_MAX, Math.max(REST_MIN, stall * REST_SHARE)));
+          // (not on a flight to a viewpoint: nobody's hands are on the camera, and the flight is waiting for its end)
+          if (mine === run && costly() && flying() && !covered() && !aheadOf()) await pause(Math.min(REST_MAX, Math.max(REST_MIN, stall * REST_SHARE)));
         }
         if (mine !== run) return;
         finish(job);
@@ -741,6 +747,15 @@ function createCompiler(renderer, world, camera, passes) {
     onProgress(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     /** fn() -> Vector3 | null: where the camera is flying to, if it is (its objects come first). */
     set ahead(fn) { aheadOf = fn; },
+    /** How many jobs still wait with something shown within HOLD_NEAR metres of `point` (where a flight ends). */
+    waitingAt(point) {
+      let n = 0;
+      for (const job of jobs) {
+        if (job.done) continue;
+        if (job.objects.some((o) => { if (!shown(o)) return false; const p = place(o, point); return !p.spread && p.distance < HOLD_NEAR; })) n++;
+      }
+      return n;
+    },
     /** fn() -> boolean: something covers the view (the full map, a sheet): the background need not spare the frames. */
     set covered(fn) { coveredNow = fn; },
     /** The background compiles so far: { compiles, blockedMs (the sum of their stalls), maxStallMs } (see the header). */
@@ -1301,7 +1316,9 @@ async function initApp() {
     if (shown && needsRebuild(built, state.boot)) restructure();
     else if (!restructuring) built = { ...built, releaseGeometry: state.boot.releaseGeometry, progressive: state.boot.progressive };
   });
-  view.compiler.ahead = () => god.flight?.p1 || null;
+  view.compiler.ahead = () => god.flight?.target || god.flight?.p1 || null;
+  // a flight to a viewpoint comes in slowly while what stands there still waits for its shaders
+  god.holdFlight = (target) => view.compiler.waitingAt(target) > 0;
   // (the full map, or a sheet or popover open over the view: nobody watches the frames behind it)
   view.compiler.covered = () => hud.mapOpen || Boolean(document.querySelector('[popover]:popover-open'));
   // the background compile's cost, for the analytics' details_ready
