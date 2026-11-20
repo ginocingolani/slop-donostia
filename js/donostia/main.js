@@ -26,6 +26,9 @@ import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
 import { quality, readEnvironment, detail, TIERS, needsRebuild } from './quality.js';
+import { initAnalytics, deviceInfo, interfaceReader, MOVE_SPEED } from './analytics.js';
+import { initConsent } from './consent.js';
+import { getLang } from './i18n.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -825,6 +828,7 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
 
 let deviceLost = false; // (its message outranks the "Could not start" of a load it breaks)
 let unsupported = false; // (so does "no WebGPU")
+let analytics = null; // the usage analytics (js/donostia/analytics.js), from initApp() on
 
 // sessionStorage: when the page last reloaded itself after losing the GPU in the background (not twice in a row)
 const RELOADED_KEY = 'donostia-gpu-reload';
@@ -850,6 +854,16 @@ async function probeWebGPU() {
 }
 
 async function initApp() {
+  // The usage analytics: a few events to PostHog, with the visitor's cookie or cookieless (js/donostia/consent.js asks
+  // once the city shows); nothing on localhost, with ?debug, under a harness or for a browser that asks not to be
+  // tracked. The load funnel starts here, with the page view and whether WebGPU is there at all; every event says
+  // the interface it happened in (the language, touch or mouse, the orientation, the display mode).
+  analytics = initAnalytics({ readInterface: interfaceReader({ win: window, doc: document, getLang }) });
+  window.addEventListener('pagehide', () => analytics.end());
+  analytics.track('$pageview');
+  analytics.track('app_start', { webgpu: Boolean(navigator.gpu) });
+  const consent = initConsent(analytics);
+
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
   const loadingStatus = document.getElementById('loading-status');
@@ -878,6 +892,7 @@ async function initApp() {
   const { adapter, reason } = await probeWebGPU();
   if (!adapter) {
     unsupported = true;
+    analytics.track('app_unsupported', { reason: navigator.gpu ? 'no_adapter' : 'no_api' });
     if (loadingFill?.parentElement) loadingFill.parentElement.style.visibility = 'hidden';
     halt(reason, 'webgpu');
     return;
@@ -888,6 +903,9 @@ async function initApp() {
   const settings = booted.settings;
   const pixelRatioNow = () => quality.viewport(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1);
   console.log(`[quality] ${booted.tier} (${booted.source}${booted.mode === 'auto' ? `: ${quality.debug().detected.reasons.join('; ')}` : ''}), pixel ratio ${pixelRatioNow()}`);
+  // the quality on every event from here on, and its changes (a pick in the settings sheet, a step of the governor)
+  analytics.setQuality(quality.get());
+  quality.onChange((state) => analytics.setQuality(state));
 
   status(`Initializing three.js r${THREE.REVISION} WebGPURenderer…`);
   const renderer = new THREE.WebGPURenderer({ antialias: settings.msaa, powerPreference: 'high-performance', reversedDepthBuffer: true });
@@ -900,10 +918,13 @@ async function initApp() {
   if (!renderer.backend.isWebGPUBackend) {
     // (the adapter gave no device: three is on its WebGL 2 fallback)
     unsupported = true;
+    analytics.track('app_unsupported', { reason: 'no_device' });
     renderer.domElement.remove();
     halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.', 'webgpu');
     return;
   }
+  // the coarse device on every event: the GPU's vendor & architecture as WebGPU reports them, cores, memory, pixel ratio
+  analytics.setDevice(deviceInfo({ navigator, devicePixelRatio: window.devicePixelRatio, adapterInfo: adapter.info || renderer.backend.device?.adapterInfo }));
   // A lost GPU device (a driver reset, the GPU process crashing...) leaves three drawing nothing: the view would freeze
   // on its last frame under a HUD that still moves. Stop, and say so over the loading screen.
   const threeDeviceLost = renderer.onDeviceLost;
@@ -913,6 +934,7 @@ async function initApp() {
   renderer.onDeviceLost = (info) => {
     threeDeviceLost.call(renderer, info); // (logs it, stops rendering)
     deviceLost = true;
+    analytics.track('gpu_lost', { after: analytics.after, reason: String(info.reason || info.message || 'device lost').slice(0, 100), hidden: document.visibilityState === 'hidden' });
     renderer.setAnimationLoop(null);
     quality.deviceLost();
     halt(`The GPU was reset (${info.message || info.reason || 'device lost'}). Reload the page to continue.`);
@@ -947,10 +969,16 @@ async function initApp() {
 
   const timings = [];
   let mark = performance.now();
-  const markInit = (label) => { const now = performance.now(); timings.push(`${label} ${Math.round(now - mark)}ms`); mark = now; };
+  const markInit = (label) => {
+    const now = performance.now();
+    timings.push(`${label} ${Math.round(now - mark)}ms`);
+    analytics.mark(label, now - mark);
+    mark = now;
+  };
 
   const world = await buildWorld(renderer, { status, mark: markInit, settings });
   const { scene, lighting, terrain, updaters } = world;
+  analytics.track('world_built');
 
   const god = new GodCamera(renderer.domElement, terrain);
   // the buildings are solid to the camera: it slides along their walls and lands on their roofs
@@ -990,6 +1018,8 @@ async function initApp() {
     note.textContent = stage === 'applying' ? `Applying quality…${share}` : stage === 'details' ? `Loading details…${share}` : note.textContent;
     note.classList.toggle('is-on', stage !== 'done');
     try { window.dispatchEvent(new CustomEvent('slop-compile', { detail: { stage, done, total } })); } catch { /* no events here */ }
+    // (the analytics' details_ready: the first time nothing is left to compile behind the city)
+    if (stage === 'done') analytics.details({ shaders_total: view.compiler.total });
   };
 
   // Quality changes in the running city (a pick in the HUD, a step of the governor): the tier's live settings, the
@@ -1169,6 +1199,7 @@ async function initApp() {
   });
   markInit('compile');
   if (deviceLost) return;
+  analytics.track('shaders_compiled');
 
   renderer.setAnimationLoop((now) => {
     const raw = (now - last) / 1000;
@@ -1209,9 +1240,13 @@ async function initApp() {
         loadingOverlay?.removeAttribute('aria-busy');
         loadingOverlay?.classList.add('hidden');
         hud.setReady();
+        // the city shows: the funnel's app_ready, with what is left to compile behind it, and the cookie card
+        analytics.ready({ shaders_pending: view.compiler.pending, shaders_total: view.compiler.total });
+        consent.setReady();
         governing = true;
         shown = true;
         if (view.compiler.pending) say('details', view.compiler.total - view.compiler.pending, view.compiler.total);
+        else analytics.details({ shaders_total: view.compiler.total }); // (nothing was left for the background)
         // the CPU copies of the terrain's & the buildings' vertex buffers, now on the GPU; the stragglers (what the
         // warm-up frame did not draw) every few seconds until none is left
         releaseGeometry(30);
@@ -1222,7 +1257,13 @@ async function initApp() {
     frames++;
     fpsTime += raw;
     if (fpsTime >= 0.25) {
-      hud.update(Math.round(frames / fpsTime));
+      const fps = Math.round(frames / fpsTime);
+      hud.update(fps);
+      // (under the full map, or while a tier is applied, nothing renders: that rate is not the city's)
+      analytics.tick({
+        fps: hud.mapOpen || paused ? NaN : fps, x: god.position.x, z: god.position.z, altitude: god.position.y,
+        moving: !god.flight && god.velocity.length() > MOVE_SPEED, yaw: god.yaw, pitch: god.pitch, flight: Boolean(god.flight)
+      });
       frames = 0;
       fpsTime = 0;
     }
@@ -1235,6 +1276,7 @@ if (typeof window !== 'undefined') {
   initApp().catch((e) => {
     console.error(e);
     if (deviceLost || unsupported) return; // (already explained)
+    analytics?.error(e);
     document.getElementById('loading-overlay')?.removeAttribute('aria-busy');
     const s = document.getElementById('loading-status');
     if (s) s.textContent = `Could not start: ${e.message}`;

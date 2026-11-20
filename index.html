@@ -99,6 +99,14 @@
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h8.6M17.4 7.5H20M4 16.5h2.6M11.4 16.5H20"/><circle cx="15" cy="7.5" r="2.4"/><circle cx="9" cy="16.5" r="2.4"/></symbol>
       <!-- The six-petal rosette drawn with a compass on the discoidal stelae, lintels and chests of the Basque Country:
            a sandstone disc (currentColor) with the rosette cut into it -->
+      <!-- a teja de Tolosa, the curved almond biscuit, for the cookie card: a roof tile lying on its edges, seen from
+           its near end: the arch of that end, the back running away from it to the far end, and the flaked almonds
+           on the back -->
+      <symbol id="i-teja" viewBox="0 0 40 28">
+        <path class="teja-body" d="M6.8 16.6 24.8 5.6C28.7 3.2 34.4 5.6 37 14.5L19 25.5C16.4 16.6 10.7 14.2 6.8 16.6Z"/>
+        <path d="M3 24C4 13.5 15 12 19 25.5M6.8 16.6 24.8 5.6C28.7 3.2 34.4 5.6 37 14.5L19 25.5"/>
+        <path class="teja-almond" d="M15 14.4l2-.7M21 10.2l1.6 1.2M26.5 8l2.2-.4M22 16.2l2.1-1M28.5 12.6l1.4 1.5M18.6 19.6l1.6-.4M31.6 9.4l1 1.6"/>
+      </symbol>
       <symbol id="i-rosette" viewBox="0 0 32 32">
         <circle cx="16" cy="16" r="15" fill="currentColor"/>
         <circle cx="16" cy="16" r="12.4" fill="none" stroke-width="1.2" style="stroke: var(--rosette-ink); opacity: 0.55"/>
@@ -237,6 +245,27 @@
     <p data-i18n-rich="credits.live">Real time (Now): weather &amp; sea data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>), its forecast and marine models; the sun's and the moon's places after the Astronomical Almanac and Meeus' <i>Astronomical Algorithms</i></p>
     <p data-i18n-rich="credits.lettering">Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
     <p data-i18n-rich="credits.code">Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
+    <!-- the usage analytics (js/donostia/analytics.js): what is sent and where, and under it the cookie's answer with
+         the way to change it (js/donostia/consent.js shows the line where the analytics run) -->
+    <p data-i18n-rich="credits.usage">Usage: a few events (the loading steps and their times, the frame rate and the quality, the viewpoints and the 100 m cells flown to, the switches used, the language, touch or mouse) go to <a href="https://posthog.com/eu" target="_blank" rel="noopener noreferrer">PostHog Cloud EU</a>. Without cookies unless you say yes: a daily server-side hash, counted, never recognised. With your yes, one first-party cookie, so the same visitor is the same person tomorrow. No ads, no identifiers, no recordings. Nothing is sent with Do Not Track or Global Privacy Control (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#analytics" target="_blank" rel="noopener noreferrer">details</a>)</p>
+    <p id="consent-line" class="consent-line" hidden><span data-i18n="consent.line">Cookie:</span> <span id="consent-state" aria-live="polite"></span> · <button id="consent-change" class="link-btn" type="button" data-i18n="consent.change">change</button></p>
+  </div>
+
+  <!-- The cookie choice (js/donostia/consent.js): a moment after the city shows, until it is answered. Over the
+       controls hint; on touch screens between the stick and the Up / Down buttons, and above the stick on an upright
+       phone (css/donostia.css). The teja beside the title is #i-teja. -->
+  <div class="hud hud-consent">
+    <aside id="consent-card" class="panel consent" role="dialog" aria-labelledby="consent-title" aria-describedby="consent-text" hidden>
+      <div class="consent-head">
+        <svg class="icon consent-teja" viewBox="0 0 40 28" aria-hidden="true"><use href="#i-teja"/></svg>
+        <div id="consent-title" class="pop-title" data-i18n="consent.title">One small cookie?</div>
+      </div>
+      <p id="consent-text" class="consent-text" data-i18n="consent.text">Just to see how the city loads and where people fly. No ads, no following you around the web. Say no and nothing changes.</p>
+      <div class="consent-actions">
+        <button id="consent-accept" class="tool-btn consent-btn is-primary" type="button" data-i18n="consent.accept">Sure</button>
+        <button id="consent-decline" class="tool-btn consent-btn" type="button" data-i18n="consent.decline">Not now</button>
+      </div>
+    </aside>
   </div>
 
   <!-- Bottom left: the street-name plaques, over a card that reads where you are (auzoa, place) above the radar; on

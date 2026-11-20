@@ -40,7 +40,7 @@ test('English is the default for everyone; a choice is remembered and switches a
 
 test('every key the page and the scripts ask for is said in the three languages', async () => {
   const html = await read('index.html');
-  const sources = (await Promise.all(['hud.js', 'minimap.js', 'i18n.js'].map((f) => read(`js/donostia/${f}`)))).join('\n');
+  const sources = (await Promise.all(['hud.js', 'minimap.js', 'i18n.js', 'consent.js'].map((f) => read(`js/donostia/${f}`)))).join('\n');
   const asked = new Set();
   for (const [, key] of html.matchAll(/data-i18n="([^"]+)"/g)) asked.add(key);
   for (const [, pairs] of html.matchAll(/data-i18n-attr="([^"]+)"/g)) for (const pair of pairs.split(';')) asked.add(pair.split(':')[1]);
@@ -48,9 +48,11 @@ test('every key the page and the scripts ask for is said in the three languages'
   // (keys built at run time: the weather kinds, the tiers, the loading screen's lines)
   for (const k of ['clear', 'cloudy', 'overcast', 'fog', 'drizzle', 'rain', 'showers', 'snow', 'storm']) asked.add(`weather.${k}`);
   for (const k of ['auto', 'low', 'medium', 'high', 'ultra']) asked.add(`quality.${k}`);
+  // (the cookie's answer in the data popover: js/donostia/consent.js picks the key by the tracker's status)
+  for (const k of ['granted', 'denied', 'pending']) asked.add(`consent.${k}`);
   assert.ok(asked.size > 90, `${asked.size} keys found`);
   const rich = [...html.matchAll(/data-i18n-rich="([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(rich.length, 11, 'the data credits');
+  assert.equal(rich.length, 12, 'the data credits, and what the usage analytics send');
   for (const lang of LANGS) {
     setLang(lang);
     for (const key of asked) {

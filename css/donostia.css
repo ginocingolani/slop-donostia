@@ -1220,3 +1220,167 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   z-index: 20;
 }
 body.touch-enabled #compile-note { bottom: calc(var(--safe-b) + var(--dock-h) + 10px); }
+
+/* ------------------------------------------------------------------------------------------------------------------
+   The cookie choice (index.html #consent-card, js/donostia/consent.js): a small card in the HUD's glass with the
+   carved hairline, a teja beside its title, while the choice is pending; the yes in the sandstone. It never covers a
+   control: over the controls hint on a desktop; on touch screens between the stick's pad and the Up / Down buttons,
+   over the note of the background compile; on an upright phone, where there is no room between them, across the
+   screen above the stick, clear of the bar. Centred with `translate`, which clean view's `transform` leaves alone.
+   Over the other corners' panels where a small window leaves it no room of its own (z-index), under the phone's bar
+   and its row of looks.
+   ------------------------------------------------------------------------------------------------------------------ */
+.hud-consent {
+  z-index: 12;
+  left: 50%;
+  bottom: calc(var(--edge) + 60px);
+  translate: -50% 0;
+}
+
+/* A narrower window with a mouse: the radar card reaches the middle, so the card goes to the right, over the god
+   camera's gauge; narrower still, back to the middle and over the radar card */
+@media (max-width: 1060px) {
+  body:not(.touch-enabled) .hud-consent {
+    left: auto;
+    right: var(--edge);
+    bottom: calc(var(--edge) + 104px);
+    translate: none;
+  }
+}
+
+@media (max-width: 720px) {
+  body:not(.touch-enabled) .hud-consent {
+    left: 50%;
+    right: auto;
+    bottom: calc(var(--edge) + 250px);
+    translate: -50% 0;
+  }
+}
+
+body.hud-minimized .hud-consent { transform: translateY(12px); }
+
+.consent {
+  width: min(400px, calc(100vw - 2 * var(--edge)));
+  padding: 13px 15px 15px;
+  background: var(--grain), var(--glass-strong);
+  outline: 1px solid var(--carve);
+  outline-offset: -5px;
+  animation: rise-in 0.5s var(--ease-out) both;
+}
+
+.consent[hidden] { display: none; }
+
+.consent-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.consent .pop-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+/* the teja (index.html #i-teja): drawn like the HUD's icons, in the sandstone, the biscuit's back lightly filled */
+.consent-teja {
+  width: 40px;
+  height: 28px;
+  color: var(--harri);
+  stroke-width: 1.5;
+}
+
+.teja-body {
+  fill: rgba(220, 181, 116, 0.2);
+  stroke: none;
+}
+
+.teja-almond { stroke-width: 1.35; }
+
+.consent-text {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.consent-btn {
+  flex: 1 1 0;
+  justify-content: center;
+  height: 38px;
+  background: var(--hover);
+}
+
+.consent-btn:hover { background: rgba(244, 236, 220, 0.16); }
+
+.consent-btn.is-primary {
+  background: var(--harri);
+  color: var(--harri-ink);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.consent-btn.is-primary:hover { background: #e6c385; }
+
+/* the data popover's line with the answer, and its "change" */
+.consent-line[hidden] { display: none; }
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Touch: the bottom corners are the thumbs' (the stick's pad reaches 164 px in from the left, the Up / Down column
+   is on the right), so the card keeps to the middle, over the compile note, with buttons a thumb can hit */
+body.touch-enabled .hud-consent { bottom: calc(var(--safe-b) + 44px); }
+body.touch-enabled .consent { width: min(420px, calc(100vw - var(--safe-l) - var(--safe-r) - 2 * 176px)); }
+body.touch-enabled .consent-btn { height: 44px; }
+body.touch-enabled .link-btn { padding: 12px 8px; margin: -12px -4px; }
+
+@media (max-height: 500px) {
+  body.touch-enabled .hud-consent { bottom: calc(var(--safe-b) + 38px); }
+  body.touch-enabled .consent { padding: 10px 13px 12px; }
+  body.touch-enabled .consent-text { margin-bottom: 9px; font-size: 12.5px; line-height: 1.4; }
+}
+
+/* (a small phone on its side has the radar card under the toolbar, down to the stick: the card keeps to its right,
+   up to the Up / Down buttons) */
+@media (max-height: 500px) and (max-width: 719px) {
+  body.touch-enabled .hud-consent {
+    left: auto;
+    right: calc(var(--safe-r) + 76px);
+    translate: none;
+  }
+  body.touch-enabled .consent { width: min(420px, calc(100vw - var(--safe-l) - var(--safe-r) - 178px - 76px - 16px)); }
+}
+
+/* the upright phone: across the screen, above the stick and its pad (132 px and 20 px over the bar) */
+@media (max-width: 620px) and (min-height: 501px) {
+  body.touch-enabled .hud-consent {
+    left: var(--safe-l);
+    right: var(--safe-r);
+    bottom: calc(var(--safe-b) + var(--dock-h) + 132px + 30px);
+    translate: none;
+  }
+  body.touch-enabled .consent { width: auto; }
+}
+
+/* (a short one, e.g. 375 x 550 with the browser's bars: tighter, to leave more of the radar card under it) */
+@media (max-width: 620px) and (min-height: 501px) and (max-height: 620px) {
+  body.touch-enabled .consent { padding: 10px 13px 12px; }
+  body.touch-enabled .consent-head { margin-bottom: 5px; }
+  body.touch-enabled .consent-text { margin-bottom: 9px; font-size: 12.5px; line-height: 1.4; }
+}
