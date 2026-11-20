@@ -60,7 +60,11 @@ import { getLang, t } from './i18n.js';
 // says so on the loading screen, and after repeated deaths at the lowest tier stops with a message and a button
 // instead of loading itself to death again.
 
-const STORAGE_KEY = 'donostia-god-camera';
+const STORAGE_KEY = 'donostia-god-camera'; // (the camera's last position, kept until November 2026: cleared now)
+const START_KEY = 'donostia-start'; // localStorage: the view the last visit opened on
+// The views a visit may open on (GEO.teleports ids): the bay from Igeldo and from Urgull, La Concha's promenade, the
+// City Hall from Alderdi Eder, the Kursaal and Zurriola, and Miramar
+const START_VIEWS = ['igeldo', 'urgull', 'kontxa', 'udaletxea', 'kursaal', 'miramar'];
 const COMPILE_SHADOW_MS = 500; // after a shader compile, the frames the frame-rate governor is not fed
 
 // --- the world -----------------------------------------------------------------------------------------------------------
@@ -938,6 +942,8 @@ const RELOADED_KEY = 'donostia-gpu-reload';
 // Whether this browser can run the city: its WebGPU adapter, or the reason there is none, in words for the loading
 // screen. Without this three.js falls back to its WebGL 2 backend, on which the city took a quarter of a minute to
 // start and then drew black: the page says what is missing instead.
+const ADAPTER_RETRY_MS = [0, 350, 800, 1500]; // the waits before each request for an adapter
+
 async function probeWebGPU() {
   const ua = navigator.userAgent || '';
   const hint = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'On iPhone and iPad it comes with iOS 26 (Safari 26).'
@@ -947,12 +953,20 @@ async function probeWebGPU() {
     const insecure = window.isSecureContext === false ? ' WebGPU also needs a secure (https) page.' : '';
     return { adapter: null, reason: `This browser has no WebGPU, which Slop Donostia needs to draw the city. ${hint}${insecure}` };
   }
-  let adapter = null;
-  try {
-    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-  } catch { /* as none */ }
-  if (!adapter) return { adapter: null, reason: `WebGPU is there, but this device's graphics are not supported by it (or it is turned off). ${hint}` };
-  return { adapter, reason: null };
+  // The browser has WebGPU: ask for an adapter, and ask again. Right after a reload WebKit can answer null while the
+  // GPU process is still letting go of the page before (seen on an iPhone: a second load 1.3 s after the first got
+  // no adapter); a moment later it answers. Only after a few tries is it "not now", which is not "no WebGPU".
+  let adapter = null, tries = 0;
+  for (const wait of ADAPTER_RETRY_MS) {
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    tries++;
+    try {
+      adapter = await navigator.gpu.requestAdapter(tries > 2 ? undefined : { powerPreference: 'high-performance' });
+    } catch { /* as none */ }
+    if (adapter) break;
+  }
+  if (!adapter) return { adapter: null, tries, busy: true, reason: 'WebGPU did not answer on this device just now. Close other tabs and try again.' };
+  return { adapter, tries, reason: null };
 }
 
 async function initApp() {
@@ -997,13 +1011,28 @@ async function initApp() {
     status(text);
   };
 
+  // A button under the halted message that loads the page again (js/donostia/i18n.js words it by its id)
+  const offerReload = () => {
+    if (!loadingOverlay || document.getElementById('loading-reload')) return;
+    const reload = document.createElement('button');
+    reload.id = 'loading-reload';
+    reload.type = 'button';
+    reload.className = 'panel tool-btn';
+    reload.style.marginTop = '14px';
+    reload.textContent = 'Reload';
+    reload.addEventListener('click', () => location.reload());
+    (loadingStatus || loadingOverlay).after(reload);
+  };
+
   const DEBUG = new URLSearchParams(location.search).has('debug');
-  const { adapter, reason } = await probeWebGPU();
+  const { adapter, reason, busy, tries } = await probeWebGPU();
   if (!adapter) {
     unsupported = true;
-    analytics.track('app_unsupported', { reason: navigator.gpu ? 'no_adapter' : 'no_api' });
+    analytics.track('app_unsupported', { reason: navigator.gpu ? 'no_adapter' : 'no_api', tries: tries || 0 });
     if (loadingFill?.parentElement) loadingFill.parentElement.style.visibility = 'hidden';
-    halt(reason, 'webgpu');
+    // no WebGPU at all shows the note on what the city needs; WebGPU that did not answer is a "try again", with the way to
+    halt(reason, busy ? 'load' : 'webgpu');
+    if (busy) offerReload();
     return;
   }
 
@@ -1082,7 +1111,8 @@ async function initApp() {
     unsupported = true;
     analytics.track('app_unsupported', { reason: 'no_device' });
     renderer.domElement.remove();
-    halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.', 'webgpu');
+    halt('WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.', 'load');
+    offerReload();
     return;
   }
   // the coarse device on every event: the GPU's vendor & architecture as WebGPU reports them, cores, memory, pixel ratio
@@ -1148,15 +1178,21 @@ async function initApp() {
   god.colliders = createColliders(GEO.buildings);
   markInit('colliders');
   const camera = god.camera;
-  let saved = null;
+  // Every visit opens on one of the city's postcard views, picked at random (never the one the last visit opened on).
+  // The camera's last position is no longer kept: it left visitors where they had stopped, which could be a patch of
+  // sand. (The old saved view is cleared.)
+  const starts = START_VIEWS.map((id) => GEO.teleports.find((t) => t.id === id)).filter(Boolean);
+  let lastStart = null;
   try {
-    saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch { /* storage unavailable, or not JSON */ }
-  // the last view, if it is one (a corrupt save or one off the edge of the map starts at Urgull, as a first visit)
-  if (!god.restore(saved)) god.flyTo(GEO.teleports.find((t) => t.id === 'urgull') || GEO.teleports[0], 0.001);
+    lastStart = localStorage.getItem(START_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* storage unavailable */ }
+  const fresh = starts.filter((t) => t.id !== lastStart);
+  const pool = fresh.length ? fresh : starts;
+  const start = pool[Math.floor(Math.random() * pool.length)] || GEO.teleports[0];
+  try { localStorage.setItem(START_KEY, start.id); } catch { /* storage unavailable */ }
+  god.flyTo(start, 0.001);
   god.update(0.001);
-  const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(god.state)); } catch { /* storage unavailable */ } };
-  window.addEventListener('pagehide', save);
 
   const view = createView(renderer, world, camera, { settings });
   const { grade } = view;
@@ -1446,7 +1482,6 @@ async function initApp() {
       fpsTime = 0;
     }
     if (now > saveAt) {
-      save();
       saveAt = now + 4000;
       // the crash guard's heartbeat: alive, at this tier, in real time or not
       guard.beat({ tier: quality.get().tier, realTime: live.liveEnabled() });
