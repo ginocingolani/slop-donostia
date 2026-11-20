@@ -306,8 +306,10 @@ const EVERYWHERE = ['terrain', 'water', 'sky', 'buildings', 'vegetation'];
 // Of the rest, the first view takes what the camera sees within NEAR metres, or from further when it is large enough
 // on screen (radius over distance: 0.25 is a quarter of a phone's height or so): a landmark across the bay waits a
 // moment. What is merged across the city (the railings, the lamps, the shore's walls: bounds wider than SPREAD
-// metres, which say nothing of where it shows) waits too, at the front of the background's queue.
-const NEAR = 160, LARGE = 0.25, SPREAD = 500;
+// metres, which say nothing of where it shows) waits too, at the front of the background's queue. And of what
+// qualifies only the FIRST_FEW nearest materials are taken, so a start in the thick of the landmarks is no slower
+// than one on the hill: each is some 45 kB of WGSL, half a second or so of a phone's compiler.
+const NEAR = 160, LARGE = 0.25, SPREAD = 500, FIRST_FEW = 6;
 // three's shadow pass draws a front-sided caster's back faces (r186.1's _shadowSide)
 const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
 
@@ -517,12 +519,20 @@ function createCompiler(renderer, world, camera, passes) {
     collect();
     const mine = run;
     look();
-    const wanted = jobs.filter((job) => job.objects.some((o) => {
-      if (!shown(o)) return false;
-      if (!progressive || job.everywhere) return true;
-      const p = place(o, camera.position);
-      return p.seen && !p.spread && (p.distance < NEAR || p.size > LARGE);
-    }));
+    const near = [];
+    let wanted = jobs.filter((job) => {
+      let nearest = Infinity;
+      for (const o of job.objects) {
+        if (!shown(o)) continue;
+        if (!progressive || job.everywhere) return true;
+        const p = place(o, camera.position);
+        if (p.seen && !p.spread && (p.distance < NEAR || p.size > LARGE)) nearest = Math.min(nearest, p.distance - p.size);
+      }
+      if (nearest < Infinity) near.push([nearest, job]);
+      return false;
+    });
+    // (nearest first, the larger on screen of two as near)
+    wanted = wanted.concat(near.sort((a, b) => a[0] - b[0]).slice(0, FIRST_FEW).map(([, job]) => job));
     // What a first-view job holds that is not shown now stays with it where a shown object of its kind compiles (the
     // terrain's other levels of detail: they must be there the moment the camera moves) and is otherwise another job,
     // for the background (the props beyond their draw distance, each an instanced mesh with a shader build of its
