@@ -123,7 +123,7 @@ test("main.js's loading lines are said in the language picked, and unknown ones 
     'Loading LiDAR terrain & sea floor…', 'Building the bay, the hills & the streets…', 'Raising the landmarks…',
     'Planting trees & dressing the streets…', 'Compiling shaders…',
     'This browser has no WebGPU, which Slop Donostia needs to draw the city.',
-    "WebGPU is there, but this device's graphics are not supported by it (or it is turned off).",
+    'WebGPU did not answer on this device just now. Close other tabs and try again.',
     'WebGPU could not start on this device (the browser gave no GPU device). Close other tabs and reload, or try another browser.',
     'On iPhone and iPad it comes with iOS 26 (Safari 26).', 'On Android it needs Chrome 121 or later on Android 12 or later.',
     'Try a current Chrome or Edge, or Safari 26 or later.', 'WebGPU also needs a secure (https) page.'
