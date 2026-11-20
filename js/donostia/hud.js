@@ -1,13 +1,16 @@
 import { STREETS } from './data-streets.js';
 import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
 import * as live from './live-state.js';
+import { initTouchControls } from './touch.js';
 
 // js/donostia/hud.js
 // HUD wiring for index.html: time of day and the real-time switch (Orain) with its readout, the fly-to list, clean
-// view, telemetry, the street-name signs (where am I), the radar & the full map [M], and the god camera's touch controls.
-// initHud({ GEO, god, terrain, lighting, grade, liveSky, renderer }) -> { update(fps), setReady(), mapOpen }: main.js
-// calls update() four times a second and setReady() once the city first shows; mapOpen says the full map covers the
-// view.
+// view, telemetry, the street-name signs (where am I), the radar & the full map [M], the settings sheet with the
+// quality control, and what a touch screen needs around the god camera's touch controls (js/donostia/touch.js): the
+// phone's bar, the hint, and a page that neither zooms, scrolls nor selects under the fingers.
+// initHud({ GEO, god, terrain, lighting, grade, liveSky, renderer, quality }) -> { update(fps), setReady(), mapOpen }:
+// main.js calls update() four times a second and setReady() once the city first shows; mapOpen says the full map
+// covers the view. `quality` is js/donostia/quality.js where there is one (see initQualityControl).
 
 const TIMES = ['golden', 'midday', 'twilight', 'midnight'];
 const LIVE_KEY = 'donostia-live'; // localStorage: '1' while the real-time switch is on
@@ -16,12 +19,32 @@ const CORNER = 14; // m: a second street this close makes a corner (two signs)
 
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
-export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
+export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }) {
   // Until the city first shows, main.js compiles the shaders with the scene pass's render target bound (across
   // awaits): a preset applied meanwhile would bake its environment map into that target. A time picked then waits
   // for setReady(), and the shortcuts and the HUD (under the loading screen) don't answer yet.
   let ready = false, pendingTime = null, time = 'golden';
   const timeButtons = document.querySelectorAll('[data-time]');
+  // The phone's bar folds the five looks behind one button, which wears the icon and the name of the look in force
+  // and opens them as a row above the bar (css/donostia.css); elsewhere the button is not shown
+  const toolbar = document.getElementById('hud-toolbar');
+  const timeToggle = document.getElementById('btn-time');
+  const openTimes = (open) => {
+    toolbar?.classList.toggle('time-open', open);
+    timeToggle?.setAttribute('aria-expanded', String(open));
+  };
+  const showTimeToggle = () => {
+    const current = liveShown ? liveButton : [...timeButtons].find((b) => b.dataset.time === time);
+    if (!timeToggle || !current) return;
+    timeToggle.querySelector('use')?.setAttribute('href', current.querySelector('use')?.getAttribute('href') || '#i-live');
+    const label = timeToggle.querySelector('.dock-label');
+    if (label) label.textContent = current.querySelector('.seg-label')?.textContent || 'Ordua';
+  };
+  timeToggle?.addEventListener('click', () => openTimes(!toolbar?.classList.contains('time-open')));
+  // a look picked, a touch anywhere else or Escape folds the row again
+  document.addEventListener('pointerdown', (e) => {
+    if (toolbar?.classList.contains('time-open') && !(e.target instanceof Element && e.target.closest('#btn-time, #time-switch'))) openTimes(false);
+  }, true);
   // The time buttons show the preset picked last; while real time is on they show it overridden (unpressed, outlined:
   // the look a click goes back to)
   const showTime = (id) => {
@@ -31,6 +54,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
       b.classList.toggle('active', b.dataset.time === id);
       b.setAttribute('aria-pressed', String(!on && b.dataset.time === id));
     });
+    showTimeToggle();
   };
   const applyTime = (id) => {
     lighting.applyPreset(id);
@@ -46,7 +70,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     if (ready) applyTime(id);
     else { pendingTime = id; showTime(id); }
   };
-  timeButtons.forEach((b) => b.addEventListener('click', () => selectTime(b.dataset.time)));
+  timeButtons.forEach((b) => b.addEventListener('click', () => { selectTime(b.dataset.time); openTimes(false); }));
 
   // --- Real time (Orain) -----------------------------------------------------------------------------------------------
   // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. On by
@@ -75,7 +99,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     if (ready) live.setLiveEnabled(on);
     else showLive(on);
   };
-  liveButton?.addEventListener('click', () => setLive(!liveShown));
+  liveButton?.addEventListener('click', () => { setLive(!liveShown); openTimes(false); });
   // the state may change from elsewhere too (slopDebug.live): the switch follows it, and real time turned off brings
   // back the preset picked last
   live.onLive((snap) => {
@@ -115,7 +139,27 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
   hudToggle?.addEventListener('click', () => {
     const min = document.body.classList.toggle('hud-minimized');
     hudToggle.setAttribute('aria-pressed', String(min));
+    openTimes(false);
   });
+
+  // --- The settings sheet ----------------------------------------------------------------------------------------------
+  // The quality control, where there is a quality module, and on touch screens the tools the bar leaves out (clean
+  // view, the data credits, the repository). Its button shows when the sheet has either to offer.
+  const settings = document.getElementById('settings-popover');
+  const settingsButton = document.getElementById('btn-settings');
+  const hasQuality = initQualityControl(quality);
+  const showSettingsButton = () => {
+    if (settingsButton) settingsButton.hidden = !hasQuality && !document.body.classList.contains('touch-enabled');
+  };
+  document.getElementById('more-clean')?.addEventListener('click', () => {
+    settings?.hidePopover?.();
+    hudToggle?.click();
+  });
+  document.getElementById('more-credits')?.addEventListener('click', () => {
+    settings?.hidePopover?.();
+    document.getElementById('credits-popover')?.showPopover?.();
+  });
+  guardPageGestures();
 
   // --- Where am I ------------------------------------------------------------------------------------------------------
 
@@ -243,7 +287,36 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
 
   const radarCanvas = document.getElementById('minimap-canvas');
   const radar = radarCanvas ? new Radar({ canvas: radarCanvas, layers, god, terrain, onFly: flyToGround }) : null;
-  const touch = initTouchControls(god);
+  // --- Touch -----------------------------------------------------------------------------------------------------------
+  // What the fingers do, said once the city shows and again when the flight stick is switched; the first gesture on
+  // the view (or a few seconds) takes the line away
+  const hint = document.getElementById('touch-hint');
+  let hintTimer = 0, hinted = false;
+  const hideHint = () => {
+    clearTimeout(hintTimer);
+    if (hint) hint.hidden = true;
+  };
+  const sayHint = () => {
+    if (!hint || !ready || !touch.available || fullMap.isOpen) return;
+    const lines = touch.flying
+      ? ['Left thumb flies', 'Right thumb looks', 'Push past the rim to go fast']
+      : ['Drag to look', 'Two fingers to move', 'Double-tap to fly there'];
+    hint.replaceChildren(...lines.map((text) => Object.assign(document.createElement('span'), { textContent: text })));
+    hint.hidden = false;
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(hideHint, 7000);
+  };
+  document.getElementById('canvas-container')?.addEventListener('pointerup', () => { if (hinted) hideHint(); });
+  const touch = initTouchControls(god, {
+    // touch found (a hybrid's first touch) or the flight stick switched
+    onChange() {
+      showSettingsButton();
+      if (hinted) sayHint();
+    }
+  });
+  showSettingsButton();
+  document.getElementById('btn-fly')?.addEventListener('click', () => openTimes(false));
+  keepViewSized();
   // The HUD, the view and the touch controls are inert while the loading screen or the full map (a modal dialog)
   // covers them: Tab stays in front, and screen readers skip what is hidden
   const covered = [...document.querySelectorAll('.hud, #touch-controls, #canvas-container')];
@@ -258,6 +331,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
       touch.setEnabled(!open);
       if (radar) { radar.hidden = open; radar.invalidate(); }
       document.getElementById('btn-open-map')?.setAttribute('aria-pressed', String(open));
+      if (open) { hideHint(); openTimes(false); }
       updateInert();
     }
   });
@@ -282,6 +356,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
     if (key === 'h') hudToggle?.click();
     else if (key === 'm') fullMap.toggle();
     else if (e.key === 'Escape' && fullMap.isOpen) fullMap.toggle(false);
+    else if (e.key === 'Escape') openTimes(false);
     const digit = /^Digit([1-5])$/.exec(e.code);
     if (digit?.[1] === '5') setLive(!liveShown);
     else if (digit) selectTime(TIMES[digit[1] - 1]);
@@ -305,6 +380,8 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky }) {
         live.setLiveEnabled(true);
       }
       updateInert();
+      hinted = true;
+      sayHint();
     },
     // the full map covers the whole view (main.js stops rendering it meanwhile)
     get mapOpen() {
@@ -416,134 +493,112 @@ function initLiveReadout(root) {
   };
 }
 
-// --- Touch controls ----------------------------------------------------------------------------------------------------
-// Virtual stick & hold buttons for the god camera, adapted from upstream's js/touch-controls.js: the stick flies
-// forward / back and sideways (one finger on the view looks around, a pinch flies along it), the buttons climb,
-// descend and boost. They appear on coarse pointers, or after the first touch on hybrid devices, and set
-// body.touch-enabled for the touch layout (css/style.css & css/donostia.css).
+// --- The quality control ---------------------------------------------------------------------------------------------
+// A row of choices (Auto and the tiers) in the settings sheet, for js/donostia/quality.js. That module is the
+// renderer's and may not be there, or may name things otherwise: everything this file assumes about it is in
+// qualityApi() below, which answers null where there is nothing to drive (the control then stays hidden).
+//   quality.tiers            the tiers, lowest first: ids, or { id, label } records, or an object keyed by id
+//   quality.get()            the choice: 'auto' or a tier id; or { choice | mode, tier } with the tier Auto settled on
+//   quality.set(id | 'auto')
+//   quality.onChange(fn)     (or subscribe / addEventListener('change')) when the choice or Auto's tier changes
+// main.js hands it to initHud({ quality }); window.slopQuality is looked at too, so it can be tried without that.
 
-const DEAD_ZONE = 0.15;
-const MAX_RADIUS = 44;
+const TIER_NAMES = { auto: 'Auto', low: 'Baxua', medium: 'Ertaina', high: 'Altua', ultra: 'Ultra' };
 
-function initTouchControls(god) {
-  const root = document.getElementById('touch-controls');
-  const stick = document.getElementById('touch-stick');
-  const knob = document.getElementById('touch-stick-knob');
-  if (!root || !stick || !knob) return { setEnabled() {}, reset() {} };
-  const buttons = [...root.querySelectorAll('[data-touch-action]')];
-  const held = new Map(); // pointerId -> { button, action }
-  const media = window.matchMedia('(any-pointer: coarse)');
-  let stickPointer = null, center = null, radius = MAX_RADIUS;
-  let enabled = true, available = false, touchSeen = false;
-
-  const canInteract = () => enabled && available && !document.hidden;
-  const releaseCapture = (el, id) => { if (el.hasPointerCapture(id)) el.releasePointerCapture(id); };
-
-  const moveStick = (e) => {
-    const dx = e.clientX - center.x, dy = e.clientY - center.y;
-    const dist = Math.hypot(dx, dy);
-    const reach = Math.min(dist / radius, 1);
-    const strength = Math.max(0, (reach - DEAD_ZONE) / (1 - DEAD_ZONE));
-    const x = dist ? dx / dist : 0, y = dist ? dy / dist : 0;
-    knob.style.setProperty('--stick-x', `${x * reach * radius}px`);
-    knob.style.setProperty('--stick-y', `${y * reach * radius}px`);
-    god.touch.forward = -y * strength;
-    god.touch.side = x * strength;
-  };
-  const releaseStick = (id) => {
-    if (stickPointer === null || id !== stickPointer) return;
-    stickPointer = null;
-    releaseCapture(stick, id);
-    stick.classList.remove('is-pressed');
-    knob.style.setProperty('--stick-x', '0px');
-    knob.style.setProperty('--stick-y', '0px');
-    god.touch.forward = god.touch.side = 0;
-  };
-  const applyButtons = () => {
-    const actions = new Set([...held.values()].map((h) => h.action));
-    god.touch.up = (actions.has('up') ? 1 : 0) - (actions.has('down') ? 1 : 0);
-    god.touch.boost = actions.has('boost');
-    for (const b of buttons) {
-      const pressed = [...held.values()].some((h) => h.button === b);
-      b.classList.toggle('is-pressed', pressed);
-      b.setAttribute('aria-pressed', String(pressed));
-    }
-  };
-  const releaseButton = (id) => {
-    const h = held.get(id);
-    if (!h) return;
-    held.delete(id);
-    releaseCapture(h.button, id);
-    applyButtons();
-  };
-  const reset = () => {
-    releaseStick(stickPointer);
-    for (const id of [...held.keys()]) releaseButton(id);
-    god.clearTouch();
-  };
-
-  stick.addEventListener('pointerdown', (e) => {
-    if (!canInteract() || e.button !== 0 || stickPointer !== null || held.has(e.pointerId)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = stick.getBoundingClientRect();
-    center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    radius = Math.min(MAX_RADIUS, Math.min(rect.width, rect.height) / 2) || MAX_RADIUS;
-    stickPointer = e.pointerId;
-    stick.setPointerCapture(e.pointerId);
-    stick.classList.add('is-pressed');
-    moveStick(e);
-  });
-  stick.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== stickPointer) return;
-    e.preventDefault();
-    moveStick(e);
-  });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    stick.addEventListener(type, (e) => releaseStick(e.pointerId));
-  }
-  for (const button of buttons) {
-    const action = button.dataset.touchAction;
-    button.addEventListener('pointerdown', (e) => {
-      if (!canInteract() || e.button !== 0 || held.has(e.pointerId) || e.pointerId === stickPointer) return;
-      e.preventDefault();
-      e.stopPropagation();
-      held.set(e.pointerId, { button, action });
-      button.setPointerCapture(e.pointerId);
-      applyButtons();
-    });
-    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-      button.addEventListener(type, (e) => releaseButton(e.pointerId));
-    }
-    // a long press must not open the context menu or select the label
-    button.addEventListener('contextmenu', (e) => e.preventDefault());
-  }
-
-  const updateAvailability = () => {
-    const now = media.matches || touchSeen;
-    if (now !== available) reset();
-    available = now;
-    document.body.classList.toggle('touch-enabled', available);
-    root.hidden = !enabled || !available;
-  };
-  media.addEventListener('change', updateAvailability);
-  // hybrid devices can report a fine pointer until their first touch; capture runs before the controls' handlers
-  document.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch' || touchSeen) return;
-    touchSeen = true;
-    updateAvailability();
-  }, { capture: true, passive: true });
-  window.addEventListener('blur', reset);
-  window.addEventListener('resize', reset);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
-  updateAvailability();
-
+function qualityApi(q = globalThis.slopQuality) {
+  if (!q || typeof q.set !== 'function' || typeof q.get !== 'function') return null;
+  const raw = q.tiers ?? q.TIERS ?? q.levels ?? [];
+  const tiers = (Array.isArray(raw) ? raw : Object.keys(raw).map((id) => ({ id, ...(typeof raw[id] === 'object' ? raw[id] : {}) })))
+    .map((t) => (typeof t === 'object' ? { id: String(t.id ?? t.name), label: t.label } : { id: String(t) }))
+    .filter((t) => t.id && t.id !== 'auto' && t.id !== 'undefined');
+  if (!tiers.length) return null;
   return {
-    setEnabled(on) {
-      enabled = Boolean(on);
-      if (!enabled) reset();
-      root.hidden = !enabled || !available;
+    tiers,
+    // -> { choice: 'auto' | tier id, tier: the tier in force (null if the module doesn't say) }
+    read() {
+      const v = q.get();
+      if (v && typeof v === 'object') {
+        const tier = v.tier ?? v.active ?? v.effective ?? null;
+        return { choice: String(v.auto === true ? 'auto' : v.choice ?? v.mode ?? v.setting ?? tier), tier };
+      }
+      return { choice: String(v), tier: v === 'auto' ? q.tier ?? q.active ?? q.effective ?? null : v };
     },
-    reset
+    set: (id) => q.set(id),
+    watch(fn) {
+      if (typeof q.onChange === 'function') q.onChange(fn);
+      else if (typeof q.subscribe === 'function') q.subscribe(fn);
+      else if (typeof q.addEventListener === 'function') q.addEventListener('change', fn);
+    }
   };
+}
+
+function initQualityControl(quality) {
+  const root = document.getElementById('quality-control');
+  const row = document.getElementById('quality-options');
+  const note = document.getElementById('quality-note');
+  const api = qualityApi(quality || undefined);
+  if (!root || !row || !api) return false;
+  const name = (t) => t.label || TIER_NAMES[t.id] || t.id.charAt(0).toUpperCase() + t.id.slice(1);
+  const buttons = [{ id: 'auto' }, ...api.tiers].map((t) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn';
+    b.dataset.quality = t.id;
+    b.textContent = name(t);
+    b.addEventListener('click', () => { api.set(t.id); show(); });
+    row.append(b);
+    return b;
+  });
+  function show() {
+    const { choice, tier } = api.read();
+    for (const b of buttons) {
+      b.classList.toggle('active', b.dataset.quality === choice);
+      b.setAttribute('aria-pressed', String(b.dataset.quality === choice));
+    }
+    // Auto says which tier it settled on for this device
+    const settled = choice === 'auto' && tier != null ? api.tiers.find((t) => t.id === String(tier)) : null;
+    if (note) note.textContent = settled ? `Auto: ${name(settled)}` : '';
+  }
+  api.watch(() => show());
+  show();
+  root.hidden = false;
+  return true;
+}
+
+// --- The page under the fingers ----------------------------------------------------------------------------------------
+// css/donostia.css keeps the page from zooming, scrolling, selecting and calling out (touch-action, user-select,
+// overscroll-behavior); these are the cases only script can reach.
+
+function guardPageGestures() {
+  // Safari's own pinch (it does not honour user-scalable=no) would zoom the whole page from any HUD panel
+  for (const type of ['gesturestart', 'gesturechange']) document.addEventListener(type, (e) => e.preventDefault());
+  // a long press must not open the browser's menu over the HUD; links and the search box keep theirs
+  document.addEventListener('contextmenu', (e) => {
+    const touched = e.pointerType === 'touch' || (e.pointerType === undefined && document.body.classList.contains('touch-enabled'));
+    if (touched && !(e.target instanceof Element && e.target.closest('a[href], input, textarea'))) e.preventDefault();
+  });
+}
+
+// main.js sizes the renderer to window.innerWidth x innerHeight on the window's resize. On phones the view can change
+// without one that reads right: iOS turns the phone before the new size is in, and the browser's bars slide away. The
+// view's box (#canvas-container, the dynamic viewport: css/donostia.css) is watched here, and whenever the canvas is
+// left a different size the resize is asked for again.
+function keepViewSized() {
+  const container = document.getElementById('canvas-container');
+  if (!container || typeof ResizeObserver !== 'function') return;
+  let asked = '';
+  const check = () => {
+    const canvas = container.querySelector('canvas');
+    const w = container.clientWidth, h = container.clientHeight;
+    if (!canvas || !w || !h) return;
+    const key = `${w}x${h}:${window.innerWidth}x${window.innerHeight}`;
+    if ((Math.abs(canvas.clientWidth - w) > 1 || Math.abs(canvas.clientHeight - h) > 1) && key !== asked) {
+      asked = key; // (once per size: if innerWidth x innerHeight is not the box, asking again changes nothing)
+      window.dispatchEvent(new Event('resize'));
+    }
+  };
+  const later = () => requestAnimationFrame(check);
+  new ResizeObserver(later).observe(container);
+  window.addEventListener('orientationchange', () => setTimeout(check, 300));
+  window.visualViewport?.addEventListener('resize', later);
 }

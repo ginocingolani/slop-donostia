@@ -883,6 +883,7 @@ export class FullMap {
       // the HUD's popovers live in the top layer, above the map
       for (const pop of document.querySelectorAll('.popover[popover]')) if (pop.matches(':popover-open')) pop.hidePopover?.();
       this.layers.build();
+      this.setHover('');
       this.cx = this.god.position.x;
       this.cz = this.god.position.z;
       this.resize();
@@ -979,7 +980,8 @@ export class FullMap {
   }
 
   setHover(text) {
-    const t = text || this.hoverDefault;
+    // (fingers tap and pinch: the line a touch screen reads says so)
+    const t = text || (document.body.classList.contains('touch-enabled') ? 'Tap to fly there · Drag to pan · Pinch to zoom' : this.hoverDefault);
     if (this.elHover && t !== this.hoverText) {
       this.hoverText = t;
       this.elHover.textContent = t;
