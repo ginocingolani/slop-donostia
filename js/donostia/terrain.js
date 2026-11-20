@@ -354,6 +354,15 @@ export class Terrain {
     return this.group;
   }
 
+  // The chunks again, coarse or full, in a running city (a quality tier picked in the HUD): the old ones' buffers go,
+  // the group stays where it is in the scene. The next update() picks the levels of detail.
+  rebuild(material, options) {
+    for (const chunk of this.chunks) for (const mesh of chunk.meshes) mesh?.geometry.dispose();
+    this.group.clear();
+    this.chunks = [];
+    return this.build(material, options);
+  }
+
   // Shows every level of every chunk (for the pipeline warm-up frame) or restores the distance-based choice
   setAllVisible(all) {
     for (const chunk of this.chunks) {

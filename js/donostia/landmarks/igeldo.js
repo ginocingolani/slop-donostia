@@ -9,7 +9,7 @@ import { IGELDO } from '../data-funicular.js';
 import { SEAMARKS } from '../data-seamarks.js';
 import { seamarkClock, lightLevel, beamAzimuth } from '../seamark-timing.js';
 import { ringArea, wound, insetRing, simplify, clipRing, hipRoof, pointInRing } from './geom.js';
-import { detail } from '../quality.js';
+import { effectTargets } from '../quality.js';
 
 // js/donostia/landmarks/igeldo.js
 // Monte Igeldo: the 1855 lighthouse on the cliff, El Torreón above the amusement park, the Montaña Suiza scenic railway
@@ -322,10 +322,13 @@ function getBeamMaterial() {
   // A sweeping beam in the night air: an open cone (uv.y = 0 at the lantern, 1 at the far end), brightest along its
   // axis as seen from the camera, fading with distance (after tsl-materials.js's createGodRayMaterial). Seen from well
   // above, a beam in the haze is a faint shaft: a subtle sweep from the air.
+  // (forceSinglePass: three draws a transparent double-sided material twice, back faces then front, each a pipeline
+  // of its own that renderer.compileAsync() cannot build ahead (js/donostia/main.js's createCompiler()). Added
+  // light sums the same in one pass)
   const mat = new THREE.MeshBasicNodeMaterial({
-    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, forceSinglePass: true
   });
-  if (detail.mrt) mat.mrtNode = effectMRT;
+  effectTargets(mat, effectMRT);
   mat.colorNode = vec3(1.0, 0.95, 0.82);
   mat.opacityNode = Fn(() => {
     const along = uv().y;

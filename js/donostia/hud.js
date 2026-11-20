@@ -2,12 +2,15 @@ import { STREETS } from './data-streets.js';
 import { StreetIndex, MapLayers, Radar, FullMap } from './minimap.js';
 import * as live from './live-state.js';
 import { initTouchControls } from './touch.js';
+import { LANGS, LANG_NAMES, t, getLang, setLang, onLang, placeName, compassNames } from './i18n.js';
 
 // js/donostia/hud.js
-// HUD wiring for index.html: time of day and the real-time switch (Orain) with its readout, the fly-to list, clean
+// HUD wiring for index.html: time of day and the real-time switch ("Now") with its readout, the fly-to list, clean
 // view, telemetry, the street-name signs (where am I), the radar & the full map [M], the settings sheet with the
-// quality control, and what a touch screen needs around the god camera's touch controls (js/donostia/touch.js): the
-// phone's bar, the hint, and a page that neither zooms, scrolls nor selects under the fingers.
+// quality control and the language, and what a touch screen needs around the god camera's touch controls
+// (js/donostia/touch.js): the phone's bar, and a page that neither zooms, scrolls nor selects under the fingers.
+// Every word shown comes from js/donostia/i18n.js (index.html's marked elements are rewritten there; what this file
+// writes itself is written again when the language changes); the city's own names are data and stay as they are.
 // initHud({ GEO, god, terrain, lighting, grade, liveSky, renderer, quality }) -> { update(fps), setReady(), mapOpen }:
 // main.js calls update() four times a second and setReady() once the city first shows; mapOpen says the full map
 // covers the view. `quality` is js/donostia/quality.js where there is one (see initQualityControl).
@@ -20,6 +23,17 @@ const CORNER = 14; // m: a second street this close makes a corner (two signs)
 const isTyping = (e) => e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
 export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }) {
+  // js/donostia/main.js's pill while the shaders compile behind the city ('Loading details…', 'Applying quality…'):
+  // its words in the HUD's language, from the 'slop-compile' event it sends right after writing its own English
+  let compiling = null;
+  const compileNote = () => {
+    const note = document.getElementById('compile-note');
+    if (!note || !compiling || compiling.stage === 'done') return;
+    const n = compiling.total ? Math.round((100 * compiling.done) / compiling.total) : 0;
+    note.textContent = t(compiling.stage === 'applying' ? 'compile.applying' : 'compile.details', { n });
+  };
+  window.addEventListener('slop-compile', (e) => { compiling = e.detail; compileNote(); });
+  onLang(compileNote);
   // Until the city first shows, main.js compiles the shaders with the scene pass's render target bound (across
   // awaits): a preset applied meanwhile would bake its environment map into that target. A time picked then waits
   // for setReady(), and the shortcuts and the HUD (under the loading screen) don't answer yet.
@@ -38,7 +52,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     if (!timeToggle || !current) return;
     timeToggle.querySelector('use')?.setAttribute('href', current.querySelector('use')?.getAttribute('href') || '#i-live');
     const label = timeToggle.querySelector('.dock-label');
-    if (label) label.textContent = current.querySelector('.seg-label')?.textContent || 'Ordua';
+    if (label) label.textContent = current.querySelector('.seg-label')?.textContent || t('time.label');
   };
   timeToggle?.addEventListener('click', () => openTimes(!toolbar?.classList.contains('time-open')));
   // a look picked, a touch anywhere else or Escape folds the row again
@@ -72,7 +86,7 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   };
   timeButtons.forEach((b) => b.addEventListener('click', () => { selectTime(b.dataset.time); openTimes(false); }));
 
-  // --- Real time (Orain) -----------------------------------------------------------------------------------------------
+  // --- Real time ("Now") -----------------------------------------------------------------------------------------------
   // The switch turns js/donostia/live-state.js on and off; js/donostia/live-sky.js does the rest each frame. On by
   // default (the city as it is now), unless this browser turned it off; the choice is remembered. Turned on before the
   // city shows, it waits for setReady(), and the weather and the sea are fetched meanwhile, behind the loading screen.
@@ -111,24 +125,32 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   showLive(liveWanted);
   applyTime('golden'); // (before the compile: the shaders are built for the lights it sets)
 
+  // The fly-to list: each place by its name in the language in force, the place's own (Basque) name under it
   const teleportList = document.getElementById('teleport-list');
-  for (const t of GEO.teleports) {
+  const places = GEO.teleports.map((place) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pop-item tp-btn';
     const name = document.createElement('span');
     name.className = 'pop-name';
-    name.textContent = t.name;
     const sub = document.createElement('span');
     sub.className = 'pop-sub';
-    sub.textContent = t.name_es;
     btn.append(name, sub);
     btn.addEventListener('click', () => {
-      god.flyTo(t);
+      god.flyTo(place);
       document.getElementById('teleport-popover')?.hidePopover?.();
     });
     teleportList?.appendChild(btn);
-  }
+    return { place, name, sub };
+  });
+  const namePlaces = () => {
+    for (const { place, name, sub } of places) {
+      const n = placeName(place);
+      name.textContent = n.name;
+      sub.textContent = n.sub;
+    }
+  };
+  namePlaces();
 
   // a mouse click mustn't leave the focus on a HUD button (Space would press it again)
   document.addEventListener('click', (e) => {
@@ -143,14 +165,12 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   });
 
   // --- The settings sheet ----------------------------------------------------------------------------------------------
-  // The quality control, where there is a quality module, and on touch screens the tools the bar leaves out (clean
-  // view, the data credits, the repository). Its button shows when the sheet has either to offer.
+  // The quality control, where there is a quality module, the language, and on touch screens the tools the bar leaves
+  // out (clean view, the data credits, the repository).
   const settings = document.getElementById('settings-popover');
-  const settingsButton = document.getElementById('btn-settings');
-  const hasQuality = initQualityControl(quality);
-  const showSettingsButton = () => {
-    if (settingsButton) settingsButton.hidden = !hasQuality && !document.body.classList.contains('touch-enabled');
-  };
+  const showQuality = initQualityControl(quality);
+  initLanguageControl();
+  const showFullscreen = initFullscreenControl();
   document.getElementById('more-clean')?.addEventListener('click', () => {
     settings?.hidePopover?.();
     hudToggle?.click();
@@ -215,15 +235,18 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   const elDistrict = document.getElementById('hud-district');
   const elPoi = document.getElementById('hud-location-poi');
   const elSigns = document.getElementById('hud-location-signs');
+  const elStreet = document.getElementById('hud-location-street');
   const shown = { district: null, poi: null, signs: null };
   const twoNames = (el, n) => {
     const eu = document.createElement('span');
     eu.className = 'loc-eu';
+    eu.lang = 'eu'; // (the city's own names, whatever the page's language: a screen reader says them as Basque)
     eu.textContent = n.name;
     el.replaceChildren(eu);
     if (n.es && n.es !== n.name) {
       const es = document.createElement('span');
       es.className = 'loc-es';
+      es.lang = 'es';
       es.textContent = n.es;
       el.append(es);
     }
@@ -248,6 +271,12 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     const sKey = streets.map((s) => s.name).join('|');
     if (elSigns && sKey !== shown.signs) {
       shown.signs = sKey;
+      // the touch layouts say the street inside the card instead, as plain text (css/donostia.css): the Basque name
+      // alone, both streets at a corner, on one line that gives way with an ellipsis
+      if (elStreet) {
+        elStreet.textContent = streets.map((s) => s.name).join(' · ');
+        elStreet.hidden = !streets.length;
+      }
       // Basque name on the blade, Spanish under it where it differs
       const row = document.createElement('div');
       row.className = 'location-signs';
@@ -257,11 +286,13 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
         sign.title = s.es ? `${s.name} · ${s.es}` : s.name;
         const eu = document.createElement('span');
         eu.className = 'sign-eu';
+        eu.lang = 'eu';
         eu.textContent = s.name;
         sign.append(eu);
         if (s.es) {
           const es = document.createElement('span');
           es.className = 'sign-es';
+          es.lang = 'es';
           es.textContent = s.es;
           sign.append(es);
         }
@@ -288,34 +319,8 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
   const radarCanvas = document.getElementById('minimap-canvas');
   const radar = radarCanvas ? new Radar({ canvas: radarCanvas, layers, god, terrain, onFly: flyToGround }) : null;
   // --- Touch -----------------------------------------------------------------------------------------------------------
-  // What the fingers do, said once the city shows and again when the flight stick is switched; the first gesture on
-  // the view (or a few seconds) takes the line away
-  const hint = document.getElementById('touch-hint');
-  let hintTimer = 0, hinted = false;
-  const hideHint = () => {
-    clearTimeout(hintTimer);
-    if (hint) hint.hidden = true;
-  };
-  const sayHint = () => {
-    if (!hint || !ready || !touch.available || fullMap.isOpen) return;
-    const lines = touch.flying
-      ? ['Left thumb flies', 'Right thumb looks', 'Push past the rim to go fast']
-      : ['Drag to look', 'Two fingers to move', 'Double-tap to fly there'];
-    hint.replaceChildren(...lines.map((text) => Object.assign(document.createElement('span'), { textContent: text })));
-    hint.hidden = false;
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(hideHint, 7000);
-  };
-  document.getElementById('canvas-container')?.addEventListener('pointerup', () => { if (hinted) hideHint(); });
-  const touch = initTouchControls(god, {
-    // touch found (a hybrid's first touch) or the flight stick switched
-    onChange() {
-      showSettingsButton();
-      if (hinted) sayHint();
-    }
-  });
-  showSettingsButton();
-  document.getElementById('btn-fly')?.addEventListener('click', () => openTimes(false));
+  // The flight stick & its buttons are there on every touch screen (js/donostia/touch.js)
+  const touch = initTouchControls(god);
   keepViewSized();
   // The HUD, the view and the touch controls are inert while the loading screen or the full map (a modal dialog)
   // covers them: Tab stays in front, and screen readers skip what is hidden
@@ -325,13 +330,13 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     for (const el of covered) el.inert = off;
   };
   const fullMap = new FullMap({
-    layers, index, god, describe, onFly: flyToGround,
+    layers, index, god, describe, onFly: flyToGround, bounds: GEO.frame?.core,
     onToggle(open) {
       god.enabled = !open;
       touch.setEnabled(!open);
       if (radar) { radar.hidden = open; radar.invalidate(); }
       document.getElementById('btn-open-map')?.setAttribute('aria-pressed', String(open));
-      if (open) { hideHint(); openTimes(false); }
+      if (open) openTimes(false);
       updateInert();
     }
   });
@@ -362,6 +367,17 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
     else if (digit) selectTime(TIMES[digit[1] - 1]);
   });
 
+  // What this file wrote in the language that was: the fly-to list, the time button's name, the tiers, the readout
+  // (update() writes the readout again four times a second; this is for a still page) and the map's lines
+  onLang(() => {
+    namePlaces();
+    showTimeToggle();
+    showQuality();
+    showFullscreen();
+    if (liveShown) renderLive(live.liveSnapshot());
+    fullMap.relabel();
+  });
+
   const elFps = document.getElementById('hud-fps');
   const elAlt = document.getElementById('hud-altitude');
   const elLocAlt = document.getElementById('hud-location-alt');
@@ -380,8 +396,6 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
         live.setLiveEnabled(true);
       }
       updateInert();
-      hinted = true;
-      sayHint();
     },
     // the full map covers the whole view (main.js stops rendering it meanwhile)
     get mapOpen() {
@@ -404,25 +418,17 @@ export function initHud({ GEO, god, terrain, lighting, grade, liveSky, quality }
 }
 
 // --- The real-time readout -------------------------------------------------------------------------------------------
-// The hour in Donostia, the weather (its icon, its name in Basque, °C), the tide (its level above mean sea level,
-// rising or falling, the next high or low water) and the waves (height, period), each with a tooltip in Basque,
-// Spanish and English. While the data loads, and if Open-Meteo doesn't answer, the clock runs on and says so; the sky
-// keeps to the clock with calm weather (live-state.js's defaults) meanwhile.
+// The hour in Donostia, the weather (its icon, its name, °C), the tide (its level above mean sea level, rising or
+// falling, the next high or low water) and the waves (height, period), each with a tooltip that says it in full, in
+// the language in force. While the data loads, and if Open-Meteo doesn't answer, the clock runs on and says so; the
+// sky keeps to the clock with calm weather (live-state.js's defaults) meanwhile.
 
-// weather kind -> [icon, Basque, Spanish, English]
+// weather kind -> icon (its name is t('weather.<kind>'))
 const WEATHER = {
-  clear: ['i-sun', 'Oskarbi', 'despejado', 'clear'],
-  cloudy: ['i-cloud', 'Hodeitsu', 'nuboso', 'cloudy'],
-  overcast: ['i-cloud', 'Estalia', 'cubierto', 'overcast'],
-  fog: ['i-fog', 'Lainoa', 'niebla', 'fog'],
-  drizzle: ['i-rain', 'Zirimiria', 'sirimiri', 'drizzle'],
-  rain: ['i-rain', 'Euria', 'lluvia', 'rain'],
-  showers: ['i-rain', 'Zaparradak', 'chubascos', 'showers'],
-  snow: ['i-snow', 'Elurra', 'nieve', 'snow'],
-  storm: ['i-storm', 'Ekaitza', 'tormenta', 'storm']
+  clear: 'i-sun', cloudy: 'i-cloud', overcast: 'i-cloud', fog: 'i-fog', drizzle: 'i-rain', rain: 'i-rain', showers: 'i-rain',
+  snow: 'i-snow', storm: 'i-storm'
 };
-const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-const compass = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+const compass = (deg) => compassNames()[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
 const km = (m) => (m >= 10000 ? `${Math.round(m / 1000)} km` : `${(m / 1000).toFixed(1)} km`);
 const signed = (v, digits) => `${v >= 0 ? '+' : '\u2212'}${Math.abs(v).toFixed(digits)}`;
 
@@ -451,43 +457,47 @@ function initLiveReadout(root) {
       weather.item.classList.toggle('is-error', snap.status !== 'loading' && missing('weather'));
       if (snap.status === 'loading') {
         attr(weather.use, 'href', '#i-cloud');
-        set(weather.word, 'Kargatzen…');
+        set(weather.word, t('live.loading'));
         set(weather.num, '');
-        attr(weather.item, 'title', 'Kargatzen · cargando · loading the weather and the sea (Open-Meteo)');
+        attr(weather.item, 'title', t('live.loadingTitle'));
       } else if (missing('weather')) {
         attr(weather.use, 'href', '#i-alert');
-        set(weather.word, 'Daturik ez');
+        set(weather.word, t('live.noData'));
         set(weather.num, '');
-        attr(weather.item, 'title', `Daturik ez · sin datos · no weather from Open-Meteo (${snap.error || 'no answer'}): the sky keeps to the clock with calm weather, and asks again every 15 min`);
+        attr(weather.item, 'title', t('live.noDataTitle', { error: snap.error || t('live.noAnswer') }));
       } else {
-        const [icon, eu, es, en] = WEATHER[w.kind] ?? WEATHER.cloudy;
+        const kind = w.kind in WEATHER ? w.kind : 'cloudy';
+        const icon = WEATHER[kind], word = t(`weather.${kind}`);
         attr(weather.use, 'href', icon === 'i-sun' && snap.sun.elevation < -0.8 ? '#i-moon' : `#${icon}`);
-        set(weather.word, eu);
+        set(weather.word, word);
         set(weather.num, `${Math.round(w.temperature)} °C`);
-        attr(weather.item, 'title', `${eu} · ${es} · ${en}, ${Math.round(w.temperature)} °C; haizea · viento · wind ${Math.round(w.windSpeed * 3.6)} km/h from the ${compass(w.windFrom)}; ${Math.round(w.cloudCover * 100)}% cloud; ${km(w.visibility)} visibility`);
+        attr(weather.item, 'title', t('live.weatherTitle', {
+          word, temp: Math.round(w.temperature), wind: Math.round(w.windSpeed * 3.6), dir: compass(w.windFrom),
+          cloud: Math.round(w.cloudCover * 100), vis: km(w.visibility)
+        }));
       }
     }
 
-    const sea = snap.sea, t = sea.tide;
+    const sea = snap.sea, tideNow = sea.tide;
     const seaShown = snap.status !== 'loading' && !missing('sea');
     if (tide) {
       tide.item.hidden = !seaShown;
       if (seaShown) {
-        const arrow = t.rate > 0.02 ? '↑ ' : t.rate < -0.02 ? '↓ ' : '';
-        set(tide.num, `${arrow}${signed(t.level, 1)} m`);
-        const turn = t.next[0];
-        const names = turn && (turn.kind === 'high' ? ['Itsasgora', 'pleamar', 'high water'] : ['Itsasbehera', 'bajamar', 'low water']);
-        set(tide.sub, turn ? `${names[0]} ${hhmm.format(turn.date)}` : '');
-        attr(tide.item, 'title', `Itsasaldia · marea · tide: ${signed(t.level, 2)} m on mean sea level, ${t.rate > 0.02 ? 'rising' : t.rate < -0.02 ? 'falling' : 'turning'}` +
-          (turn ? `; ${names.join(' · ')} at ${hhmm.format(turn.date)} (${signed(turn.level, 2)} m)` : ''));
+        const arrow = tideNow.rate > 0.02 ? '↑ ' : tideNow.rate < -0.02 ? '↓ ' : '';
+        set(tide.num, `${arrow}${signed(tideNow.level, 1)} m`);
+        const turn = tideNow.next[0];
+        const name = turn && t(turn.kind === 'high' ? 'tide.high' : 'tide.low');
+        set(tide.sub, turn ? `${name} ${hhmm.format(turn.date)}` : '');
+        attr(tide.item, 'title', t('live.tideTitle', { level: signed(tideNow.level, 2), trend: t(tideNow.rate > 0.02 ? 'tide.rising' : tideNow.rate < -0.02 ? 'tide.falling' : 'tide.turning') }) +
+          (turn ? t('live.tideNext', { name, time: hhmm.format(turn.date), level: signed(turn.level, 2) }) : ''));
       }
     }
     if (waves) {
       waves.item.hidden = !seaShown;
       if (seaShown) {
         set(waves.num, `${sea.waveHeight.toFixed(1)} m · ${Math.round(sea.wavePeriod)} s`);
-        attr(waves.item, 'title', `Olatuak · oleaje · waves: ${sea.waveHeight.toFixed(1)} m every ${Math.round(sea.wavePeriod)} s from the ${compass(sea.waveFrom)}` +
-          (Number.isFinite(sea.temperature) ? `; itsasoa · el mar · the sea ${Math.round(sea.temperature)} °C` : ''));
+        attr(waves.item, 'title', t('live.wavesTitle', { height: sea.waveHeight.toFixed(1), period: Math.round(sea.wavePeriod), dir: compass(sea.waveFrom) }) +
+          (Number.isFinite(sea.temperature) ? t('live.seaTemp', { temp: Math.round(sea.temperature) }) : ''));
       }
     }
   };
@@ -502,15 +512,16 @@ function initLiveReadout(root) {
 //   quality.set(id | 'auto')
 //   quality.onChange(fn)     (or subscribe / addEventListener('change')) when the choice or Auto's tier changes
 // main.js hands it to initHud({ quality }); window.slopQuality is looked at too, so it can be tried without that.
-
-const TIER_NAMES = { auto: 'Auto', low: 'Baxua', medium: 'Ertaina', high: 'Altua', ultra: 'Ultra' };
+// Every setting applies as it is picked: there is nothing to reload for, and the module's needsReload is not read.
+// The tiers are named here by their ids (t('quality.<id>')); a tier this file has no name for shows the module's own
+// label. initQualityControl() answers the function that writes the names again (for a change of language).
 
 function qualityApi(q = globalThis.slopQuality) {
   if (!q || typeof q.set !== 'function' || typeof q.get !== 'function') return null;
   const raw = q.tiers ?? q.TIERS ?? q.levels ?? [];
   const tiers = (Array.isArray(raw) ? raw : Object.keys(raw).map((id) => ({ id, ...(typeof raw[id] === 'object' ? raw[id] : {}) })))
-    .map((t) => (typeof t === 'object' ? { id: String(t.id ?? t.name), label: t.label } : { id: String(t) }))
-    .filter((t) => t.id && t.id !== 'auto' && t.id !== 'undefined');
+    .map((x) => (typeof x === 'object' ? { id: String(x.id ?? x.name), label: x.label } : { id: String(x) }))
+    .filter((x) => x.id && x.id !== 'auto' && x.id !== 'undefined');
   if (!tiers.length) return null;
   return {
     tiers,
@@ -524,9 +535,6 @@ function qualityApi(q = globalThis.slopQuality) {
       return { choice: String(v), tier: v === 'auto' ? q.tier ?? q.active ?? q.effective ?? null : v };
     },
     set: (id) => q.set(id),
-    // some settings (shadows at all, the terrain's mesh…) are built at start-up: true while a pick waits for a reload
-    needsReload: () => { const v = q.get(); return !!(v && typeof v === 'object' && v.needsReload); },
-    reload: () => (typeof q.reload === 'function' ? q.reload() : location.reload()),
     watch(fn) {
       if (typeof q.onChange === 'function') q.onChange(fn);
       else if (typeof q.subscribe === 'function') q.subscribe(fn);
@@ -540,43 +548,109 @@ function initQualityControl(quality) {
   const row = document.getElementById('quality-options');
   const note = document.getElementById('quality-note');
   const api = qualityApi(quality || undefined);
-  if (!root || !row || !api) return false;
-  const name = (t) => t.label || TIER_NAMES[t.id] || t.id.charAt(0).toUpperCase() + t.id.slice(1);
-  const buttons = [{ id: 'auto' }, ...api.tiers].map((t) => {
+  if (!root || !row || !api) return () => {};
+  const name = (tier) => {
+    const key = `quality.${tier.id}`, known = t(key);
+    return known !== key ? known : tier.label || tier.id.charAt(0).toUpperCase() + tier.id.slice(1);
+  };
+  const all = [{ id: 'auto' }, ...api.tiers];
+  const buttons = all.map((tier) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn';
-    b.dataset.quality = t.id;
-    b.textContent = name(t);
-    b.addEventListener('click', () => { api.set(t.id); show(); });
+    b.dataset.quality = tier.id;
+    b.addEventListener('click', () => { api.set(tier.id); show(); });
     row.append(b);
     return b;
   });
   function show() {
     const { choice, tier } = api.read();
+    buttons.forEach((b, i) => { b.textContent = name(all[i]); });
     for (const b of buttons) {
       b.classList.toggle('active', b.dataset.quality === choice);
       b.setAttribute('aria-pressed', String(b.dataset.quality === choice));
     }
     // Auto says which tier it settled on for this device
-    const settled = choice === 'auto' && tier != null ? api.tiers.find((t) => t.id === String(tier)) : null;
-    if (note) {
-      note.textContent = settled ? `Auto: ${name(settled)}` : '';
-      if (api.needsReload()) {
-        const again = document.createElement('button');
-        again.type = 'button';
-        again.className = 'seg-btn quality-reload';
-        again.textContent = 'Berrabiarazi · Recargar para aplicar';
-        again.addEventListener('click', () => api.reload());
-        if (note.textContent) note.append(' · ');
-        note.append(again);
-      }
-    }
+    const settled = choice === 'auto' && tier != null ? api.tiers.find((x) => x.id === String(tier)) : null;
+    if (note) note.textContent = settled ? t('quality.autoNote', { tier: name(settled) }) : '';
+    // a pick is applied in the running city (js/donostia/quality.js): no second pick while one is being applied
+    const applying = !!quality?.get?.()?.applying;
+    for (const b of buttons) b.disabled = applying;
   }
   api.watch(() => show());
   show();
   root.hidden = false;
-  return true;
+  return show;
+}
+
+// --- The language ------------------------------------------------------------------------------------------------------
+// A row of choices in the settings sheet, each language by its own name (and said in it: lang). English is in force
+// until another is picked; the pick applies at once and is remembered (js/donostia/i18n.js).
+
+function initLanguageControl() {
+  const row = document.getElementById('language-options');
+  if (!row) return;
+  const buttons = LANGS.map((id) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn';
+    b.dataset.lang = id;
+    b.lang = id;
+    b.textContent = LANG_NAMES[id];
+    b.addEventListener('click', () => setLang(id));
+    row.append(b);
+    return b;
+  });
+  const show = () => {
+    for (const b of buttons) {
+      b.classList.toggle('active', b.dataset.lang === getLang());
+      b.setAttribute('aria-pressed', String(b.dataset.lang === getLang()));
+    }
+  };
+  onLang(show);
+  show();
+}
+
+// --- Full screen -------------------------------------------------------------------------------------------------------
+// A page cannot go full screen by itself: it takes the visitor's hand, by one of two ways. Where the browser has the
+// Fullscreen API (Android, iPad, desktop) the settings sheet has a button that asks for it on the click and follows
+// the state (Esc and the browser's own gesture leave it too); a refusal is left at that. iPhone has no Fullscreen API
+// for pages: there the sheet says, in one line, that the app runs full screen from the home screen (the manifest and
+// index.html's Apple tags make it installable). Run from the home screen already, neither is shown. Answers the
+// function that writes the button's name again (for a change of language).
+
+function initFullscreenControl() {
+  const root = document.getElementById('fullscreen-control');
+  const button = document.getElementById('btn-fullscreen');
+  const hint = document.getElementById('fullscreen-hint');
+  if (!root || !button || !hint) return () => {};
+  const el = document.documentElement;
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const can = Boolean((document.fullscreenEnabled ?? document.webkitFullscreenEnabled) && request && exit);
+  const standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+  const ua = navigator.userAgent || '';
+  const apple = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const on = () => Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  const name = button.querySelector('.pop-name');
+  const show = () => {
+    button.setAttribute('aria-pressed', String(on()));
+    // (the name is the button's own: i18n.js must not put the other one back)
+    if (name) { name.dataset.i18n = on() ? 'screen.exit' : 'screen.full'; name.textContent = t(name.dataset.i18n); }
+  };
+  button.hidden = !can || standalone;
+  hint.hidden = can || standalone || !apple;
+  root.hidden = button.hidden && hint.hidden;
+  if (button.hidden) return () => {};
+  button.addEventListener('click', () => {
+    // (the prefixed calls answer nothing; the standard ones a promise that rejects when the browser says no)
+    try {
+      Promise.resolve(on() ? exit.call(document) : request.call(el, { navigationUI: 'hide' })).catch(() => {});
+    } catch { /* refused: the page stays as it is */ }
+  });
+  for (const type of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(type, show);
+  show();
+  return show;
 }
 
 // --- The page under the fingers ----------------------------------------------------------------------------------------

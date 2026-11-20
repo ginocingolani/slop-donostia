@@ -5,7 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { sprayPlaces } from './sea-state.js';
-import { detail } from './quality.js';
+import { effectTargets } from './quality.js';
 
 // js/donostia/spray.js
 // Spray in a big swell (js/donostia/sea-state.js: from ~2 m, the real-time switch on): where the open swell runs into
@@ -24,7 +24,7 @@ const hash = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return
 function sprayMaterial(seaLevel, U) {
   const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
   // (as the ferries' wakes: the water's normal & glossiness under the spray go, so it reflects nothing)
-  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  effectTargets(mat, mrt({ normal: vec4(0.0), metalRough: vec4(0.0) }));
   const place = attribute('aSprayPlace', 'vec4'); // x, z, phase, strength
   const drop = attribute('aSprayDrop', 'vec4'); // spread direction x, z (unit), launch (0..1), size (0..1)
   const T = U.period;

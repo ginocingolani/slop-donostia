@@ -409,6 +409,8 @@ body[data-mode='god'] .gauge-alt {
   letter-spacing: 0.1em;
 }
 
+/* (the street's line inside the card is the touch layouts': elsewhere the plaque over the card says it) */
+.location-street,
 #hud-location-signs:empty,
 .location-place:empty,
 .location-poi[hidden] {
@@ -648,8 +650,8 @@ body[data-mode='god'] .gauge-alt {
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
-   Settings sheet: the quality control (js/donostia/hud.js fills it where js/donostia/quality.js is there) and, on
-   touch screens, the tools the bar leaves out
+   Settings sheet: the quality control (js/donostia/hud.js fills it where js/donostia/quality.js is there), the
+   language (js/donostia/i18n.js) and, on touch screens, the tools the bar leaves out
    ------------------------------------------------------------------------------------------------------------------ */
 .visually-hidden {
   position: absolute;
@@ -668,13 +670,11 @@ body[data-mode='god'] .gauge-alt {
 /* shown by the touch layouts below */
 .dock-only,
 .dock-label,
-.touch-only,
 .settings-more {
   display: none;
 }
 
-/* the flight stick on, the row of looks open */
-#btn-fly[aria-pressed='true'],
+/* the row of looks open */
 #btn-time[aria-expanded='true'] {
   background: var(--hover);
   color: var(--harri);
@@ -691,8 +691,9 @@ body[data-mode='god'] .gauge-alt {
   box-shadow: inset 0 0 0 1px var(--divider);
 }
 
+/* (each as wide as its word and its share of what is left: Medium and High, Euskara and Español keep apart) */
 .seg-btn {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-width: 0;
   height: 32px;
   padding: 0 8px;
@@ -716,6 +717,10 @@ body[data-mode='god'] .gauge-alt {
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
+.settings {
+  min-width: min(330px, calc(100vw - 32px));
+}
+
 .settings-note {
   padding: 0 10px 6px;
   font-size: 11.5px;
@@ -725,6 +730,23 @@ body[data-mode='god'] .gauge-alt {
 
 .settings-note:empty {
   display: none;
+}
+
+/* Full screen: its button where the browser can do it, or (iPhone) the line that says how; neither where it runs
+   from the home screen already (js/donostia/hud.js) */
+#fullscreen-control[hidden],
+#btn-fullscreen[hidden],
+#fullscreen-hint[hidden] {
+  display: none;
+}
+
+#fullscreen-hint {
+  padding-top: 2px;
+  line-height: 1.45;
+}
+
+#btn-fullscreen[aria-pressed='true'] .icon {
+  color: var(--text);
 }
 
 .more-item {
@@ -853,8 +875,9 @@ body {
 }
 
 /* ------------------------------------------------------------------------------------------------------------------
-   Touch (body.touch-enabled, js/donostia/touch.js). The bottom corners belong to the thumbs: the flight stick on the
-   left and its buttons on the right once Hegan turns them on (body.touch-fly), nothing at all until then.
+   Touch (body.touch-enabled, js/donostia/touch.js). The bottom corners belong to the thumbs, always: the flight stick
+   on the left and its buttons on the right. The radar card says the street too, as a plain line under the auzoa, and
+   the street's plaque is not shown: the two together took too much of a small screen.
    ------------------------------------------------------------------------------------------------------------------ */
 #touch-controls {
   left: var(--safe-l);
@@ -889,11 +912,12 @@ body {
   box-shadow: var(--shadow), inset 0 0 0 12px rgba(220, 181, 116, 0.08), 0 0 0 4px rgba(220, 181, 116, 0.22);
 }
 
-/* climb & descend stacked under the thumb at the edge, the fast gear's latch beside them */
+/* climb & descend, one over the other under the right thumb at the edge: a column as tall as the stick's ring
+   across from it (the fast gear is the stick pushed past its rim, and has no button) */
 .touch-actions {
-  grid-template-columns: repeat(2, 60px);
-  grid-template-areas: 'boost up' 'boost down';
-  gap: 10px;
+  grid-template-columns: 60px;
+  grid-template-areas: 'up' 'down';
+  gap: 12px;
   padding-bottom: 0;
 }
 
@@ -904,60 +928,9 @@ body {
   user-select: none;
 }
 
-.touch-boost { border-color: rgba(220, 181, 116, 0.6); }
-
 .touch-action[data-touch-action='up'] { grid-area: up; }
 .touch-action[data-touch-action='down'] { grid-area: down; }
-.touch-boost { grid-area: boost; align-self: center; }
 
-/* What the fingers do: a line over the bottom controls, gone with the first gesture */
-.touch-hint {
-  position: fixed;
-  z-index: 11;
-  left: 50%;
-  bottom: calc(var(--safe-b) + var(--dock-h) + 10px);
-  translate: -50% 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0 6px;
-  width: max-content;
-  max-width: min(480px, calc(100vw - 2 * var(--edge)));
-  padding: 8px 14px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-panel);
-  background: var(--glass-strong);
-  box-shadow: var(--shadow);
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  text-align: center;
-  color: var(--text);
-  pointer-events: none;
-  animation: rise-in 0.4s var(--ease-out) both;
-}
-
-.touch-hint[hidden] {
-  display: none;
-}
-
-/* (each gesture stays whole on its line) */
-.touch-hint span {
-  white-space: nowrap;
-}
-
-.touch-hint span:not(:last-child)::after {
-  content: '·';
-  margin-left: 6px;
-  color: var(--text-3);
-}
-
-/* (over the stick and its buttons while they show) */
-body.touch-fly .touch-hint {
-  bottom: calc(var(--safe-b) + var(--dock-h) + 150px);
-}
-
-body.touch-enabled .touch-only { display: inline-flex; }
 body.touch-enabled .settings-more { display: block; }
 body.touch-enabled .hud-bottom-right { display: none; }
 body.touch-enabled .location-alt { display: inline; }
@@ -968,15 +941,34 @@ body.touch-enabled .fullmap-close { min-width: 48px; justify-content: center; }
 /* (under 16 px iOS zooms the page into a focused field) */
 body.touch-enabled .fullmap-search { font-size: 16px; }
 
-/* The radar card: in the bottom left corner, lifted over the stick while it shows. Its smaller size has a smaller
-   inscription, so a whole auzo name still fits beside the altitude */
+/* The radar card: in the bottom left corner, over the stick. Its smaller size has a smaller inscription, so a whole
+   auzo name still fits beside the altitude */
 body.touch-enabled .radar { display: block; width: 176px; height: 116px; }
 body.touch-enabled .location { padding: 8px 11px 7px; }
+
+/* The street, inside the card: one plain line under the auzoa, smaller and quieter than it, with no plaque about it.
+   A long name gives way with an ellipsis (a second street at a corner goes first) and never takes a second line, so
+   the card keeps its size. The line takes the place's (a landmark, a square, a beach) while there is a street to
+   say, and the plaque over the card is not shown. */
+body.touch-enabled #hud-location-signs { display: none; }
+body.touch-enabled .location-street {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.3;
+  color: var(--text-2);
+}
+body.touch-enabled .location-street[hidden] { display: none; }
+body.touch-enabled .location:has(.location-street:not([hidden])) .location-poi { display: none; }
 body.touch-enabled .location-place { font-size: 15px; letter-spacing: 0.05em; }
 body.touch-enabled .location-place .loc-es { display: none; }
 body.touch-enabled .location-place .loc-eu { flex-shrink: 1; min-width: 0; }
-body.touch-enabled .hud-bottom-left { left: var(--safe-l); bottom: var(--safe-b); }
-body.touch-fly .hud-bottom-left { bottom: calc(var(--safe-b) + 152px); }
+body.touch-enabled .hud-bottom-left { left: var(--safe-l); bottom: calc(var(--safe-b) + 152px); }
 
 /* The popovers hang under the toolbar, as tall as the screen the browser's bars leave */
 body.touch-enabled #teleport-popover,
@@ -1001,8 +993,7 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
    the screen is too narrow for both), so the bottom corners stay the thumbs'
    ------------------------------------------------------------------------------------------------------------------ */
 @media (max-height: 500px) {
-  body.touch-enabled .hud-bottom-left,
-  body.touch-fly .hud-bottom-left {
+  body.touch-enabled .hud-bottom-left {
     display: flex;
     flex-direction: column-reverse;
     top: var(--safe-t);
@@ -1014,15 +1005,13 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled .location { padding: 6px 10px 5px; }
   body.touch-enabled .location-place { font-size: 13px; }
   body.touch-enabled .location-poi { display: none; }
-  body.touch-enabled .street-sign { padding: 6px 10px 5px; font-size: 13px; }
+  body.touch-enabled .location-street { font-size: 11.5px; }
   body.touch-enabled .live-readout { min-height: 30px; padding: 4px 10px; }
   #touch-stick { width: 120px; height: 120px; }
-  body.touch-fly .touch-hint { bottom: var(--safe-b); }
 }
 
 @media (max-height: 500px) and (max-width: 719px) {
-  body.touch-enabled .hud-bottom-left,
-  body.touch-fly .hud-bottom-left { top: calc(var(--safe-t) + 60px); }
+  body.touch-enabled .hud-bottom-left { top: calc(var(--safe-t) + 60px); }
   body.touch-enabled .live-readout { max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 196px); }
   body.touch-enabled .live-word,
   body.touch-enabled .live-sub,
@@ -1031,9 +1020,10 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
 
 /* ------------------------------------------------------------------------------------------------------------------
    Phones upright: the city owns the screen. The toolbar becomes a bar along the bottom, under the thumb: the time of
-   day folded behind one button (its five looks open as a row over the bar), Joan, Mapa, the flight stick's switch
-   and the settings sheet, which takes clean view, the credits and the repository. The popovers rise from the bar as
-   sheets. The real-time readout and the radar card are a small column in the top left corner.
+   day folded behind one button (its five looks open as a row over the bar), the fly-to list, the map and the settings
+   sheet, which takes the quality, the language, clean view, the credits and the repository. The popovers rise from
+   the bar as sheets. The real-time readout and the radar card (the auzoa, the street, the radar) are a small column in the top
+   left corner.
    ------------------------------------------------------------------------------------------------------------------ */
 @media (max-width: 620px) and (min-height: 501px) {
   body.touch-enabled { --dock-h: 64px; }
@@ -1160,7 +1150,7 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled .tp-btn { min-height: 50px; justify-content: center; }
   body.touch-enabled .credits { font-size: 12.5px; }
 
-  /* top left: the readout, down to its figures on one line, over the radar card and the street's plaque */
+  /* top left: the readout, down to its figures on one line, over the radar card */
   body.touch-enabled .live-readout {
     flex-wrap: nowrap;
     justify-content: flex-start;
@@ -1175,8 +1165,7 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled .live-sub,
   body.touch-enabled .live-credit { display: none; }
 
-  body.touch-enabled .hud-bottom-left,
-  body.touch-fly .hud-bottom-left {
+  body.touch-enabled .hud-bottom-left {
     flex-direction: column-reverse;
     top: var(--safe-t);
     bottom: auto;
@@ -1188,8 +1177,8 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled .radar-expand { display: none; }
   body.touch-enabled .location { padding: 7px 10px 6px; }
   body.touch-enabled .location-place { font-size: 14px; }
-  body.touch-enabled .location-poi-line { font-size: 11.5px; }
-  body.touch-enabled .street-sign { padding: 7px 10px 6px; font-size: 13px; max-width: 220px; }
+  body.touch-enabled .location-poi-line,
+  body.touch-enabled .location-street { font-size: 11.5px; }
 
   /* The full map: the search along the top, everything else by the thumbs: close in the bottom left corner, the
      zoom and the centring buttons in the bottom right, the status line and the credits under them */
@@ -1223,3 +1212,11 @@ body.touch-enabled .fullmap-footer { bottom: var(--safe-b); }
   body.touch-enabled #hud-toolbar { width: auto; }
   body.touch-enabled .live-readout { gap: 4px 7px; padding: 4px 8px; font-size: 11px; }
 }
+
+/* js/donostia/main.js's pill while shaders compile behind the city ("Loading details… 40%"): in the HUD's face, and on
+   phones clear of the bottom bar, between the stick and the Up / Down buttons */
+#compile-note {
+  font-family: var(--font-ui, inherit);
+  z-index: 20;
+}
+body.touch-enabled #compile-note { bottom: calc(var(--safe-b) + var(--dock-h) + 10px); }

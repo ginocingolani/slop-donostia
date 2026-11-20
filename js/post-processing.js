@@ -98,7 +98,9 @@ function createPostProcessing(renderer, sceneColor, reflections, {
   }
 
   applyPreset('golden');
-  return { outputNode, applyPreset, applyLook, looks };
+  // dispose(): the bloom passes' render targets, for a caller that builds its post-processing again (Slop Donostia's
+  // quality tiers, js/donostia/main.js)
+  return { outputNode, applyPreset, applyLook, looks, dispose: () => bloomPass?.dispose() };
 }
 
 export { createPostProcessing, LOOKS };

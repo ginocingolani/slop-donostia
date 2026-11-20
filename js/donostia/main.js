@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, smoothstep } from 'three/tsl';
+import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, vec4, smoothstep } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from '../post-processing.js';
 import { LightingSystem } from '../lighting.js';
@@ -25,7 +25,7 @@ import { initHud } from './hud.js';
 import { DONOSTIA_PRESETS, DONOSTIA_CAMERA } from './presets.js';
 import * as live from './live-state.js';
 import { createLiveSky } from './live-sky.js';
-import { quality, readEnvironment, detail, TIERS } from './quality.js';
+import { quality, readEnvironment, detail, TIERS, needsRebuild } from './quality.js';
 
 // js/donostia/main.js
 // Slop Donostia: San Sebastián from the top of Igeldo to the end of Sagüés, built on the Basque LiDAR terrain, the
@@ -38,11 +38,17 @@ import { quality, readEnvironment, detail, TIERS } from './quality.js';
 // buildWorld() and createView() hold everything but the page (DOM, HUD, god camera), so a headless benchmark can run
 // the very same scene and render pipeline; initApp() wires them to index.html.
 //
-// Quality (js/donostia/quality.js): the tier's settings reach the scene in two steps. The boot ones are options of
-// buildWorld() and createView() (shadows at all, the ground maps, the MRT targets SSR reads) and of the renderer (MSAA);
-// the live ones are applyWorldQuality() and view.setPost(), which initApp() calls whenever the controller's state
-// changes (a pick in the HUD, a step of the frame-rate governor). Without options both build the desktop picture
-// (TIERS.ultra), as they always have.
+// Quality (js/donostia/quality.js): the tier's settings reach the scene in two steps. The structural ones are options
+// of buildWorld() and createView() (shadows at all, the ground maps, the terrain's mesh, MSAA, the MRT targets SSR
+// reads); the live ones are applyWorldQuality() and view.setPost(), which initApp() calls whenever the controller's
+// state changes (a pick in the HUD, a step of the frame-rate governor). A tier picked in the running city changes the
+// structural ones too, without a reload: applyWorldStructure() and view.rebuild(), then the shaders again as at
+// start-up (initApp()'s restructure()). Without options both build the desktop picture (TIERS.ultra), as they always
+// have.
+//
+// Shaders: nothing is drawn before its pipelines are compiled (createCompiler()). The loading screen lifts once the
+// first view's are; on the phone tiers that is what the camera sees and what is everywhere, and the rest follow in the
+// background, nearest first.
 
 const STORAGE_KEY = 'donostia-god-camera';
 
@@ -147,7 +153,7 @@ export async function buildWorld(renderer, { status = () => {}, mark = () => {},
   modules.water?.traverse((o) => { o.renderOrder = 1; });
   lighting.sky.renderOrder = 2;
 
-  const world = { scene, lighting, liveSky, terrain, modules, updaters };
+  const world = { scene, lighting, liveSky, terrain, modules, updaters, groundMaterial };
   applyWorldQuality(world, settings);
   return world;
 }
@@ -182,6 +188,44 @@ export function applyWorldQuality(world, settings) {
   modules.weather?.userData.setDropShare(settings.rain);
   if (modules.water) modules.water.userData.spray = settings.spray;
   liveSky.bakeGap = settings.envBakeGap;
+}
+
+/**
+ * A quality tier's structural settings on a built world, going from `from` to `to` (js/donostia/quality.js's
+ * structural()): shadows at all, whether the effects' materials name the targets SSR reads, the ground's maps (baked,
+ * or the terrain's classes: the baked ones download now if the city started without them) and the terrain's mesh
+ * (coarse or full: built again from the height field). Every material's pipelines are different after it, so the
+ * caller rebuilds its view and compiles again (initApp()'s restructure()); applyWorldQuality() follows it.
+ */
+export async function applyWorldStructure(world, renderer, to, from) {
+  const { scene, lighting, terrain, modules } = world;
+  renderer.shadowMap.enabled = to.shadows;
+  lighting.sunLight.castShadow = to.shadows;
+  detail.mrt = Boolean(to.ssr);
+  const seen = new Set();
+  scene.traverse((o) => {
+    for (const material of o.material ? [].concat(o.material) : []) {
+      if (seen.has(material)) continue;
+      seen.add(material);
+      const node = material.userData.effectTargets;
+      const wanted = node && detail.mrt ? node : null;
+      if (node && material.mrtNode !== wanted) {
+        material.mrtNode = wanted;
+        material.needsUpdate = true;
+      }
+    }
+  });
+  if (to.groundMaps !== from.groundMaps) {
+    const old = world.groundMaterial;
+    world.groundMaterial = await createGroundMaterial(terrain, to.groundMaps === 'classes' ? CLASSES_ONLY : null);
+    terrain.setMaterial(world.groundMaterial);
+    old?.userData.release?.();
+  }
+  if (to.terrainMesh !== from.terrainMesh) {
+    terrain.rebuild(world.groundMaterial, { coarse: to.terrainMesh === 'coarse' });
+    // (the new chunks cast as built: applyWorldQuality() sets them to the tier's again)
+    delete modules.terrain.userData.casting;
+  }
 }
 
 // The terrain's and the buildings' vertex buffers are 170 to 190 MB that only the GPU reads once they are uploaded (the
@@ -232,62 +276,459 @@ function shareOpaqueShadowPrograms(renderer) {
   };
 }
 
+// three r186.1 hands an InstancedMesh of up to 1024 instances its matrices in a uniform buffer, declared in the vertex
+// shader as an array of the mesh's own count under a name numbered afresh in every build: no two instanced meshes
+// shared a vertex shader or a pipeline, not even the same mesh's draws into the scene and into each shadow cascade
+// (the port's fittings alone took 8 pipelines for one material; the shadow maps 42). Above that count it binds the
+// matrices as instanced vertex attributes instead, a shader that says nothing of the mesh: with the limit it compares
+// with at zero every instanced mesh goes that way, and those of one material and vertex layout share one program and
+// one pipeline. (three r186.1 internals: the backend's capabilities; the skinning and range nodes that also ask are
+// not used here.)
+function shareInstancedPrograms(renderer) {
+  const capabilities = renderer.backend.capabilities;
+  if (capabilities?.getUniformBufferLimit) capabilities.getUniformBufferLimit = () => 0;
+}
+
 // compileAsync() builds the node graphs in slices and has the GPU process compile the pipelines in parallel, but it
 // takes one object at a time and yields between them; several calls side by side keep both busy (as js/main.js)
 const COMPILE_POOL = 16;
 const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
+// (between two background compiles: a frame drawn in between, or a moment where there are none, in a hidden tab)
+const nextFrame = () => new Promise((resolve) => {
+  if (typeof requestAnimationFrame !== 'function' || globalThis.document?.visibilityState === 'hidden') { setTimeout(resolve, 30); return; }
+  const timer = setTimeout(resolve, 250);
+  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+});
+
+// What the first view takes whatever the camera looks at: the ground, the sea, the sky, the houses and the trees are
+// everywhere (and a handful of programs between them)
+const EVERYWHERE = ['terrain', 'water', 'sky', 'buildings', 'vegetation'];
+// Of the rest, the first view takes what the camera sees within NEAR metres, or from further when it is large enough
+// on screen (radius over distance: 0.25 is a quarter of a phone's height or so): a landmark across the bay waits a
+// moment. What is merged across the city (the railings, the lamps, the shore's walls: bounds wider than SPREAD
+// metres, which say nothing of where it shows) waits too, at the front of the background's queue. And of what
+// qualifies only the FIRST_FEW nearest materials are taken, so a start in the thick of the landmarks is no slower
+// than one on the hill: each is some 45 kB of WGSL, half a second or so of a phone's compiler.
+const NEAR = 160, LARGE = 0.25, SPREAD = 500, FIRST_FEW = 6;
+// three's shadow pass draws a front-sided caster's back faces (r186.1's _shadowSide)
+const SHADOW_SIDE = { [THREE.FrontSide]: THREE.BackSide, [THREE.BackSide]: THREE.FrontSide, [THREE.DoubleSide]: THREE.DoubleSide };
+
+/**
+ * The shader compiler of a view: which pipelines exist, which objects wait for theirs, and the order they get them in.
+ *
+ * WebGPU compiles a pipeline the first time an object is drawn with it, on the spot: a stalled frame. So nothing is
+ * drawn before its pipelines exist. Every drawable of the scene belongs to a job (the objects of one material: they
+ * share its programs); the objects of a job that is not compiled yet are held back, on no layer at all, so neither the
+ * camera nor the sun's cascades draw them, whatever their module does with .visible meanwhile. A job compiles through
+ * renderer.compileAsync(), which builds the node graph in slices and has the pipeline made off the main thread: once
+ * for the scene pass and, for what casts shadows, once for the shadow map (see precompile()). Then its objects appear.
+ *
+ * first(onProgress) compiles the first view's jobs, a pool of them at a time, behind the loading screen: with
+ * `progressive` (the phone tiers) what the camera sees from where it starts and what is everywhere, without it every
+ * visible object (the desktop, as it always was). start() then compiles the rest in the background, one object at a
+ * time with a frame drawn in between, nearest the camera first: what is in view, then what is around, then what is
+ * hidden (the rain before it rains, the levels of detail not shown yet), which used to compile in the frame that first
+ * showed it. The order is worked out again for every job, so flying or teleporting brings what is there to the front.
+ * adopt() takes in what a module adds to the scene later (the sea's spray).
+ *
+ * (three r186.1 internals, here and in precompile(): the renderer's render contexts, _getShadowNodes, the shape of
+ * the shadow pass's material, and compileAsync() projecting its object before its first await.)
+ */
+function createCompiler(renderer, world, camera, passes) {
+  const { scene, lighting } = world;
+  const held = new Map(); // object -> its layers' mask, while it waits
+  const known = new WeakSet();
+  const twins = new WeakMap(); // material -> its shadow pass material
+  const everywhere = new WeakSet();
+  const frustum = new THREE.Frustum(), matrix = new THREE.Matrix4(), sphere = new THREE.Sphere();
+  const listeners = new Set();
+  let jobs = [], byMaterial = new Map(), run = 0, working = false;
+
+  const drawable = (o) => (o.isMesh || o.isLine || o.isPoints || o.isSprite) && o.material && o.geometry;
+  const hold = (o) => { if (!held.has(o)) { held.set(o, o.layers.mask); o.layers.mask = 0; } };
+  const release = (o) => { if (held.has(o)) { o.layers.mask = held.get(o); held.delete(o); } };
+  const layersOf = (o) => held.get(o) ?? o.layers.mask;
+  const shown = (o) => { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; };
+
+  const enlist = (o) => {
+    known.add(o);
+    const key = Array.isArray(o.material) ? o : o.material;
+    let job = byMaterial.get(key);
+    // (a material whose job is done already: this object may still be another vertex layout, a job of its own)
+    if (!job || job.done) {
+      job = { objects: [], done: false, busy: false, everywhere: false };
+      byMaterial.set(key, job);
+      jobs.push(job);
+    }
+    job.objects.push(o);
+    if (everywhere.has(o)) job.everywhere = true;
+    hold(o);
+  };
+
+  // Every drawable of the scene into its job, all of them waiting (again: after a rebuild every pipeline is another)
+  const collect = () => {
+    run++;
+    for (const o of [...held.keys()]) release(o);
+    jobs = [];
+    byMaterial = new Map();
+    for (const name of EVERYWHERE) world.modules[name]?.traverse((o) => everywhere.add(o));
+    scene.traverse((o) => { if (drawable(o)) enlist(o); });
+  };
+
+  // What a module added since: it waits like the rest (called every frame; a few thousand nodes to walk)
+  const adopt = () => {
+    if (!started) return;
+    let added = false;
+    scene.traverse((o) => {
+      if (known.has(o) || !drawable(o)) return;
+      enlist(o);
+      added = true;
+    });
+    if (added) start();
+  };
+
+  // Where an object is for the camera: { seen (in the frustum, or never culled), distance, size (radius / distance) }
+  const place = (o, from) => {
+    const bounds = o.isInstancedMesh ? (o.boundingSphere || (o.computeBoundingSphere(), o.boundingSphere)) : (o.geometry.boundingSphere || (o.geometry.computeBoundingSphere(), o.geometry.boundingSphere));
+    if (!bounds || !Number.isFinite(bounds.radius)) return { seen: true, spread: true, distance: 0, size: 1 };
+    sphere.copy(bounds).applyMatrix4(o.matrixWorld);
+    const centre = sphere.center.distanceTo(from);
+    return {
+      seen: !o.frustumCulled || frustum.intersectsSphere(sphere), spread: sphere.radius > SPREAD,
+      distance: Math.max(0, centre - sphere.radius), size: sphere.radius / Math.max(centre, 1)
+    };
+  };
+  const look = () => {
+    camera.updateMatrixWorld();
+    matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(matrix, camera.coordinateSystem, camera.reversedDepth);
+  };
+
+  // The objects of a job that compileAsync() has to see: one of each kind for plain meshes (three keys a shader by
+  // the material, the vertex layout, the winding and whether the object receives shadows, and the others' draws find
+  // it in its cache), every instanced mesh (keyed by the mesh), every multi-material one
+  const kindOf = (o) => {
+    if (o.isInstancedMesh || o.count > 1 || Array.isArray(o.material)) return null;
+    const g = o.geometry;
+    let kind = `${o.type},${o.receiveShadow},${o.castShadow},${g.index ? 'i' : ''},${o.matrixWorld.determinant() < 0}`;
+    for (const name of Object.keys(g.attributes).sort()) {
+      const a = g.attributes[name];
+      kind += `,${name}:${a.itemSize}:${a.normalized ? 'n' : ''}:${a.data ? a.data.stride : ''}:${a.offset || ''}`;
+    }
+    return kind;
+  };
+  const units = (job) => {
+    const kinds = new Set();
+    return job.objects.filter((o) => {
+      const kind = kindOf(o);
+      if (kind === null) return true;
+      if (kinds.has(kind)) return false;
+      kinds.add(kind);
+      return true;
+    });
+  };
+
+  // The material the shadow pass draws `material`'s casters with. three r186.1 has one override material per light
+  // and rewrites its nodes, side and alpha test for every caster as it draws; compileAsync() cannot follow that (it
+  // builds after the override has been put back), so the same material is made here for it to compile: same class,
+  // same nodes, same state, hence the same WGSL and the same pipeline key as the shadow pass will ask for.
+  const shadowTwin = (material) => {
+    let entry = twins.get(material);
+    if (!entry || entry.version !== material.version) {
+      const { colorNode, depthNode, positionNode } = renderer._getShadowNodes(material);
+      const twin = new THREE.NodeMaterial();
+      twin.isShadowPassMaterial = true;
+      twin.name = 'ShadowMaterial';
+      twin.blending = THREE.NoBlending;
+      twin.fog = false;
+      twin.colorNode = colorNode || vec4(0, 0, 0, 1);
+      if (depthNode) twin.depthNode = depthNode;
+      if (positionNode) twin.positionNode = positionNode;
+      twin.side = material.shadowSide !== null ? material.shadowSide : SHADOW_SIDE[material.side];
+      twin.alphaTest = material.alphaTest;
+      twin.alphaMap = material.alphaMap;
+      twin.displacementMap = material.displacementMap;
+      twin.displacementScale = material.displacementScale;
+      twin.displacementBias = material.displacementBias;
+      // (to the letter, null included: the value is part of the pipeline's key)
+      twin.transparent = material.transparent || material.transmission > 0 ||
+        (material.transmissionNode && material.transmissionNode.isNode) || (material.backdropNode && material.backdropNode.isNode);
+      entry = { version: material.version, twin };
+      twins.set(material, entry);
+    }
+    return entry.twin;
+  };
+
+  const castsShadows = (o) => renderer.shadowMap.enabled && lighting.sunLight.castShadow && lighting.sunLight.shadow.map &&
+    o.castShadow && !Array.isArray(o.material) && layersOf(o) & lighting.sunLight.shadow.getCamera(0).layers.mask;
+
+  // One object's pipeline for the scene pass (shadows: false) or the sun's shadow map. compileAsync() projects the
+  // object and notes its render context before its first await, then builds: so the object is made drawable (shown,
+  // on its layers, never culled, alone, for the shadow map with its twin material) and the renderer pointed at the
+  // pass's target only for that call, and everything is put back before a frame can be drawn in between.
+  // The scene pass renders nested in the post-processing chain (call depth 1) while compileAsync() files its work
+  // under a top-level render's context: without the patch of the contexts' get() the first frame would build every
+  // render object again.
+  const contexts = renderer._renderContexts, getContext = contexts.get;
+  const precompile = (o, shadows) => {
+    const { scenePass, sceneMRT } = passes();
+    const sun = lighting.sunLight.shadow;
+    const eye = shadows ? sun.getCamera(0) : camera;
+    if (!(layersOf(o) & eye.layers.mask)) return Promise.resolve();
+    const before = { visible: o.visible, culled: o.frustumCulled, mask: o.layers.mask, material: o.material, children: o.children, target: renderer.getRenderTarget(), mrt: renderer.getMRT() };
+    let promise;
+    try {
+      o.visible = true;
+      o.frustumCulled = false;
+      o.layers.mask = layersOf(o);
+      o.children = [];
+      if (shadows) o.material = shadowTwin(o.material);
+      renderer.setRenderTarget(shadows ? sun.map : scenePass.renderTarget);
+      renderer.setMRT(shadows ? null : sceneMRT);
+      contexts.get = (target = null, m = null, depth = 0) => getContext.call(contexts, target, m, target === scenePass.renderTarget ? 1 : depth);
+      promise = renderer.compileAsync(o, eye, scene);
+    } catch (e) {
+      promise = Promise.reject(e);
+    } finally {
+      contexts.get = getContext;
+      renderer.setMRT(before.mrt);
+      renderer.setRenderTarget(before.target);
+      o.material = before.material;
+      o.children = before.children;
+      o.layers.mask = before.mask;
+      o.frustumCulled = before.culled;
+      o.visible = before.visible;
+    }
+    // (what fails here the frame that first draws it compiles instead, as it always could)
+    return promise.catch((e) => console.warn('[compile]', o.name || o.type, e));
+  };
+
+  const finish = (job) => {
+    job.done = true;
+    job.busy = false;
+    for (const o of job.objects) release(o);
+  };
+  const progress = () => {
+    const total = jobs.length, done = jobs.reduce((n, job) => n + (job.done ? 1 : 0), 0);
+    for (const fn of listeners) { try { fn({ done, total, pending: total - done }); } catch (e) { console.warn('[compile]', e); } }
+  };
+
+  // The first view (see the header): each compile starts in a task of its own, since compileAsync() keeps one
+  // precompilation state on the renderer, which must not be mid-step for two of them in the same microtask checkpoint
+  async function first(progressive, onProgress = () => {}) {
+    collect();
+    const mine = run;
+    look();
+    const near = [];
+    let wanted = jobs.filter((job) => {
+      let nearest = Infinity;
+      for (const o of job.objects) {
+        if (!shown(o)) continue;
+        if (!progressive || job.everywhere) return true;
+        const p = place(o, camera.position);
+        if (p.seen && !p.spread && (p.distance < NEAR || p.size > LARGE)) nearest = Math.min(nearest, p.distance - p.size);
+      }
+      if (nearest < Infinity) near.push([nearest, job]);
+      return false;
+    });
+    // (nearest first, the larger on screen of two as near)
+    wanted = wanted.concat(near.sort((a, b) => a[0] - b[0]).slice(0, FIRST_FEW).map(([, job]) => job));
+    // What a first-view job holds that is not shown now stays with it where a shown object of its kind compiles (the
+    // terrain's other levels of detail: they must be there the moment the camera moves) and is otherwise another job,
+    // for the background (the props beyond their draw distance, each an instanced mesh with a shader build of its
+    // own: on a desktop a sixth of the compile's time)
+    for (const job of wanted) {
+      job.busy = job.first = true;
+      const now = job.objects.filter(shown), kinds = new Set(now.map(kindOf));
+      const later = job.objects.filter((o) => !now.includes(o) && !(kindOf(o) !== null && kinds.has(kindOf(o))));
+      if (!later.length) continue;
+      const waiting = new Set(later);
+      // (the shown ones first: they are the ones compiled)
+      job.objects = [...now, ...job.objects.filter((o) => !now.includes(o) && !waiting.has(o))];
+      jobs.push({ objects: later, done: false, busy: false, everywhere: job.everywhere });
+    }
+    // (a job's objects in turn, as its first build serves the rest; the jobs side by side)
+    const groups = wanted.map(units);
+    let done = 0, total = groups.reduce((n, group) => n + group.length, 0);
+    const pool = async (lists, shadows) => {
+      let next = 0;
+      const worker = async () => {
+        while (next < lists.length && mine === run) {
+          for (const o of lists[next++]) {
+            await nextTask();
+            await precompile(o, shadows);
+            onProgress(++done / total);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
+    };
+    await pool(groups, false);
+    // (then the shadow map's, which exists once a lit material has been built)
+    const casters = groups.map((group) => group.filter(castsShadows)).filter((group) => group.length);
+    total += casters.reduce((n, group) => n + group.length, 0);
+    await pool(casters, true);
+    if (mine !== run) return;
+    for (const job of wanted) finish(job);
+    progress();
+  }
+
+  // The next job for the background: what is shown and in view first, then by distance (to the camera, or to where a
+  // flight is heading: `ahead`), and what is hidden last
+  const nextJob = (ahead) => {
+    look();
+    let best = null, bestScore = Infinity;
+    for (const job of jobs) {
+      if (job.done || job.busy) continue;
+      let score = Infinity;
+      for (const o of job.objects) {
+        const p = place(o, camera.position);
+        let d = p.seen ? p.distance : p.distance + 4000;
+        if (ahead) d = Math.min(d, place(o, ahead).distance);
+        if (!shown(o)) d += 1e6;
+        if (d < score) score = d;
+      }
+      if (score < bestScore) { bestScore = score; best = job; }
+    }
+    return best;
+  };
+
+  let aheadOf = () => null;
+  const idle = []; // stop()'s promises, for the loop to resolve as it ends
+  async function background() {
+    if (working) return;
+    working = true;
+    const mine = run;
+    try {
+      for (;;) {
+        const job = mine === run ? nextJob(aheadOf()) : null;
+        if (!job) break;
+        job.busy = true;
+        for (const o of units(job)) {
+          await nextTask();
+          if (mine !== run) return;
+          await precompile(o, false);
+          if (mine === run && castsShadows(o)) await precompile(o, true);
+          await nextFrame();
+        }
+        if (mine !== run) return;
+        finish(job);
+        progress();
+      }
+    } finally {
+      working = false;
+      for (const resolve of idle.splice(0)) resolve();
+      // (a rebuild meanwhile: its own start() found this loop still winding down)
+      if (mine !== run && started) start();
+    }
+  }
+  let started = false;
+  function start() {
+    started = true;
+    background();
+  }
+
+  return {
+    first, start, adopt,
+    /** Stops the background (a rebuild follows: first() collects the scene again); resolves once it has wound down. */
+    stop() {
+      started = false;
+      run++;
+      return working ? new Promise((resolve) => idle.push(resolve)) : Promise.resolve();
+    },
+    /** fn({ done, total, pending }) whenever a job is compiled; returns the unsubscriber. */
+    onProgress(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    /** fn() -> Vector3 | null: where the camera is flying to, if it is (its objects come first). */
+    set ahead(fn) { aheadOf = fn; },
+    get pending() { return jobs.reduce((n, job) => n + (job.done ? 0 : 1), 0); },
+    get total() { return jobs.length; },
+    /** For ?debug: the jobs as they stand. */
+    debug: () => {
+      look();
+      return jobs.map((job) => {
+        const o = job.objects[0], material = [].concat(o.material)[0];
+        const places = job.objects.filter(shown).map((x) => place(x, camera.position));
+        return {
+          name: o.name || o.parent?.name || o.type, material: `${material.name || material.type}#${material.id}`, objects: job.objects.length,
+          done: job.done, first: Boolean(job.first), everywhere: job.everywhere, shown: places.length, seen: places.some((p) => p.seen),
+          distance: Math.round(Math.min(...places.map((p) => p.distance))), size: +Math.max(...places.map((p) => (p.seen ? p.size : 0))).toFixed(3)
+        };
+      });
+    }
+  };
+}
 
 /**
  * The render pipeline of `world` seen through `camera`, as in js/main.js: an MRT scene pass, half-resolution SSR on
  * glossy surfaces, bloom & colour grading. Returns { pipeline, grade, scenePass, sceneMRT, ssrPass, simulate(dt),
- * render(), compile(onProgress), warmUp(), setPost({ ssr, bloom }) }; pipeline is the one in use.
- * settings: a quality tier's (js/donostia/quality.js). ssr: false builds the scene pass without the normal &
- * metalness targets SSR reads (two fewer attachments to fill, two thirds of the pass's colour memory): it cannot be
- * turned on later. With them, setPost() turns SSR and bloom off and on in a running view: each combination is a render
+ * render(), compile(onProgress), warmUp(), setPost({ ssr, bloom }), rebuild(settings), compiler }; pipeline is the
+ * one in use.
+ * settings: a quality tier's (js/donostia/quality.js). msaa: the scene pass's samples. ssr: false builds the scene
+ * pass without the normal & metalness targets SSR reads (two fewer attachments to fill, two thirds of the pass's
+ * colour memory). With them, setPost() turns SSR and bloom off and on in a running view: each combination is a render
  * pipeline of its own over the same scene pass, built the first time it is asked for, so nothing in the scene
- * recompiles.
+ * recompiles. await rebuild(settings) makes the passes again for other structural settings (MSAA, the SSR targets; shadows
+ * at all are the world's, applyWorldStructure()): every pipeline of the scene is another after it, so compile() and
+ * warmUp() follow, as at start-up.
+ * compile() is the first view's shaders and warmUp() a first frame; the rest compile in the background after it
+ * (createCompiler() above; settings.progressive says how much the first view is).
  */
 export function createView(renderer, world, camera, { settings = TIERS.ultra } = {}) {
   const { scene, lighting, liveSky, terrain, updaters } = world;
   shareOpaqueShadowPrograms(renderer);
+  shareInstancedPrograms(renderer);
 
-  const scenePass = pass(scene, camera);
-  scenePass.renderTarget.storeMultisampledColorBuffer = false;
   const maxSSRRoughness = 0.75;
-  let sceneMRT = null, ssrPass = null, reflections = null;
-  if (settings.ssr) {
-    const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
-    sceneMRT = mrt({
-      output,
-      normal: normalView,
-      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
-    });
-    sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
-    sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
-    scenePass.setMRT(sceneMRT);
-  }
-  const color = scenePass.getTextureNode('output');
-  if (settings.ssr) {
-    const metalRough = scenePass.getTextureNode('metalRough');
-    ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
-      metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
-    });
-    ssrPass.resolutionScale = 0.5;
-    ssrPass.blurQuality = 1;
-    ssrPass.maxDistance.value = 60;
-    ssrPass.thickness.value = 0.85;
-    ssrPass.quality.value = 0.25;
-    ssrPass.binaryRefine = true;
-    ssrPass.intensity.value = 0.5;
-    ssrPass.screenEdgeFadeBlack = true;
-    const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
-    reflections = ssrPass.mul(reflectionMask);
-  }
-
+  let scenePass = null, sceneMRT = null, ssrPass = null, reflections = null, color = null;
+  let progressive = Boolean(settings.progressive);
   // The post-processing variants (SSR or not, bloom or not), each with its colour grade; `grade` speaks to all of
   // them, and to the ones built later through the preset or look applied last
   const variants = new Map();
-  let post = null, lastLook = null, lastPreset = null;
+  let post = null, lastLook = null, lastPreset = null, wantedPost = settings;
+
+  const buildPasses = (s) => {
+    for (const v of variants.values()) {
+      v.pipeline.dispose();
+      v.grade.dispose();
+    }
+    variants.clear();
+    ssrPass?.dispose();
+    scenePass?.dispose();
+    sceneMRT = ssrPass = reflections = null;
+    // (the samples are the pass's own: the renderer's `antialias` only ever was their default, and a tier picked in a
+    // running city changes them)
+    scenePass = pass(scene, camera, { samples: s.msaa ? 4 : 0 });
+    scenePass.renderTarget.storeMultisampledColorBuffer = false;
+    if (s.ssr) {
+      const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+      sceneMRT = mrt({
+        output,
+        normal: normalView,
+        metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+      });
+      sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+      sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
+      scenePass.setMRT(sceneMRT);
+    }
+    color = scenePass.getTextureNode('output');
+    if (s.ssr) {
+      const metalRough = scenePass.getTextureNode('metalRough');
+      ssrPass = ssr(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
+        metalnessNode: metalRough.r, roughnessNode: metalRough.g, camera
+      });
+      ssrPass.resolutionScale = 0.5;
+      ssrPass.blurQuality = 1;
+      ssrPass.maxDistance.value = 60;
+      ssrPass.thickness.value = 0.85;
+      ssrPass.quality.value = 0.25;
+      ssrPass.binaryRefine = true;
+      ssrPass.intensity.value = 0.5;
+      ssrPass.screenEdgeFadeBlack = true;
+      const reflectionMask = metalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, metalRough.g), 0);
+      reflections = ssrPass.mul(reflectionMask);
+    }
+  };
+
   const variant = (withSsr, withBloom) => {
     const key = `${withSsr ? 's' : '-'}${withBloom ? 'b' : '-'}`;
     let v = variants.get(key);
@@ -301,9 +742,12 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
     return v;
   };
   const setPost = ({ ssr: withSsr = true, bloom: withBloom = true } = {}) => {
+    wantedPost = { ssr: withSsr, bloom: withBloom };
     post = variant(Boolean(withSsr && reflections), Boolean(withBloom));
   };
+  buildPasses(settings);
   setPost(settings);
+  // (one object for as long as the view lives: the HUD and the real-time sky keep it across a rebuild)
   const grade = {
     looks: post.grade.looks,
     applyPreset(id) {
@@ -318,6 +762,8 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
   };
   liveSky?.attachGrade(grade);
 
+  const compiler = createCompiler(renderer, world, camera, () => ({ scenePass, sceneMRT }));
+
   let elapsed = 0;
   const simulate = (dt) => {
     elapsed += dt;
@@ -326,11 +772,11 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
     liveSky?.update(dt);
     lighting.update(camera.position);
     for (const update of updaters) update(dt, elapsed, camera);
+    // (what the updaters added to the scene waits for its pipelines like the rest)
+    compiler.adopt();
   };
 
-  // Every visible object with frustum culling off, one compileAsync per object, COMPILE_POOL at a time. Plain meshes
-  // that share a material share its shader, so one job compiles them in turn (the first build serves the rest); each
-  // instanced mesh gets a job of its own. The shadow-map variants are left to the warm-up frame.
+  // The first view's pipelines, behind the loading screen (or the note of a quality change)
   async function compile(onProgress = () => {}) {
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
@@ -338,51 +784,12 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
     post.pipeline.render();
     scene.visible = true;
     simulate(0); // pick the terrain's levels of detail & the trees in reach for this camera
-    const culled = [], jobs = [], jobByMaterial = new Map();
-    scene.traverseVisible((o) => {
-      if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
-      if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
-      if (!o.layers.test(camera.layers)) return; // shadow-only stand-ins
-      if (o.isInstancedMesh || o.geometry.isInstancedBufferGeometry || Array.isArray(o.material)) { jobs.push([o]); return; }
-      let job = jobByMaterial.get(o.material);
-      if (!job) { job = []; jobByMaterial.set(o.material, job); jobs.push(job); }
-      job.push(o);
-    });
-    renderer.setRenderTarget(scenePass.renderTarget);
-    renderer.setMRT(sceneMRT);
-    // compileAsync() files its work under the render context of a top-level render, but the scene pass renders nested
-    // in the post-processing chain (call depth 1): everything compiled here would be built again by the first frame,
-    // and the instanced meshes, whose instance buffers get fresh names in every build, compiled again. Point it at
-    // the scene pass's own context meanwhile (three r186.1 internals).
-    const contexts = renderer._renderContexts, getContext = contexts.get;
-    contexts.get = (target = null, m = null, depth = 0) => getContext.call(contexts, target, m, target === scenePass.renderTarget ? 1 : depth);
-    const compileOne = async (object) => {
-      // each compile starts in a task of its own: compileAsync() keeps one precompilation state on the renderer, which
-      // must not be mid-step for two of them in the same microtask checkpoint
-      await nextTask();
-      try {
-        await renderer.compileAsync(object, camera, scene);
-      } catch (e) {
-        console.warn('[compile]', e); // the warm-up frame compiles it instead
-      }
-    };
-    let next = 0, done = 0;
-    const worker = async () => {
-      while (next < jobs.length) {
-        const job = jobs[next++];
-        for (const object of job) await compileOne(object);
-        onProgress(++done / jobs.length);
-      }
-    };
-    await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
-    contexts.get = getContext;
-    renderer.setMRT(null);
-    renderer.setRenderTarget(null);
-    for (const o of culled) o.frustumCulled = true;
+    await compiler.first(progressive, onProgress);
   }
 
-  // A frame with frustum culling off, so the pipelines compile() can't reach (the shadow maps, objects out of view)
-  // exist before the loading screen lifts. Terrain chunks of every level share one pipeline: the current levels do.
+  // A frame with frustum culling off, so the render objects of everything the first view holds (and whatever
+  // compile() could not reach) exist before the loading screen lifts; the background takes over from here.
+  // Terrain chunks of every level share one pipeline: the current levels do.
   function warmUp() {
     const culled = [];
     scene.traverse((o) => {
@@ -390,11 +797,27 @@ export function createView(renderer, world, camera, { settings = TIERS.ultra } =
     });
     post.pipeline.render();
     for (const o of culled) o.frustumCulled = true;
+    compiler.start();
+  }
+
+  // The passes again, for other structural settings (see the header). Every render object goes first (three r186.1
+  // internals: the renderer's render objects): three keeps their shaders by what the materials and the lights look
+  // like, not by when they were built, and one from before the change would come back with it. With the sun's shadows
+  // turned off and on again that is a shader holding the shadow node three disposed in between.
+  async function rebuild(s) {
+    await compiler.stop();
+    renderer._objects.dispose();
+    progressive = Boolean(s.progressive);
+    buildPasses(s);
+    setPost(wantedPost);
   }
 
   return {
     get pipeline() { return post.pipeline; },
-    grade, scenePass, sceneMRT, ssrPass, simulate, render: () => post.pipeline.render(), compile, warmUp, setPost
+    get scenePass() { return scenePass; },
+    get sceneMRT() { return sceneMRT; },
+    get ssrPass() { return ssrPass; },
+    grade, simulate, render: () => post.pipeline.render(), compile, warmUp, setPost, rebuild, compiler
   };
 }
 
@@ -547,17 +970,110 @@ async function initApp() {
   const view = createView(renderer, world, camera, { settings });
   const { grade } = view;
 
-  // Quality changes in the running city (a pick in the HUD, a step of the governor): the tier's live settings, and
-  // the drawing buffer's size when the pixel ratio moved
+  // A small note over the view while something is still coming: the shaders of what lies beyond the first view (the
+  // background of createCompiler()), or a quality tier being applied. The page makes it itself (the HUD's files need
+  // not know): #compile-note for a stylesheet that wants it elsewhere, and a 'slop-compile' event on window with
+  // { stage: 'applying' | 'details' | 'done', done, total } for a HUD that would rather say it its own way (it can
+  // then hide the note).
+  const note = document.createElement('div');
+  note.id = 'compile-note';
+  note.setAttribute('role', 'status');
+  // (its looks in a style element ahead of the page's stylesheets, so a rule of theirs for #compile-note wins)
+  const noteStyle = document.createElement('style');
+  noteStyle.textContent = '#compile-note{position:fixed;left:50%;bottom:calc(8px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);' +
+    'z-index:20;padding:3px 11px;border-radius:999px;background:rgba(10,16,22,0.62);color:#fff;font:500 11px/1.4 system-ui,sans-serif;' +
+    'letter-spacing:0.02em;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 0.35s}#compile-note.is-on{opacity:1}';
+  document.head.prepend(noteStyle);
+  document.body.appendChild(note);
+  const say = (stage, done = 0, total = 0) => {
+    const share = total ? ` ${Math.round(100 * done / total)}%` : '';
+    note.textContent = stage === 'applying' ? `Applying quality…${share}` : stage === 'details' ? `Loading details…${share}` : note.textContent;
+    note.classList.toggle('is-on', stage !== 'done');
+    try { window.dispatchEvent(new CustomEvent('slop-compile', { detail: { stage, done, total } })); } catch { /* no events here */ }
+  };
+
+  // Quality changes in the running city (a pick in the HUD, a step of the governor): the tier's live settings, the
+  // drawing buffer's size when the pixel ratio moved, and for a tier picked by hand its structural settings
   const setPixelRatio = (ratio) => {
     if (ratio === pixelRatio) return;
     pixelRatio = ratio;
     renderer.setPixelRatio(ratio);
   };
+  // The structural settings the world and the view are built for, and their change in the running city: the world's
+  // part (applyWorldStructure()), the passes again, then the shaders as at start-up: the first view's under the note,
+  // the rest in the background. The camera, the time of day and the HUD are not touched. One at a time: a pick made
+  // meanwhile is applied when this one is through.
+  // The view does not go black meanwhile (the new passes' first frame is an empty one): a copy of the last frame, on a
+  // 2D canvas over the WebGPU one, stands in until the rebuilt city has drawn its first.
+  let built = settings, restructuring = false, paused = false, shown = false, warmed = null, framed = null;
+  const still = document.createElement('canvas');
+  still.setAttribute('aria-hidden', 'true');
+  still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
+  container.appendChild(still);
+  const holdFrame = () => new Promise((resolve) => {
+    // (the loop copies the frame in the task that drew it; none comes in a hidden tab)
+    const timer = setTimeout(() => { framed = null; resolve(); }, 400);
+    framed = () => {
+      clearTimeout(timer);
+      try {
+        still.width = renderer.domElement.width;
+        still.height = renderer.domElement.height;
+        still.getContext('2d').drawImage(renderer.domElement, 0, 0);
+        still.style.display = 'block';
+      } catch { /* no copy: the view shows the empty frame for a moment */ }
+      resolve();
+    };
+  });
+  const releaseGeometry = (tries) => {
+    if (deviceLost || !built.releaseGeometry) return;
+    if (releaseUploadedGeometry(renderer, [world.modules.terrain, world.modules.buildings]) > 0 && tries > 0) setTimeout(releaseGeometry, 4000, tries - 1);
+  };
+  const restructure = async () => {
+    if (restructuring) return;
+    restructuring = true;
+    quality.busy(true);
+    try {
+      for (let state = quality.get(); needsRebuild(built, state.boot) && !deviceLost; state = quality.get()) {
+        say('applying');
+        if (!paused) await holdFrame();
+        paused = true;
+        // (a moment for the note to show before the main thread gets busy)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const next = state.boot;
+        await applyWorldStructure(world, renderer, next, built);
+        await view.rebuild(next);
+        built = next;
+        applyWorldQuality(world, state.settings);
+        view.setPost(state.settings);
+        await view.compile((p) => say('applying', p, 1));
+        if (deviceLost) return;
+        // (the warm-up frame is the animation loop's: the passes render once per frame of its)
+        await new Promise((resolve) => { warmed = resolve; });
+        await renderer.backend.device.queue.onSubmittedWorkDone();
+        releaseGeometry(30);
+      }
+    } catch (e) {
+      console.error('[quality]', e);
+    } finally {
+      restructuring = paused = false;
+      still.style.display = 'none';
+      still.width = still.height = 1;
+      quality.busy(false);
+      if (!view.compiler.pending) say('done');
+    }
+  };
   quality.attach((state) => {
     applyWorldQuality(world, state.settings);
     view.setPost(state.settings);
     setPixelRatio(state.pixelRatio);
+    // (before the city shows there is nothing to rebuild: it starts with the settings it was built for)
+    if (shown && needsRebuild(built, state.boot)) restructure();
+    else if (!restructuring) built = { ...built, releaseGeometry: state.boot.releaseGeometry, progressive: state.boot.progressive };
+  });
+  view.compiler.ahead = () => god.flight?.p1 || null;
+  view.compiler.onProgress(({ done, total, pending }) => {
+    if (restructuring || !shown) return;
+    say(pending ? 'details' : 'done', done, total);
   });
 
   const hud = initHud({ GEO, god, terrain, lighting, grade, liveSky: world.liveSky, renderer, quality });
@@ -591,6 +1107,8 @@ async function initApp() {
       // the quality controller (js/donostia/quality.js): quality.get(), quality.set('low' | 'medium' | 'high' | 'ultra' |
       // 'auto'), quality.tiers, quality.onChange(fn), quality.debug() (how the tier was chosen, where the governor is)
       quality,
+      // the shader compiler (createCompiler()): compiler.pending, compiler.total, compiler.debug() (the jobs)
+      get compiler() { return view.compiler; },
       // the real-time state (js/donostia/live-state.js): live.setLiveEnabled(true), live.setLiveOverride({ time, rate,
       // weather, sea }), live.liveSnapshot()
       live,
@@ -656,17 +1174,25 @@ async function initApp() {
     const raw = (now - last) / 1000;
     last = now;
     const dt = Math.min(Math.max(raw, 0.001), 0.05);
-    if (hud.mapOpen && !first) {
+    if ((hud.mapOpen || paused) && !first && !warmed) {
       // The full map covers the whole view: no world to simulate or draw (the canvas keeps its last frame). The
-      // camera still finishes a flight.
+      // camera still finishes a flight. Nor while a quality tier is being applied: the scene is between two states.
       god.update(dt);
     } else {
       simulate(dt);
       if (first) {
         view.warmUp();
         markInit('warm-up');
+      } else if (warmed) {
+        view.warmUp();
+        warmed();
+        warmed = null;
       }
       view.render();
+      if (framed) {
+        framed();
+        framed = null;
+      }
       // the governor: the frame rate of the frames that drew the world (a hidden tab's or a hitch's interval is not
       // one, and it sorts those out itself)
       if (governing) quality.frame(now - lastFrame);
@@ -684,16 +1210,13 @@ async function initApp() {
         loadingOverlay?.classList.add('hidden');
         hud.setReady();
         governing = true;
+        shown = true;
+        if (view.compiler.pending) say('details', view.compiler.total - view.compiler.pending, view.compiler.total);
         // the CPU copies of the terrain's & the buildings' vertex buffers, now on the GPU; the stragglers (what the
         // warm-up frame did not draw) every few seconds until none is left
-        if (settings.releaseGeometry) {
-          const roots = [world.modules.terrain, world.modules.buildings];
-          const release = (tries) => {
-            if (deviceLost) return;
-            if (releaseUploadedGeometry(renderer, roots) > 0 && tries > 0) setTimeout(release, 4000, tries - 1);
-          };
-          release(30);
-        }
+        releaseGeometry(30);
+        // (a tier picked while the city was loading)
+        if (needsRebuild(built, quality.get().boot)) restructure();
       });
     }
     frames++;

@@ -13,9 +13,13 @@
 // - A tier's settings are of two kinds. The live ones change in a running city for the cost of a frame or two: the
 //   render resolution, the shadow map's size & reach and what casts into it, SSR and bloom (another render pipeline of the same scene pass),
 //   the trees' and the terrain's levels of detail, the props' draw distance, the rain's drops, the sea's spray, how often
-//   the environment map is baked. The boot ones are built into the pipelines and the textures at start-up (MSAA, shadows
-//   at all, the MRT targets SSR reads, the baked ground maps, the terrain's mesh, the CPU copies of the geometry): changing those takes a
-//   reload (state.needsReload; quality.reload()).
+//   the environment map is baked. The structural ones are built into the pipelines, the meshes and the textures (MSAA,
+//   shadows at all, the MRT targets SSR reads, the baked ground maps, the terrain's mesh, the CPU copies of the
+//   geometry). Those change in a running city too, but not for free: main.js rebuilds the render passes, the ground
+//   and the terrain as needed and compiles the shaders again, the first view behind an "applying" note and the rest
+//   in the background (a second or two on a desktop, longer on a phone). So a tier picked by hand applies whole
+//   (state.boot is the structural part in effect), while the governor, which may step several times a minute, only
+//   ever moves the live ones. Nothing takes a reload: state.needsReload is always false, kept for the HUD that read it.
 // - detectTier(env): the tier a device starts at, from what the browser tells (the WebGPU adapter's vendor and
 //   architecture, navigator.deviceMemory, hardwareConcurrency, a coarse pointer, the screen). A desktop gets ultra, as
 //   before; a phone or tablet starts at medium unless it is known strong (high) or looks weak (low): unknown devices
@@ -46,30 +50,33 @@ export const TIER_NAMES = ['low', 'medium', 'high', 'ultra'];
 // crosses, 37 of them: 29 MB less on the GPU; js/donostia/terrain.js).
 // releaseGeometry: drop the CPU copies of the terrain's & the buildings' vertex buffers once they are on the GPU.
 // maxPixels: the drawing buffer's budget (a tablet's screen has four times a phone's pixels at the same ratio).
+// progressive: the city shows once the shaders of the first view are compiled, and the rest compile in the background
+// (main.js's createView(): a phone's browser takes most of a minute for all of them); false waits for every visible
+// object behind the loading screen, as the desktop always has.
 export const TIERS = Object.freeze({
   low: Object.freeze({
     label: 'Low', maxPixelRatio: 1.25, fixedPixelRatio: false, maxPixels: 0.9e6, minScale: 0.68, adaptive: true,
     msaa: false, shadows: false, shadowMapSize: 1024, shadowFar: 0.6, terrainShadows: false, propShadows: false,
     ssr: false, bloom: false, terrainLod: 0.45, treeNear: 40, treeMid: 130, treeBillboards: 350, treeFar: 2200, detailDistance: 0.5,
-    rain: 0.35, spray: false, envBakeGap: 2, groundMaps: 'classes', terrainMesh: 'coarse', releaseGeometry: true
+    rain: 0.35, spray: false, envBakeGap: 2, groundMaps: 'classes', terrainMesh: 'coarse', releaseGeometry: true, progressive: true
   }),
   medium: Object.freeze({
     label: 'Medium', maxPixelRatio: 1.5, fixedPixelRatio: false, maxPixels: 1.3e6, minScale: 0.68, adaptive: true,
     msaa: false, shadows: true, shadowMapSize: 1024, shadowFar: 0.7, terrainShadows: false, propShadows: false,
     ssr: false, bloom: true, terrainLod: 0.6, treeNear: 55, treeMid: 190, treeBillboards: 500, treeFar: 2800, detailDistance: 0.7,
-    rain: 0.6, spray: true, envBakeGap: 1, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true
+    rain: 0.6, spray: true, envBakeGap: 1, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true, progressive: true
   }),
   high: Object.freeze({
     label: 'High', maxPixelRatio: 2, fixedPixelRatio: false, maxPixels: 2.2e6, minScale: 0.6, adaptive: true,
     msaa: true, shadows: true, shadowMapSize: 2048, shadowFar: 1, terrainShadows: true, propShadows: true,
     ssr: true, bloom: true, terrainLod: 0.8, treeNear: 70, treeMid: 250, treeBillboards: 700, treeFar: 3400, detailDistance: 0.85,
-    rain: 1, spray: true, envBakeGap: 0.4, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true
+    rain: 1, spray: true, envBakeGap: 0.4, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: true, progressive: true
   }),
   ultra: Object.freeze({
     label: 'Ultra', maxPixelRatio: 1, fixedPixelRatio: true, maxPixels: Infinity, minScale: 1, adaptive: false,
     msaa: true, shadows: true, shadowMapSize: 3072, shadowFar: 1, terrainShadows: true, propShadows: true,
     ssr: true, bloom: true, terrainLod: 1, treeNear: 85, treeMid: 300, treeBillboards: 900, treeFar: 3400, detailDistance: 1,
-    rain: 1, spray: true, envBakeGap: 0.15, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: false
+    rain: 1, spray: true, envBakeGap: 0.15, groundMaps: 'full', terrainMesh: 'full', releaseGeometry: false, progressive: false
   })
 });
 
@@ -81,6 +88,15 @@ const tierIndex = (name) => TIER_NAMES.indexOf(name);
 // metalness targets SSR reads (read as the materials are made: an effect's material may only name them, with its
 // mrtNode, where they exist; a quality tier without SSR builds the pass without them).
 export const detail = { distance: 1, mrt: true };
+
+// An effect's material (a glow, the rain, a wake) writes nothing into the targets SSR reads, which `node` (an mrt() of
+// zeros) says. It may be the material's mrtNode only while the scene pass has those targets, and a quality tier picked
+// in a running city adds or drops them: the node stays on the material for main.js to switch (applyWorldStructure()).
+export function effectTargets(material, node) {
+  material.userData.effectTargets = node;
+  material.mrtNode = detail.mrt ? node : null;
+  return material;
+}
 
 // The baked ground map is 4200 x 5120 texels: a device that cannot hold it (WebGPU's compatibility mode guarantees
 // 4096) gets the terrain's classes whatever the tier says
@@ -98,10 +114,22 @@ export function bootSettings(tier, limits = null, overrides = null) {
   return s;
 }
 
-/** Whether going from the settings the city booted with to `wanted` takes a reload (SSR alone can be turned off live). */
-export function needsReload(booted, wanted) {
-  return booted.msaa !== wanted.msaa || booted.shadows !== wanted.shadows || (wanted.ssr && !booted.ssr) ||
-    booted.groundMaps !== wanted.groundMaps || booted.terrainMesh !== wanted.terrainMesh;
+// The structural settings (see the header): what main.js rebuilds for when a tier is picked in a running city
+export const STRUCTURAL = Object.freeze(['msaa', 'shadows', 'ssr', 'groundMaps', 'terrainMesh', 'releaseGeometry', 'progressive']);
+export const structural = (settings) => Object.fromEntries(STRUCTURAL.map((key) => [key, settings[key]]));
+
+/**
+ * Whether going from the structural settings in effect to `wanted` takes main.js a rebuild (the passes, the ground or
+ * the terrain, and the shaders compiled again). SSR alone turns off without one: its targets stay, unread.
+ */
+export function needsRebuild(current, wanted) {
+  return current.msaa !== wanted.msaa || current.shadows !== wanted.shadows || (wanted.ssr && !current.ssr) ||
+    current.groundMaps !== wanted.groundMaps || current.terrainMesh !== wanted.terrainMesh;
+}
+
+/** Nothing takes a reload any more (every setting applies in the running city): always false, for callers of old. */
+export function needsReload() {
+  return false;
 }
 
 /**
@@ -346,16 +374,19 @@ export const CHANGE_EVENT = 'slop-quality';
  *   quality.describe(tier)        that tier's settings (TIERS[tier]: label, maxPixelRatio, shadows, ssr...)
  *   quality.get()                 the state: { mode: 'auto' | tier (what was asked for), tier (in effect now),
  *                                 bootTier, detected (the tier auto starts at here), mobile, source: 'url' |
- *                                 'stored' | 'auto', scale (the governor's, 0.6 .. 1), pixelRatio, needsReload,
+ *                                 'stored' | 'auto', scale (the governor's, 0.6 .. 1), pixelRatio, needsReload
+ *                                 (always false), applying (main.js is rebuilding for the tier picked last),
  *                                 adaptive, floored (at the lowest setting and still under the target), capped
- *                                 (the frame rate is held from outside, e.g. Low Power Mode), targetFps, settings }
- *   quality.set(tier | 'auto', { persist = true })   picks a tier (or hands back to auto), applies its live settings
- *                                 at once and remembers the choice; returns the new state. state.needsReload says
- *                                 the tier's boot settings (MSAA, shadows, SSR, ground maps) wait for a reload.
- *   quality.reload()              reloads the page (to apply them)
+ *                                 (the frame rate is held from outside, e.g. Low Power Mode), targetFps, settings,
+ *                                 boot (the structural settings in effect) }
+ *   quality.set(tier | 'auto', { persist = true })   picks a tier (or hands back to auto), applies all of its
+ *                                 settings to the running city (the live ones at once, the structural ones as
+ *                                 main.js rebuilds: state.applying meanwhile) and remembers the choice; returns
+ *                                 the new state.
+ *   quality.reload()              reloads the page (nothing needs it any more; a way out if the city misbehaves)
  *   quality.onChange(fn)          fn(state) on every change (a pick, a governor step); returns the unsubscriber.
  *                                 window also gets a 'slop-quality' CustomEvent with the state as its detail.
- * and for main.js: init(), attach(), viewport(), frame(), deviceLost().
+ * and for main.js: init(), attach(), viewport(), frame(), deviceLost(), busy().
  */
 export function createQuality({ storage = null, win = null } = {}) {
   const listeners = new Set();
@@ -364,8 +395,8 @@ export function createQuality({ storage = null, win = null } = {}) {
   let limits = null, ceiling = null, governor = null, apply = null, initialised = false;
   let overrides = null; // ?debug's q.<setting>=<value>: one knob at a time, to measure what it costs
   let view = { dpr: 1, width: 1, height: 1 }, lowest = 0, memoTier = null;
-  let wanted = 'ultra'; // the tier whose boot settings are asked for: the pick, or the one auto starts at
   let windows = 0; // governor windows since the city started (a resize starts a new governor)
+  let applying = false; // main.js is rebuilding the city for the structural settings picked last
 
   const read = (key) => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
   const write = (key, value) => {
@@ -384,12 +415,13 @@ export function createQuality({ storage = null, win = null } = {}) {
     detected: detected.tier, tier: memoTier, ceiling: ceiling?.tier ?? null, until: ceiling?.until ?? null
   }));
 
-  // What is in effect: the tier's live settings over the boot settings the city started with
+  // What is in effect: the tier's live settings over the structural settings of the tier the city started with or
+  // the one picked last (`booted`: the governor's steps leave those alone)
   const settings = () => {
     const t = bootSettings(tier, limits, overrides);
     return {
       ...t, msaa: booted.msaa, shadows: booted.shadows, groundMaps: booted.groundMaps, terrainMesh: booted.terrainMesh,
-      releaseGeometry: booted.releaseGeometry,
+      releaseGeometry: booted.releaseGeometry, progressive: booted.progressive,
       ssr: booted.ssr && t.ssr
     };
   };
@@ -401,7 +433,7 @@ export function createQuality({ storage = null, win = null } = {}) {
   const state = () => ({
     mode, tier, bootTier, detected: detected.tier, mobile: detected.mobile, source, scale: scale(),
     pixelRatio: pixelRatio(ratioRule(tier), view, scale()),
-    needsReload: needsReload(booted, bootSettings(wanted, limits)),
+    needsReload: false, applying, boot: structural(booted),
     adaptive: Boolean(governor) && TIERS[tier].adaptive, floored: Boolean(governor?.floored), capped: Boolean(governor?.capped),
     targetFps: governor ? Math.round(governor.targetFps) : null, settings: settings()
   });
@@ -474,7 +506,7 @@ export function createQuality({ storage = null, win = null } = {}) {
           else if (tierIndex(tier) > top) tier = TIER_NAMES[top];
         }
       }
-      bootTier = wanted = tier;
+      bootTier = tier;
       windows = 0;
       booted = bootSettings(tier, limits, overrides);
       initialised = true;
@@ -500,9 +532,20 @@ export function createQuality({ storage = null, win = null } = {}) {
       if (persist) write(CHOICE_KEY, choice === 'auto' ? null : choice);
       // back on auto: the tier the city booted with if auto chose it, else the detected one
       tier = choice === 'auto' ? (TIERS[detected.tier].adaptive ? TIER_NAMES[Math.min(tierIndex(detected.tier), ceiling ? tierIndex(ceiling.tier) : Infinity)] : detected.tier) : choice;
-      wanted = tier;
+      // (the whole tier, in the running city: main.js rebuilds what its structural settings change)
+      bootTier = tier;
+      booted = bootSettings(tier, limits, overrides);
       makeGovernor();
       return emit();
+    },
+
+    /** main.js, around a rebuild for the structural settings: state.applying, for the HUD (listeners & the event). */
+    busy(on) {
+      if (applying === Boolean(on)) return;
+      applying = Boolean(on);
+      const s = state();
+      for (const fn of listeners) { try { fn(s); } catch (e) { console.warn('[quality]', e); } }
+      try { win?.dispatchEvent?.(new win.CustomEvent(CHANGE_EVENT, { detail: s })); } catch { /* no events here */ }
     },
 
     reload() { win?.location?.reload(); },

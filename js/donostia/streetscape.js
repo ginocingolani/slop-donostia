@@ -6,7 +6,7 @@ import {
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
-import { detail } from './quality.js';
+import { detail, effectTargets } from './quality.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
@@ -538,7 +538,7 @@ function createPoolMaterial() {
     return color(0xffc890).mul(falloff.mul(night()).mul(0.3));
   })();
   mat.opacityNode = float(1.0);
-  if (detail.mrt) mat.mrtNode = mrt({ normal: vec4(0.0), metalRough: vec4(0.0) });
+  effectTargets(mat, mrt({ normal: vec4(0.0), metalRough: vec4(0.0) }));
   return mat;
 }
 
@@ -549,8 +549,8 @@ function instanced(geo, mat, matrices, name, shadows = true) {
   if (!n) return null;
   const mesh = new THREE.InstancedMesh(geo, mat, n);
   mesh.instanceMatrix.array.set(matrices);
-  // a storage buffer: small instanced meshes otherwise keep their matrices in a uniform buffer re-uploaded every draw
-  mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
+  // (the matrices are instanced vertex attributes, whatever the count: main.js's shareInstancedPrograms(). They were
+  // a storage buffer of the mesh's own, which no two meshes' shaders could share)
   mesh.computeBoundingSphere();
   mesh.name = name;
   mesh.castShadow = shadows;

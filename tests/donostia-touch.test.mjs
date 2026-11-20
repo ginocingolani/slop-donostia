@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// The god camera's touch input (js/donostia/touch.js): the stick's response, its trailing centre, the two-finger
-// gesture and the taps as arithmetic, then the stick & buttons wired to a fake page: pointers captured, held and let
-// go one by one, the fast gear's latch, and a browser bar that slides away mid-flight.
+// The god camera's touch input (js/donostia/touch.js): the stick's response and its trailing centre as arithmetic,
+// then the stick & buttons wired to a fake page: always there on a touch screen, pointers captured, held and let go
+// one by one, the fast gear that is the stick's alone, and a browser bar that slides away mid-flight.
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const { STICK, stickResponse, trailOrigin, TwoFingerGesture, TapTracker, initTouchControls } =
-  await import(pathToFileURL(`${root}js/donostia/touch.js`).href);
+const touchModule = await import(pathToFileURL(`${root}js/donostia/touch.js`).href);
+const { STICK, stickResponse, trailOrigin, initTouchControls } = touchModule;
 
 test('the stick rests in its dead zone, eases in, and is flat out at the rim', () => {
   assert.deepEqual(stickResponse(0, 0), { x: 0, y: 0, reach: 0, strength: 0, boost: 0 });
@@ -50,70 +50,13 @@ test('the centre trails a thumb that runs past the fast gear, so turning back an
   assert.equal(back.strength, 1);
 });
 
-test('two fingers: a pinch does not slide, a drag does not creep forward', () => {
-  const g = new TwoFingerGesture();
-  const sum = (moves) => moves.reduce((s, m) => ({ spread: s.spread + m.spread, pan: s.pan + Math.hypot(m.panX, m.panY) }), { spread: 0, pan: 0 });
-
-  // set down and held: nothing
-  g.start({ x: 100, y: 300 }, { x: 200, y: 300 });
-  assert.deepEqual(g.move({ x: 101, y: 300 }, { x: 199, y: 301 }), { spread: 0, panX: 0, panY: 0 });
-
-  // a pinch whose midpoint wanders a few px
-  g.start({ x: 100, y: 300 }, { x: 200, y: 300 });
-  const pinch = [];
-  for (let i = 1; i <= 20; i++) pinch.push(g.move({ x: 100 - 4 * i, y: 300 + i * 0.4 }, { x: 200 + 4 * i, y: 300 + i * 0.4 }));
-  const p = sum(pinch);
-  assert.ok(p.spread > 140, `the spread comes through: ${p.spread}`);
-  assert.equal(p.pan, 0, 'the midpoint drifting 8 px does not pan');
-
-  // a drag whose spread wobbles
-  g.start({ x: 100, y: 300 }, { x: 200, y: 300 });
-  const drag = [];
-  for (let i = 1; i <= 20; i++) drag.push(g.move({ x: 100 + 6 * i, y: 300 }, { x: 200 + 6 * i + Math.sin(i) * 5, y: 300 }));
-  const d = sum(drag);
-  assert.ok(d.pan > 100, `the drag comes through: ${d.pan}`);
-  assert.equal(d.spread, 0, 'a wobble of the spread does not fly');
-
-  // both at once, in earnest, are both answered
-  g.start({ x: 100, y: 300 }, { x: 200, y: 300 });
-  const both = [];
-  for (let i = 1; i <= 20; i++) both.push(g.move({ x: 100 + 2 * i, y: 300 }, { x: 200 + 8 * i, y: 300 }));
-  const b = sum(both);
-  assert.ok(b.spread > 60 && b.pan > 60);
-
-  g.end();
-  assert.deepEqual(g.move({ x: 0, y: 0 }, { x: 500, y: 500 }), { spread: 0, panX: 0, panY: 0 }, 'a new pair starts from rest');
-});
-
-test('taps: a tap, a double tap, and what is neither', () => {
-  const t = new TapTracker();
-  t.down(100, 100, 0);
-  t.move(103, 102);
-  assert.equal(t.dragging, false, 'within the slop the finger is not dragging');
-  assert.equal(t.up(103, 102, 90), 'tap');
-  t.down(110, 96, 200);
-  assert.equal(t.up(110, 96, 260), 'double');
-  // a third tap starts over
-  t.down(110, 96, 400);
-  assert.equal(t.up(110, 96, 450), 'tap');
-  // too late, or too far, for a double
-  t.down(110, 96, 1200);
-  assert.equal(t.up(110, 96, 1250), 'tap');
-  t.down(300, 300, 1400);
-  assert.equal(t.up(300, 300, 1450), 'tap');
-  // a drag and a long press are no taps, and forget the tap before them
-  t.down(300, 300, 1500);
-  t.move(330, 300);
-  assert.equal(t.dragging, true);
-  assert.equal(t.up(330, 300, 1560), null);
-  t.down(330, 300, 1600);
-  assert.equal(t.up(330, 300, 1650), 'tap');
-  t.down(330, 300, 1700);
-  assert.equal(t.up(330, 300, 2400), null, 'held too long');
-  // a second finger cancels
-  t.down(10, 10, 3000);
-  t.cancel();
-  assert.equal(t.up(10, 10, 3050), null);
+test('the stick and a drag on the view are the whole scheme: no other gesture is left', async () => {
+  const { readFile } = await import('node:fs/promises');
+  assert.deepEqual(Object.keys(touchModule).sort(), ['STICK', 'initTouchControls', 'stickResponse', 'trailOrigin']);
+  const camera = await readFile(`${root}js/donostia/god-camera.js`, 'utf8');
+  for (const gone of ['TwoFingerGesture', 'TapTracker', '_pinch', '_pan', 'flyToward']) assert.ok(!camera.includes(gone), `god-camera.js still has ${gone}`);
+  const html = await readFile(`${root}index.html`, 'utf8');
+  for (const gone of ['btn-fly', 'touch-hint']) assert.ok(!html.includes(gone), `index.html still has #${gone}`);
 });
 
 // --- the stick & buttons on a fake page ------------------------------------------------------------------------------
@@ -148,57 +91,59 @@ function page({ coarse = true, stored = null } = {}) {
   const win = Object.assign(element(), { innerWidth: 390, innerHeight: 844 });
   const media = Object.assign(element(), { matches: coarse });
   win.matchMedia = () => media;
-  const rootEl = element(), stick = element(), knob = element(), fly = element();
-  const buttons = Object.fromEntries(['up', 'down', 'boost'].map((a) => [a, element({ touchAction: a })]));
+  const rootEl = element(), stick = element(), knob = element();
+  const buttons = Object.fromEntries(['up', 'down'].map((a) => [a, element({ touchAction: a })]));
   rootEl.querySelectorAll = () => Object.values(buttons);
   const doc = Object.assign(element(), {
     body: element(), hidden: false,
-    getElementById: (id) => ({ 'touch-controls': rootEl, 'touch-stick': stick, 'touch-stick-knob': knob, 'btn-fly': fly })[id]
+    getElementById: (id) => ({ 'touch-controls': rootEl, 'touch-stick': stick, 'touch-stick-knob': knob })[id]
   });
   const store = new Map(stored === null ? [] : [['donostia-touch-fly', stored]]);
   globalThis.window = win;
   globalThis.document = doc;
-  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
   const god = {
     touch: { forward: 0, side: 0, up: 0, boost: 0 },
     clearTouch() { Object.assign(this.touch, { forward: 0, side: 0, up: 0, boost: 0 }); }
   };
   const changes = [];
   const controls = initTouchControls(god, { onChange: (a) => changes.push(a) });
-  return { win, doc, media, rootEl, stick, knob, fly, buttons, god, controls, store, changes };
+  return { win, doc, media, rootEl, stick, knob, buttons, god, controls, store, changes };
 }
 
-test('the stick is off until Hegan turns it on, and the choice is remembered', () => {
+test('the stick is always there on a touch screen, with nothing to turn on and nothing stored', () => {
   const p = page();
   assert.equal(p.doc.body.classList.contains('touch-enabled'), true);
-  assert.equal(p.doc.body.classList.contains('touch-fly'), false);
-  assert.equal(p.rootEl.hidden, true, 'a first visit has no stick over the city');
+  assert.equal(p.rootEl.hidden, false, 'a first visit has the stick');
+  assert.equal(p.controls.available, true);
   p.stick.dispatch('pointerdown');
-  p.stick.dispatch('pointermove', { clientY: 20 });
-  assert.equal(p.god.touch.forward, 0, 'a hidden stick takes no input');
+  p.stick.dispatch('pointermove', { clientY: 66 - STICK.radius });
+  assert.equal(p.god.touch.forward, 1);
+  assert.equal(p.store.size, 0, 'nothing is remembered');
 
-  p.fly.dispatch('click');
-  assert.equal(p.rootEl.hidden, false);
-  assert.equal(p.doc.body.classList.contains('touch-fly'), true);
-  assert.equal(p.fly.attrs['aria-pressed'], 'true');
-  assert.equal(p.store.get('donostia-touch-fly'), '1');
-  assert.equal(p.controls.flying, true);
-
-  const again = page({ stored: '1' });
-  assert.equal(again.rootEl.hidden, false, 'remembered');
-  // a mouse-only desktop has no touch layout whatever was stored
-  const desk = page({ coarse: false, stored: '1' });
+  // the switch an earlier version stored is cleared, whatever it said
+  for (const stored of ['0', '1']) {
+    const old = page({ stored });
+    assert.equal(old.rootEl.hidden, false);
+    assert.equal(old.store.has('donostia-touch-fly'), false);
+  }
+  // a mouse-only desktop has no touch layout
+  const desk = page({ coarse: false });
   assert.equal(desk.rootEl.hidden, true);
   assert.equal(desk.doc.body.classList.contains('touch-enabled'), false);
-  assert.equal(desk.controls.flying, false);
+  assert.equal(desk.controls.available, false);
+  desk.stick.dispatch('pointerdown');
+  desk.stick.dispatch('pointermove', { clientY: 20 });
+  assert.equal(desk.god.touch.forward, 0, 'a hidden stick takes no input');
   // until its first touch (a hybrid)
   desk.doc.dispatch('pointerdown', { pointerType: 'touch' });
   assert.equal(desk.rootEl.hidden, false);
+  assert.equal(desk.doc.body.classList.contains('touch-enabled'), true);
   assert.deepEqual(desk.changes, [true]);
 });
 
 test('the stick is relative, captured, and independent of the other fingers', () => {
-  const p = page({ stored: '1' });
+  const p = page();
   // the thumb lands off-centre: neutral
   p.stick.dispatch('pointerdown', { pointerId: 7, clientX: 90, clientY: 100 });
   assert.equal(p.god.touch.forward, 0);
@@ -234,8 +179,8 @@ test('the stick is relative, captured, and independent of the other fingers', ()
   assert.equal(p.stick.classList.contains('is-pressed'), false);
 });
 
-test('climb and descend are held; the fast gear is a latch', () => {
-  const p = page({ stored: '1' });
+test('climb and descend are held; the fast gear is the stick past its rim, with no button and no latch', async () => {
+  const p = page();
   p.buttons.up.dispatch('pointerdown', { pointerId: 1 });
   p.buttons.down.dispatch('pointerdown', { pointerId: 2 });
   assert.equal(p.god.touch.up, 0, 'both held cancel out');
@@ -244,23 +189,30 @@ test('climb and descend are held; the fast gear is a latch', () => {
   p.buttons.down.dispatch('pointerup', { pointerId: 2 });
   assert.equal(p.god.touch.up, 0);
 
-  p.buttons.boost.dispatch('pointerdown', { pointerId: 4 });
-  p.buttons.boost.dispatch('pointerup', { pointerId: 4 });
-  p.buttons.boost.dispatch('click', { detail: 1 }); // (the click a touch also sends: not a second toggle)
-  assert.equal(p.god.touch.boost, 1, 'latched after the finger lifts');
-  assert.equal(p.buttons.boost.attrs['aria-pressed'], 'true');
-  // the stick's own fast gear does not undo the latch
-  p.stick.dispatch('pointerdown', { pointerId: 5 });
-  p.stick.dispatch('pointerup', { pointerId: 5 });
+  // the fast gear follows the stick: in by degrees past the rim, out again as the thumb comes back or lifts
+  p.stick.dispatch('pointerdown', { pointerId: 5, clientX: 66, clientY: 66 });
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius * (1 + STICK.overdrive / 2) });
+  assert.equal(p.god.touch.boost.toFixed(3), '0.500');
+  p.buttons.up.dispatch('pointerdown', { pointerId: 6 });
+  assert.equal(p.god.touch.boost.toFixed(3), '0.500', 'a button pressed meanwhile leaves the gear as the stick has it');
+  p.buttons.up.dispatch('pointerup', { pointerId: 6 });
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: 66 - STICK.radius });
+  assert.equal(p.god.touch.boost, 0, 'back at the rim: the normal gear');
+  p.stick.dispatch('pointermove', { pointerId: 5, clientX: 66, clientY: -400 });
   assert.equal(p.god.touch.boost, 1);
-  // a keyboard's click (detail 0) switches it too
-  p.buttons.boost.dispatch('click', { detail: 0 });
-  assert.equal(p.god.touch.boost, 0);
-  assert.equal(p.buttons.boost.attrs['aria-pressed'], 'false');
+  p.stick.dispatch('pointerup', { pointerId: 5 });
+  assert.equal(p.god.touch.boost, 0, 'nothing stays latched');
+
+  // the page has the two buttons and no third
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(`${root}index.html`, 'utf8');
+  assert.deepEqual([...html.matchAll(/data-touch-action="(\w+)"/g)].map((m) => m[1]), ['up', 'down']);
+  const sources = html + await readFile(`${root}js/donostia/touch.js`, 'utf8') + await readFile(`${root}css/donostia.css`, 'utf8') + await readFile(`${root}js/donostia/i18n.js`, 'utf8');
+  for (const gone of ['touch-boost', 'fastGear', 'touch.fast', "'boost'"]) assert.ok(!sources.includes(gone), `${gone} is still there`);
 });
 
-test('a browser bar sliding away keeps the stick; turning the phone, the full map and Hegan off let go', () => {
-  const p = page({ stored: '1' });
+test('a browser bar sliding away keeps the stick; turning the phone and the full map let go', () => {
+  const p = page();
   const push = () => {
     p.stick.dispatch('pointerdown', { pointerId: 1, clientX: 66, clientY: 66 });
     p.stick.dispatch('pointermove', { pointerId: 1, clientX: 66, clientY: 0 });
@@ -285,11 +237,10 @@ test('a browser bar sliding away keeps the stick; turning the phone, the full ma
   p.controls.setEnabled(true);
   assert.equal(p.rootEl.hidden, false);
 
-  p.buttons.boost.dispatch('pointerdown', { pointerId: 3 });
-  p.buttons.boost.dispatch('pointerup', { pointerId: 3 });
-  push();
-  p.fly.dispatch('click');
-  assert.deepEqual(p.god.touch, { forward: 0, side: 0, up: 0, boost: 0 }, 'the stick switched off: at rest, the latch too');
-  assert.equal(p.rootEl.hidden, true);
-  assert.equal(p.store.get('donostia-touch-fly'), '0');
+  // letting go of everything leaves nothing on, the fast gear neither
+  p.stick.dispatch('pointerdown', { pointerId: 3, clientX: 66, clientY: 66 });
+  p.stick.dispatch('pointermove', { pointerId: 3, clientX: 66, clientY: -400 });
+  assert.equal(p.god.touch.boost, 1);
+  p.controls.reset();
+  assert.deepEqual(p.god.touch, { forward: 0, side: 0, up: 0, boost: 0 });
 });
