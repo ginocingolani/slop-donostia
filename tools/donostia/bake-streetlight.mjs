@@ -6,11 +6,12 @@
 //     -> data/donostia/street-light-low.png  the same every 4 m (its 2 x 2 means), for the lowest quality tier
 //     -> js/donostia/data-streetlight.js     the lamps this bake places where none is mapped, for streetscape.js
 // Inputs are all committed: OpenStreetMap's streets with their class, `lit`, tunnels and bridges
-// (tools/donostia/data/osm_streets.json, ODbL), the municipal 1:500 map's ground (roads, pavements, pedestrian zones,
-// gardens, woods, beaches, rail; Donostiako Udala, CC BY-SA 3.0), the baked terrain's water (geoEuskadi's LiDAR,
-// CC BY 4.0), the buildings of js/donostia/geodata.js (b5m, CC BY 4.0) and the lamps js/donostia/data-streetscape.js
+// (tools/donostia/data/osm_streets.json, ODbL), the baked ground map (data/donostia/ground-core.png: the municipal
+// 1:500 map's roads, pavements, pedestrian zones, gardens, beds, tree pits, courtyards, stairs, woods, beaches and
+// rail, Donostiako Udala, CC BY-SA 3.0; OSM's piers; the quays and the water from geoEuskadi's LiDAR, CC BY 4.0), the
+// municipal map's ramps, the buildings of js/donostia/geodata.js (b5m, CC BY 4.0) and the lamps js/donostia/data-streetscape.js
 // already carries (OSM's street lamps, the Parte Vieja's wall lanterns, La Concha's lamp posts, candelabra and
-// obelisks). Run it after bake-streetscape.mjs.
+// obelisks). Run it after bake-ground.mjs and bake-streetscape.mjs.
 //
 // What is modelled. OSM maps about a thousand street lamps in the core, nearly all of them along the bay, the river
 // and a few squares; the municipal inventory of luminaires is not published as open data. So the lamps a street must
@@ -28,6 +29,15 @@
 //     bright and every 30 m; OSM paths and tracks (the hills' trails) only where they are tagged lit;
 //   - where a street is too narrow for a post (a facade within 2.6 m of its axis), a lantern on a bracket on the
 //     facade, as in the Parte Vieja;
+//   - a post only ever stands on a pavement or on pedestrian paving, half a metre clear of walls and of the
+//     carriageway: never in the carriageway, on a verge's grass, in a flower bed, a hedge or a tree pit, in a block's
+//     courtyard, on stairs, a ramp, sand, rock or water, or inside a building's footprint (the baked ground map
+//     at 1 m). A road's column skips a verge for the pavement behind it; a pedestrian street's lanterns line its sides,
+//     2.2 m in from the facades, not its middle; a park's or a path's lantern may stand on the lawn beside its path,
+//     and the column of a road that has no pavement within 6 m of its edge (the motorway, the hills' roads) on the
+//     open verge at that edge, never on a garden's lawn.
+//     A place with nowhere fit takes no lamp (the log counts them by reason);
+//   - nothing within 12 m of a lamp OSM maps: the mapped ones win;
 //   - pavements more than 30 m from any lamp (streets OSM lacks) get a 7 m column;
 //   - none on Santa Klara (the island has no public lighting);
 //   - nothing where OSM says lit=no, in tunnels, covered passages or anything below ground (layer < 0), on water,
@@ -41,8 +51,9 @@
 //   E(d) = I / (1 + (d / r0)^2)^1.5, r0 = 1.05 h, windowed to nothing at 3.2 r0
 // Buildings shadow it (a ray over the 1 m footprint raster, so a street's lamps do not light the courtyard behind
 // the block, yet reach 1.5 m into the wall they meet: the facades read the light at their foot), and a fifth of a
-// wide blur of the result comes back as the streets' own bounce. Water gets none (the seabed shows through it),
-// but for the bridges' own light, which their decks read; the light map is the sum, stored as sqrt(E / 2) in a byte
+// wide blur of the result comes back as the streets' own bounce. The light that spills over the water stays in the
+// map for what floats or stands there (boats, pontoons, the bridges' decks; the ground's shader leaves the seabed
+// dark); the light map is the sum, stored as sqrt(E / 2) in a byte
 // (twice the light under an avenue's lamp is the brightest it holds), its rim black so that nothing shows past it.
 
 import fs from 'node:fs';
@@ -75,7 +86,7 @@ function hash2(x, z, s = 0) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-// --- rasters over the core (1 m): the ground's class, the buildings ---------------------------------------------------
+// --- rasters over the core (1 m): the ground's surface, the buildings ---------------------------------------------------
 
 function decodePNG(buf) {
   let pos = 8, w = 0, h = 0, ch = 0;
@@ -110,17 +121,6 @@ function decodePNG(buf) {
   return { w, h, ch, data: out };
 }
 
-// the terrain's own 2 m classes: the water (its flood fill) comes from here
-const terrainClass = (() => {
-  const meta = GEO.terrain.core;
-  const img = decodePNG(fs.readFileSync(path.join(ROOT, meta.url)));
-  const { x0, z0, w, h, res } = meta;
-  return (x, z) => {
-    const i = Math.floor((x - x0) / res), j = Math.floor((z - z0) / res);
-    return i < 0 || j < 0 || i >= w || j >= h ? -1 : img.data[3 * (j * w + i) + 2];
-  };
-})();
-
 const R = { x0: CORE.minX, z0: CORE.minZ, w: CORE.maxX - CORE.minX, h: CORE.maxZ - CORE.minZ };
 const cellOf = (x, z) => {
   const i = Math.floor(x - R.x0), j = Math.floor(z - R.z0);
@@ -128,27 +128,18 @@ const cellOf = (x, z) => {
 };
 const inCore = (x, z, m = 2) => x > CORE.minX + m && x < CORE.maxX - m && z > CORE.minZ + m && z < CORE.maxZ - m;
 
-// The ground classes at 1 m, as bake-streetscape.mjs lays them (build.mjs's GROUND_LAYERS, later layers win)
-const SURFACE_LAYERS = [
-  ['c500_ZuhaiztiGuneak.json', G.woodland],
-  ['c500_LORATEGI_EREMUA.json', G.garden], ['c500_PARTERREA.json', G.garden],
-  ['c500_SASOIKO_LORATEGIA.json', G.garden], ['c500_LANDARE_HESIA.json', G.garden],
-  ['c500_HONDARTZA.json', G.beach],
-  ['c500_BIDEA.json', G.pedestrian], ['c500_OINEZKOEN_ZONA.json', G.pedestrian],
-  ['c500_ESPALOIA.json', G.sidewalk],
-  ['c500_ERREPIDEA.json', G.road], ['c500_IBILGAILUEN_ZONA.json', G.road], ['c500_AUTOBIDEA.json', G.road],
-  ['c500_TRENBIDEA.json', G.rail], ['c500_BIDEGORRIA.json', G.bike], ['c500_ESKAILERA.json', G.stairs],
-  ['c500_ERAIKINA.json', G.building], ['c500_EraikinArinak.json', G.building]
-];
-const surf = new Uint8Array(R.w * R.h);
-for (const [file, id] of SURFACE_LAYERS) {
-  for (const f of loadLayer(file).features) scanRings(f.g, R.x0, R.z0, 1, R.w, R.h, (i, j) => { surf[j * R.w + i] = id; });
-}
-for (let j = 0; j < R.h; j++) {
-  for (let i = 0; i < R.w; i++) {
-    if (terrainClass(R.x0 + i + 0.5, R.z0 + j + 0.5) === G.water) surf[j * R.w + i] = G.water;
-  }
-}
+// The ground's surface at 1 m: the ground map tools/donostia/bake-ground.mjs baked (data/donostia/ground-core.png,
+// its first plane; its SURFACE ids, of which 0-11 are the terrain's classes), so that a post stands on what is drawn
+// there: the pavements and the pedestrian paving, the Parte Vieja's setts, the quays; and keeps off the lawns, the
+// flower beds, hedges and tree pits, the courtyards, the stairs, the gravel paths' own width... The municipal map's
+// ramps (ARRAPALA) are laid over it: the ground map draws them as the paving they are.
+const S = { ...G, setts: 12, path: 13, treePit: 14, flowers: 15, hedge: 16, yard: 17, rock: 18, quay: 19, ramp: 20 };
+const surf = (() => {
+  const img = decodePNG(fs.readFileSync(path.join(ROOT, 'data/donostia/ground-core.png')));
+  if (img.w !== R.w || img.h !== 4 * R.h || img.ch !== 1) throw new Error('ground-core.png does not match the core (run bake-ground.mjs)');
+  return img.data.slice(0, R.w * R.h);
+})();
+for (const f of loadLayer('c500_ARRAPALA.json').features) scanRings(f.g, R.x0, R.z0, 1, R.w, R.h, (i, j) => { if (surf[j * R.w + i] !== G.water) surf[j * R.w + i] = S.ramp; });
 const surfAt = (x, z) => { const k = cellOf(x, z); return k < 0 ? -1 : surf[k]; };
 // the extruded buildings themselves (geodata.js): what shadows a lamp and what a bracket hangs from
 const bld = new Uint8Array(R.w * R.h);
@@ -188,8 +179,9 @@ const KIND = {
   wall: { h: 4.3, I: 0.6, model: 'wall' },
   bridge: { h: 6, I: 0.8, model: null },
   // the modelled ones (data-streetscape.js)
-  mapped: { h: 4.4, I: 0.8, model: null },
-  lane: { h: 4.3, I: 0.62, model: null },
+  // (OSM's lamps and the Parte Vieja's lanterns light the ground as the placed lantern and bracket do)
+  mapped: { h: 4.2, I: 0.8, model: null },
+  lane: { h: 4.3, I: 0.6, model: null },
   promenade: { h: 5, I: 0.9, model: null },
   candelabrum: { h: 6.5, I: 1.25, model: null },
   obelisk: { h: 5.5, I: 1.0, model: null }
@@ -200,13 +192,18 @@ const REACH = 3.2; // times r0
 const lamps = []; // { x, z, kind, heading (deg, the way it faces) }
 const CELL = 16, cells = new Map();
 const cellKey = (x, z) => Math.floor(x / CELL) * 65536 + Math.floor(z / CELL);
+const MAPPED_CLEAR = 12; // m
 function nearLamp(x, z, d) {
-  const r = Math.ceil(d / CELL), ci = Math.floor(x / CELL), cj = Math.floor(z / CELL);
+  const r = Math.ceil(Math.max(d, MAPPED_CLEAR) / CELL), ci = Math.floor(x / CELL), cj = Math.floor(z / CELL);
   for (let dj = -r; dj <= r; dj++) {
     for (let di = -r; di <= r; di++) {
       const list = cells.get((ci + di) * 65536 + cj + dj);
       if (!list) continue;
-      for (const l of list) if ((l.x - x) ** 2 + (l.z - z) ** 2 < d * d) return true;
+      for (const l of list) {
+        // (a mapped lamp wins: nothing is placed beside one, whatever the placed lamp's own spacing)
+        const gap = l.mapped ? Math.max(d, MAPPED_CLEAR) : d;
+        if ((l.x - x) ** 2 + (l.z - z) ** 2 < gap * gap) return true;
+      }
     }
   }
   return false;
@@ -250,7 +247,7 @@ const headingOf = (dx, dz) => Math.round(((Math.atan2(dx, dz) * 180) / Math.PI +
   for (let k = 0; k < M.length; k += 5) addLamp(M[k + 1] / 100, M[k + 3] / 100, M[k] === 0 ? 'candelabrum' : 'obelisk');
 }
 const modelled = lamps.length;
-
+for (const l of lamps) l.mapped = true;
 // 2. Along OSM's streets
 // class -> [priority, kind, spacing (m), staggered across the carriageway]
 const ROADS = {
@@ -263,11 +260,38 @@ const ROADS = {
   footway: [5, 'path', 24, false], cycleway: [5, 'path', 24, false], steps: [5, 'path', 24, false],
   path: [6, 'path', 30, false], track: [6, 'path', 30, false]
 };
-const WALKED = new Set([G.sidewalk, G.pedestrian, G.stairs]);
-const CARRIAGEWAY = new Set([G.road, G.bike]);
-const GREEN = new Set([G.natural, G.garden, G.woodland]);
-const NO_POST = new Set([G.water, G.beach, G.rail, G.building]);
-const stats = { ways: 0, unlit: 0, underground: 0, candidates: 0, placed: 0, wall: 0, doubled: 0, nowhere: 0, bridge: 0 };
+const CARRIAGEWAY = new Set([G.road, G.bike, G.rail]);
+const GREEN = new Set([G.natural, G.garden, G.woodland, S.flowers, S.hedge, S.path]);
+const LAWN = new Set([G.natural, G.garden, G.woodland]);
+const PAVED = new Set([G.sidewalk, G.pedestrian, S.setts, S.quay]);
+const stats = { ways: 0, unlit: 0, underground: 0, candidates: 0, placed: 0, wall: 0, doubled: 0, bridge: 0 };
+const dropped = {}; // why a place tried took no lamp
+
+// Why no post may stand at (x, z), or null where one may: only on a pavement or pedestrian paving (a park's or a
+// path's lantern also on the lawn beside its path), 0.5 m clear of any wall and of the carriageway
+function unfit(x, z, kind) {
+  const s = surfAt(x, z);
+  if (s < 0) return 'outside the core';
+  if (bldAt(x, z)) return 'inside a building';
+  if (s === G.water) return 'in the water';
+  if (s === G.beach) return 'on the sand';
+  if (s === G.stairs || s === S.ramp) return 'on stairs or a ramp';
+  if (CARRIAGEWAY.has(s)) return 'in the carriageway';
+  if (s === S.flowers || s === S.hedge) return 'in a flower bed or hedge';
+  if (s === S.treePit) return 'in a tree pit';
+  if (s === S.yard) return 'in a courtyard';
+  if (s === S.rock) return 'on rock';
+  const parks = kind === 'park' || kind === 'path';
+  if (LAWN.has(s) && !parks) return 'on grass';
+  if (s === S.path && !parks) return 'on a gravel path';
+  for (const [ox, oz] of [[0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]]) {
+    if (bldAt(x + ox, z + oz)) return 'against a wall';
+    const n = surfAt(x + ox, z + oz);
+    if (CARRIAGEWAY.has(n)) return 'on the kerb';
+    if (n === G.water) return 'in the water';
+  }
+  return null;
+}
 
 const ways = [];
 for (const e of loadLayer('osm_streets.json').elements) {
@@ -287,33 +311,58 @@ for (const e of loadLayer('osm_streets.json').elements) {
 }
 ways.sort((a, b) => a.road[0] - b.road[0] || a.id - b.id);
 
-// Where a lamp of a way stands, from the point (x, z) on its axis towards (nx, nz): { x, z, kind, heading } or null
+// Where a lamp of a way stands, from the point (x, z) on its axis towards (nx, nz): { x, z, kind, heading }, or
+// { why } where none can
 function stand(x, z, nx, nz, kind, isRoad) {
+  const bracket = (t) => ({ x: x + nx * (t - 0.45), z: z + nz * (t - 0.45), kind: 'wall', heading: headingOf(-nx, -nz) });
   if (isRoad) {
-    // out over the carriageway to the kerb, then 0.7 m onto the pavement; a facade first: a bracket on it
-    let onRoad = CARRIAGEWAY.has(surfAt(x, z));
-    for (let t = 0; t <= 14; t += 0.5) {
+    // out over the carriageway to the kerb, then 0.7 m onto the pavement; over a verge or a bed to the pavement
+    // behind it, if one lies within 6 m of the kerb; a facade first: a bracket on it
+    let onRoad = CARRIAGEWAY.has(surfAt(x, z)), kerb = -1, why = 'no pavement', verge = null;
+    for (let t = 0; t <= 16; t += 0.5) {
       const px = x + nx * t, pz = z + nz * t, s = surfAt(px, pz);
-      if (s < 0) return null;
-      if (bldAt(px, pz)) return t >= 1.5 ? { x: px - nx * 0.45, z: pz - nz * 0.45, kind: 'wall', heading: headingOf(-nx, -nz) } : null;
-      if (s === G.water || s === G.beach) return null;
-      if (CARRIAGEWAY.has(s) || s === G.rail) { onRoad = true; continue; }
+      if (s < 0) return { why: 'outside the core' };
+      if (bldAt(px, pz)) return t >= 1.5 ? bracket(t) : { why: 'inside a building' };
+      if (s === G.water) return { why: 'in the water' };
+      if (s === G.beach) return { why: 'on the sand' };
+      if (CARRIAGEWAY.has(s)) { onRoad = true; kerb = -1; continue; }
       if (!onRoad && t < 3) continue; // the axis runs beside the mapped carriageway: go on a little
+      if (kerb < 0) kerb = t;
+      if (t > kerb + 6) break;
       const qx = px + nx * 0.7, qz = pz + nz * 0.7;
-      if (bldAt(qx, qz) || NO_POST.has(surfAt(qx, qz))) return { x: px + nx * 0.2, z: pz + nz * 0.2, kind, heading: headingOf(-nx, -nz) };
-      return { x: qx, z: qz, kind, heading: headingOf(-nx, -nz) };
+      const u = unfit(qx, qz, kind);
+      if (!u) return { x: qx, z: qz, kind, heading: headingOf(-nx, -nz) };
+      if (t === kerb) {
+        why = u;
+        // a road with no pavement (the motorway, the hills' roads): its columns stand on the open verge at its
+        // edge, as they do; never on a garden's lawn
+        if (u === 'on grass' && surfAt(qx, qz) === G.natural && !unfit(qx, qz, 'path')) verge = { x: qx, z: qz, kind, heading: headingOf(-nx, -nz) };
+      }
     }
-    return null;
+    return verge || { why };
   }
-  // a walk: beside it, 1.6 m from its axis; a facade within 2.6 m takes a bracket instead
-  for (let t = 0.5; t <= 2.6; t += 0.5) {
-    if (bldAt(x + nx * t, z + nz * t)) {
-      return t >= 1 ? { x: x + nx * (t - 0.45), z: z + nz * (t - 0.45), kind: 'wall', heading: headingOf(-nx, -nz) } : null;
-    }
+  // a walk: to its edge on this side (a wall, or where its paving ends), and 2.2 m in from it, so a wide pedestrian
+  // street's lanterns line its sides and not its middle; a facade within 2.6 m of the axis takes a bracket; a path
+  // narrower than that has its lantern on the lawn beside it, or on its own edge; open paving (no edge within 12 m:
+  // a square) has it 1.6 m from the axis
+  const own = surfAt(x, z);
+  let edge = -1, wall = false;
+  for (let t = 0.5; t <= 12; t += 0.5) {
+    const px = x + nx * t, pz = z + nz * t;
+    if (bldAt(px, pz)) { edge = t; wall = true; break; }
+    const s = surfAt(px, pz);
+    if (s !== own && !(PAVED.has(s) && PAVED.has(own))) { edge = t; break; }
   }
-  const px = x + nx * 1.6, pz = z + nz * 1.6, s = surfAt(px, pz);
-  if (s < 0 || NO_POST.has(s) || CARRIAGEWAY.has(s)) return null;
-  return { x: px, z: pz, kind, heading: headingOf(-nx, -nz) };
+  if (wall && edge <= 2.6) return edge >= 1 ? bracket(edge) : { why: 'inside a building' };
+  const tries = edge < 0 ? [1.6] : edge >= 3.2 ? [edge - 2.2] : [edge + 0.6, edge - 0.7, edge - 0.3];
+  let why = null;
+  for (const t of tries) {
+    if (t < 0.2) continue;
+    const px = x + nx * t, pz = z + nz * t, u = unfit(px, pz, kind);
+    if (!u) return { x: px, z: pz, kind, heading: headingOf(-nx, -nz) };
+    why ||= u;
+  }
+  return { why: why || 'no room beside the path' };
 }
 
 for (const w of ways) {
@@ -324,7 +373,7 @@ for (const w of ways) {
   for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
   const len = cum[cum.length - 1];
   if (len < 6) continue;
-  const isRoad = prio <= 2 || prio === 4;
+  const roadWay = prio <= 2 || prio === 4;
   const n = Math.max(1, Math.round(len / spacing0));
   const flip = hash2(w.id % 100003, 7, 3) < 0.5 ? 0 : 1;
   let a = 0;
@@ -346,14 +395,17 @@ for (const w of ways) {
       kind = 'park';
       spacing = 30;
     }
+    // (a walk drawn along a carriageway, a crossing's approach: its lamp goes to the kerb as a road's does)
+    const isRoad = roadWay || CARRIAGEWAY.has(surfAt(x, z));
     const side = (staggered ? (k + flip) % 2 : flip) ? 1 : -1;
-    let at = null;
+    let at = null, why = null;
     for (const sgn of [side, -side]) {
       at = stand(x, z, -dz * sgn, dx * sgn, kind, isRoad);
-      if (at) break;
+      if (!at.why) break;
+      why ||= at.why;
+      at = null;
     }
-    if (!at && !isRoad && !bldAt(x, z) && !NO_POST.has(surfAt(x, z)) && !CARRIAGEWAY.has(surfAt(x, z))) at = { x, z, kind, heading: headingOf(dx, dz) };
-    if (!at) { stats.nowhere++; continue; }
+    if (!at) { dropped[why] = (dropped[why] || 0) + 1; continue; }
     // a bracket lights a lane as the Parte Vieja's do, whatever the way's class
     const minGap = at.kind === 'wall' ? Math.min(spacing, 20) * 0.6 : spacing * 0.58;
     if (nearLamp(at.x, at.z, minGap)) { stats.doubled++; continue; }
@@ -365,14 +417,14 @@ for (const w of ways) {
 
 // 3. The squares' insides and the pavements of streets OSM lacks, on a triangular grid (jittered a little)
 let filledSquares = 0, filledPavements = 0;
-for (const [pitch, classes, gap, kind] of [[17, [G.pedestrian], 13.5, 'square'], [15, [G.sidewalk], 30, 'street']]) {
+for (const [pitch, classes, gap, kind] of [[17, [G.pedestrian, S.setts], 13.5, 'square'], [15, [G.sidewalk, S.quay], 30, 'street']]) {
   const rowH = pitch * Math.sqrt(3) / 2;
   for (let row = 0, z = CORE.minZ + 6; z < CORE.maxZ - 6; z += rowH, row++) {
     for (let col = 0, x = CORE.minX + 6 + (row % 2) * pitch / 2; x < CORE.maxX - 6; x += pitch, col++) {
       const px = x + (hash2(col, row, 11) - 0.5) * 3, pz = z + (hash2(col, row, 12) - 0.5) * 3;
-      if (!classes.includes(surfAt(px, pz)) || bldAt(px, pz) || onIsland(px, pz) || nearLamp(px, pz, gap)) continue;
+      if (!classes.includes(surfAt(px, pz)) || onIsland(px, pz) || unfit(px, pz, kind) || nearLamp(px, pz, gap)) continue;
       // (clear of the walls: a lantern in a square's middle, a column on the pavement's width)
-      if ([[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].some(([ox, oz]) => bldAt(px + ox, pz + oz) || surfAt(px + ox, pz + oz) === G.water)) continue;
+      if ([[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].some(([ox, oz]) => bldAt(px + ox, pz + oz) || unfit(px + ox, pz + oz, kind))) continue;
       addLamp(px, pz, kind, Math.floor(hash2(col, row, 13) * 360));
       if (kind === 'square') filledSquares++; else filledPavements++;
     }
@@ -419,17 +471,38 @@ for (const [pitch, classes, gap, kind] of [[17, [G.pedestrian], 13.5, 'square'],
   }
   log(`wall lanterns: ${snapped} hung from their facades' edges`);
 }
+// --audit <an earlier data-streetlight.js>: how many of its lamps stand where none may now, by reason
+{
+  const at = process.argv.indexOf('--audit');
+  if (at > 0) {
+    const old = (await import(pathToFileURL(path.resolve(process.argv[at + 1])).href)).STREETLIGHT;
+    const count = {}, lists = [...old.columns.map((c) => [c, 'street']), [old.lanterns, 'path']];
+    let n = 0, beside = 0;
+    for (const [{ count: c, data }, kind] of lists) {
+      const b = Buffer.from(data, 'base64');
+      for (let k = 0; k < c; k++) {
+        const x = old.origin[0] + b.readUInt16LE(5 * k) * old.unit, z = old.origin[1] + b.readUInt16LE(5 * k + 2) * old.unit;
+        const u = unfit(x, z, kind);
+        n++;
+        if (u) count[u] = (count[u] || 0) + 1;
+        else if (lamps.slice(0, modelled).some((l) => Math.hypot(l.x - x, l.z - z) < MAPPED_CLEAR)) beside++;
+      }
+    }
+    log(`audit of ${process.argv[at + 1]}: of ${n} posts, ${Object.entries(count).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(', ')}; ` +
+      `${beside} more within ${MAPPED_CLEAR} m of a mapped lamp`);
+  }
+}
 const byKind = {};
 for (const l of lamps) byKind[l.kind] = (byKind[l.kind] || 0) + 1;
 log(`street lamps: ${modelled} modelled already; ${stats.ways} lit ways (${stats.unlit} unlit or dark trails, ${stats.underground} underground left out), ` +
   `${stats.candidates} places tried: ${stats.placed} placed (${stats.wall} on brackets), ${stats.bridge} on bridges, ${stats.doubled} doubled, ` +
-  `${stats.nowhere} with nowhere to stand; ${filledSquares} more in the squares, ${filledPavements} on unmapped streets' pavements; ` +
+  `${Object.values(dropped).reduce((a, b) => a + b, 0)} with nowhere to stand (${Object.entries(dropped).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(', ')}); ${filledSquares} more in the squares, ${filledPavements} on unmapped streets' pavements; ` +
   `${lamps.length} in all: ${Object.entries(byKind).map(([k, v]) => `${k} ${v}`).join(', ')}`);
 
 // --- the light map ------------------------------------------------------------------------------------------------------
 
 const W = R.w / MAP_RES, H = R.h / MAP_RES;
-const E = new Float32Array(W * H), EB = new Float32Array(W * H); // the streets' light, the bridges' own
+const E = new Float32Array(W * H);
 // whether the 1 m raster is clear of buildings from (ax, az) to 1.5 m short of (bx, bz) (the first 2 m are the lamp's own)
 function clear(ax, az, bx, bz, d) {
   const steps = Math.floor(d - 1.5);
@@ -451,7 +524,7 @@ for (const lamp of lamps) {
       if (d >= reach) continue;
       if (d > 3.5 && !clear(l.x, l.z, tx, tz, d)) continue;
       const win = 1 - (d / reach) ** 2;
-      (l.kind === 'bridge' ? EB : E)[j * W + i] += (I / (1 + (d / r0) ** 2) ** 1.5) * win * win;
+      E[j * W + i] += (I / (1 + (d / r0) ** 2) ** 1.5) * win * win;
     }
   }
 }
@@ -478,16 +551,14 @@ for (const lamp of lamps) {
   }
   for (let k = 0; k < E.length; k++) E[k] += 0.2 * B[k];
 }
-// none on the water but the bridges' own; the rim black
+// the rim black
 const bytes = new Uint8Array(W * H), light = new Float32Array(W * H);
 let lit = 0, sum = 0;
 for (let j = 0; j < H; j++) {
   for (let i = 0; i < W; i++) {
     const k = j * W + i;
-    let water = 0;
-    for (const [ox, oz] of [[0.5, 0.5], [1.5, 0.5], [0.5, 1.5], [1.5, 1.5]]) if (surf[(j * MAP_RES + Math.floor(oz)) * R.w + i * MAP_RES + Math.floor(ox)] === G.water) water++;
     const rim = i === 0 || j === 0 || i === W - 1 || j === H - 1;
-    const e = rim ? 0 : Math.min(E[k] * (1 - water / 4) + EB[k], E_MAX);
+    const e = rim ? 0 : Math.min(E[k], E_MAX);
     light[k] = e;
     bytes[k] = Math.round(LEVELS * Math.sqrt(e / E_MAX)) * (255 / LEVELS);
     if (bytes[k] > 12) lit++;
@@ -518,11 +589,16 @@ log(`${path.relative(ROOT, OUT_MAP)}: ${W} x ${H} at ${MAP_RES} m, ${(png.length
 
 // Per model, five bytes a lamp: Uint16 x, z (dm from the core's north-west corner) and Uint8 heading (1/256 of a turn),
 // base64; the columns in one list per height.
+// (rounded to the decimetre without leaving its metre: the post stays on the cell of the ground map it was fitted to)
+const dm = (d) => {
+  const v = Math.round(d * 10);
+  return Math.floor(v / 10) === Math.floor(d) ? v : Math.floor(d) * 10 + 9;
+};
 const pack = (list) => {
   const buf = Buffer.alloc(list.length * 5);
   list.forEach((l, k) => {
-    buf.writeUInt16LE(Math.round((l.x - CORE.minX) * 10), 5 * k);
-    buf.writeUInt16LE(Math.round((l.z - CORE.minZ) * 10), 5 * k + 2);
+    buf.writeUInt16LE(dm(l.x - CORE.minX), 5 * k);
+    buf.writeUInt16LE(dm(l.z - CORE.minZ), 5 * k + 2);
     buf.writeUInt8(Math.round((l.heading / 360) * 256) & 255, 5 * k + 4);
   });
   return buf.toString('base64');

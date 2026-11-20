@@ -111,6 +111,7 @@ test('the placed lamps stand in the core, clear of the modelled ones', () => {
   assert.ok(placed.length > 5000, `lamps along the streets: ${placed.length}`);
   for (const [x, z] of placed) assert.ok(x > core.minX && x < core.maxX && z > core.minZ && z < core.maxZ);
   assert.deepEqual(STREETLIGHT.columns.map((c) => c.height).sort((a, b) => a - b), [7, 9, 12]);
+  assert.equal(placed.length, STREETLIGHT.columns.reduce((n, c) => n + c.count, 0) + STREETLIGHT.lanterns.count + STREETLIGHT.wall.count);
   // none within 8 m of a street lamp OSM maps (the bake drops a lamp another stands close to)
   const cell = new Map();
   for (const [x, z] of placed) {
@@ -128,4 +129,32 @@ test('the placed lamps stand in the core, clear of the modelled ones', () => {
     }
   }
   assert.equal(close, 0);
+});
+
+test('every post stands on a pavement, paving or a quay (a path\'s lantern or a verge\'s column on open ground), never in a lane, a bed or the water', async () => {
+  // the baked ground map's first plane: the surface of every metre of the core (tools/donostia/bake-ground.mjs's ids)
+  const buf = fs.readFileSync(`${root}data/donostia/ground-core.png`);
+  const img = await decodePNG(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const surface = (x, z) => img.data[Math.floor(z - core.minZ) * img.width + Math.floor(x - core.minX)];
+  const PAVED = new Set([2, 3, 12, 19]), OPEN = new Set([0, 4, 5, 13]); // pavement, pedestrian, setts, quay; lawns & gravel
+  const read = ({ count, data }) => {
+    const bytes = Buffer.from(data, 'base64');
+    return Array.from({ length: count }, (_, k) => [STREETLIGHT.origin[0] + bytes.readUInt16LE(5 * k) * STREETLIGHT.unit,
+      STREETLIGHT.origin[1] + bytes.readUInt16LE(5 * k + 2) * STREETLIGHT.unit]);
+  };
+  const wrong = {};
+  let onOpen = 0, n = 0;
+  for (const list of [...STREETLIGHT.columns, STREETLIGHT.lanterns]) {
+    for (const [x, z] of read(list)) {
+      const s = surface(x, z);
+      n++;
+      if (PAVED.has(s)) continue;
+      if (OPEN.has(s)) { onOpen++; continue; }
+      wrong[s] = (wrong[s] || 0) + 1;
+    }
+  }
+  // (the ramps are not in the ground map: the bake lays them over it, so a handful of posts by a ramp's foot may read
+  // as stairs here; none may stand on a road, a bike lane, rail, sand, water, a building, a tree pit or a bed)
+  for (const id of [1, 6, 7, 8, 9, 11, 14, 15, 16, 17, 18]) assert.equal(wrong[id] || 0, 0, `posts on surface ${id}`);
+  assert.ok(onOpen < 0.45 * n, `most posts stand on paving (${onOpen} of ${n} on open ground)`);
 });
