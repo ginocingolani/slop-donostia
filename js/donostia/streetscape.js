@@ -1,12 +1,14 @@
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, color, attribute, uv, abs, fract, min, max, mix, length, fwidth, smoothstep, mrt,
-  pow, clamp, atan, cos
+  Fn, float, vec2, vec3, vec4, color, attribute, uv, abs, fract, min, max, mix, length, fwidth, smoothstep,
+  atan, cos, varying, positionWorld
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { STREETSCAPE } from './data-streetscape.js';
 import { BEACH_ACCESS } from './data-beach-access.js';
-import { detail, effectTargets } from './quality.js';
+import { STREETLIGHT } from './data-streetlight.js';
+import { detail } from './quality.js';
+import { streetLit } from './street-light.js';
 
 // js/donostia/streetscape.js
 // Street furniture, from tools/donostia/bake-streetscape.mjs (js/donostia/data-streetscape.js):
@@ -18,10 +20,17 @@ import { detail, effectTargets } from './quality.js';
 //   steps in front of the Hotel de Londres; the rotunda's obelisks, clock & barometer, with their arms of globes
 // - OSM's street lamps (a dark cast-iron post under a four-sided lantern) and benches (wooden slats on iron frames)
 // - lanterns on iron brackets along the lanes of the Parte Vieja, where OSM maps no street lamps
+// - the lamps of every other street, which no map has: placed by tools/donostia/bake-streetlight.mjs along the street
+//   network (js/donostia/data-streetlight.js; its header has the rules). Steel columns with an arm and a flat LED
+//   head over the carriageway on the avenues (9 m), the local streets (7 m) and the motorway (12 m), the same
+//   cast-iron lantern as OSM's in the pedestrian streets, squares and paths, the bracket lantern where a lane is too
+//   narrow for a post. They are the sources of the light the streets show at night (js/donostia/street-light.js)
 // - the handrails of the beaches' stairs & ramps (js/donostia/data-beach-access.js) on the kerbs of their open sides: a
 //   tube on posts with a middle rail, painted white at La Concha & Ondarreta, stainless at Zurriola
-// Lamps glow at dusk & night with cityUniforms.uInteriorGlow (emissive + bloom), each over a soft pool of light on the
-// ground; no real lights. Everything is instanced or merged: 9 draws.
+// Lamps glow at dusk & night with cityUniforms.uInteriorGlow (emissive + bloom); the light they throw on the ground,
+// mapped and placed lamps alike, is the baked light map's (js/donostia/street-light.js): no real lights. Everything is
+// instanced or merged: 12 draws (the placed lamps: their posts and their glass, columns and lanterns apart, each
+// culled by distance, sooner still on the lowest quality tier; they cast no shadows).
 // buildStreetscape(GEO, terrain) -> Promise<Object3D | null>; its userData.update(dt, elapsed, camera) culls the small
 // props by distance.
 
@@ -228,6 +237,29 @@ function streetPostGeometry() {
 }
 const streetGlassGeometry = () => lanternGlass(3.41);
 
+// Street column, as placed by tools/donostia/bake-streetlight.mjs: a tapered steel column of COLUMN_H (scaled to the
+// street's own: 7, 9 or 12 m) with a short arm towards the carriageway (+z) and a flat LED head; its lit face apart
+const COLUMN_H = 9;
+const COLUMN_STEEL = [0.115, 0.125, 0.13, 0.5]; // galvanised, painted grey
+function columnGeometry() {
+  const b = new Builder();
+  b.add(lathe([[0, 0], [0.17, 0], [0.17, 0.45], [0.105, 0.55], [0.06, COLUMN_H - 0.25], [0, COLUMN_H - 0.25]], 6), COLUMN_STEEL);
+  beam(b, new THREE.Vector3(0, COLUMN_H - 0.45, 0), new THREE.Vector3(0, COLUMN_H - 0.1, 1.05), 0.07, COLUMN_STEEL, M4());
+  const [head, m] = box(0.3, 0.09, 0.7, 0, COLUMN_H - 0.12, 1.3);
+  b.add(head, COLUMN_STEEL, m);
+  return b.build();
+}
+const columnGlassGeometry = () => new THREE.BoxGeometry(0.24, 0.03, 0.58).translate(0, COLUMN_H - 0.135, 1.3);
+
+// A list of placed lamps (data-streetlight.js: five bytes each, x & z in its units from its origin, the heading in
+// 1/256 of a turn) as [[x, z, yaw (rad)], ...]
+function placedLamps({ count, data }) {
+  const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0)), view = new DataView(bytes.buffer);
+  const [x0, z0] = STREETLIGHT.origin, unit = STREETLIGHT.unit;
+  return Array.from({ length: count }, (_, k) => [x0 + view.getUint16(5 * k, true) * unit, z0 + view.getUint16(5 * k + 2, true) * unit,
+    (bytes[5 * k + 4] / 256) * Math.PI * 2]);
+}
+
 // Wall lantern of the Parte Vieja: a scrolled iron bracket out of the facade (+z) with a lantern hanging from it
 // (y = height above the street)
 const WALL_LANTERN_Y = 4.1, WALL_LANTERN_OUT = 0.62;
@@ -279,9 +311,9 @@ const MONUMENT_INSET = [0.5, 1.2, 1.2]; // the candelabra's & obelisks' axes sta
 // La Concha's barandilla and everything on its line, from the baked runs ([x, y, z] cm, y the promenade; travelling
 // along one, the sea lies towards (-dz, dx)), their posts ([s cm, type: 0 a pillar, 1 a lamp pedestal, 2 a monument's
 // face, where the ironwork stops against it]) and the monuments ([kind, x, y, z cm, heading deg]):
-// { solid (merged, painted), ironwork (the strip), globes [[x, y, z, r]], pools [[x, z, r]] }
+// { solid (merged, painted), ironwork (the strip), globes [[x, y, z, r]] }
 function barandillaGeometries(runs, postLists, monuments, handrails = []) {
-  const solid = new Builder(), globes = [], pools = [];
+  const solid = new Builder(), globes = [];
   const strip = { pos: [], nrm: [], uv: [], idx: [] };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const UP = V(0, 1, 0);
@@ -364,7 +396,6 @@ function barandillaGeometries(runs, postLists, monuments, handrails = []) {
         block(0.66, 1.36, LAMP_PEDESTAL_H, PAINTED_STONE);
         solid.add(lathe(LAMP_COLUMN, 8).translate(0, LAMP_PEDESTAL_H, 0), WHITE_IRON, m);
         globes.push([p.x, p.y + LAMP_PEDESTAL_H + LAMP_GLOBE[0], p.z, LAMP_GLOBE[1]]);
-        pools.push([p.x - s.x * 2.8, p.z - s.z * 2.8, 4.2]);
       }
     }
     // the ironwork strip, section by section between the posts: u counts metres of whole 0.8 m modules (stretched to
@@ -397,11 +428,9 @@ function barandillaGeometries(runs, postLists, monuments, handrails = []) {
     const m = M4().makeTranslation(x, y, z).multiply(M4().makeRotationY(yaw));
     if (kind === 0) {
       candelabrum(solid, m, globes);
-      pools.push([x - sx * 1.5, z - sz * 1.5, 8]);
       continue;
     }
     obelisk(solid, m, globes, kind === 2);
-    pools.push([x - sx * 2.5, z - sz * 2.5, 7]);
   }
   // the handrails of the beaches' stairs & ramps: posts down to the kerb, a tube on top, a thinner rail between
   for (const { t, p: flat } of handrails) {
@@ -438,7 +467,7 @@ function barandillaGeometries(runs, postLists, monuments, handrails = []) {
   g.setIndex(strip.idx);
   g.computeBoundingBox();
   g.computeBoundingSphere();
-  return { solid: solid.build(), ironwork: g, globes, pools };
+  return { solid: solid.build(), ironwork: g, globes };
 }
 
 // --- materials ----------------------------------------------------------------------------------------------------------
@@ -451,6 +480,8 @@ function createPaintMaterial() {
   const paint = attribute('aPaint', 'vec4');
   mat.colorNode = paint.xyz;
   mat.roughnessNode = paint.w;
+  // the lamps' light on the furniture at night (js/donostia/street-light.js; zero by day), read per vertex
+  mat.emissiveNode = paint.xyz.mul(varying(streetLit(vec3(1.0), positionWorld.xz, 0.8), 'vPaintLamp'));
   return mat;
 }
 
@@ -515,6 +546,7 @@ function createIronworkMaterial() {
   const coverage = float(1.0).sub(smoothstep(w.negate(), w, d)).mul(min(float(1.0), float(0.036).div(w.add(0.018))));
   const relief = mix(mix(0.78, 1.0, smoothstep(0.0, 0.012, d.negate())), 0.94, smoothstep(0.004, 0.015, w));
   mat.colorNode = vec4(vec3(...WHITE_IRON.slice(0, 3)).mul(relief), coverage);
+  mat.emissiveNode = vec3(...WHITE_IRON.slice(0, 3)).mul(relief).mul(varying(streetLit(vec3(1.0), positionWorld.xz, 0.8), 'vIronLamp'));
   mat.maskShadowNode = coverage.greaterThan(0.4);
   return mat;
 }
@@ -524,21 +556,6 @@ function createGlassMaterial() {
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.3, metalness: 0.0 });
   mat.colorNode = color(0xece8dc);
   mat.emissiveNode = color(0xffd6a0).mul(night().mul(3.0).add(0.03));
-  return mat;
-}
-
-// A warm pool of lamplight on the ground: additive, depth-tested, off by day. Keeps the G-buffer underneath (zero
-// normal & metalRough, as _transparentEffectMRT in js/tsl-materials.js) so SSR still sees the paving.
-function createPoolMaterial() {
-  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-  mat.fog = false; // fog would add its colour to the far pools
-  mat.colorNode = Fn(() => {
-    const r = length(uv().sub(0.5)).mul(2.0);
-    const falloff = pow(clamp(float(1.0).sub(r), 0.0, 1.0), 2.2);
-    return color(0xffc890).mul(falloff.mul(night()).mul(0.3));
-  })();
-  mat.opacityNode = float(1.0);
-  effectTargets(mat, mrt({ normal: vec4(0.0), metalRough: vec4(0.0) }));
   return mat;
 }
 
@@ -601,8 +618,11 @@ class DistanceCulled {
 }
 // Cull distances (m): about where each prop shrinks to a few pixels. The lamp glass is never culled, so the city's
 // lamps still glow from afar at night; La Concha's barandilla, its lamp posts & monuments are always drawn.
-const CULL = { streetPosts: 900, wallLanterns: 450, benches: 350, pools: 2000 };
+// The placed lamps are many (twelve thousand): their posts go sooner, their glass (the far streets' points of light)
+// at the distance where the city's own glow takes over.
+const CULL = { streetPosts: 900, wallLanterns: 450, benches: 350, placedPosts: 320, columns: 520, placedGlass: 2400 };
 const RECULL = 8; // m the camera moves before the props are culled again
+const LOW_TIER = 0.5; // the lowest quality tier's draw distance scale (js/donostia/quality.js's detailDistance)
 
 export async function buildStreetscape(GEO, terrain) {
   const data = STREETSCAPE;
@@ -617,21 +637,11 @@ export async function buildStreetscape(GEO, terrain) {
     m.compose(p.set(x, y, z), q, s.set(scale, scale, scale));
     out.push(...m.elements);
   };
-  const pools = [];
-  // a pool of light of radius r round (x, z), laid on the ground's slope
-  const pool = (x, z, r) => {
-    const h = terrain.heightAt(x, z);
-    n.set(terrain.heightAt(x - 1, z) - terrain.heightAt(x + 1, z), 2, terrain.heightAt(x, z - 1) - terrain.heightAt(x, z + 1)).normalize();
-    q.setFromUnitVectors(up, n);
-    m.compose(p.set(x, h + 0.06, z), q, s.set(2 * r, 1, 2 * r));
-    pools.push(...m.elements);
-  };
-
   // La Concha's barandilla with its lamp posts, candelabra & obelisks (one merged mesh), its ironwork strip and all
   // their globes
   const promenade = [];
   if (data.railings.length) {
-    const { solid, ironwork, globes, pools: lit } = barandillaGeometries(data.railings, data.railingPosts || [], data.monuments || [],
+    const { solid, ironwork, globes } = barandillaGeometries(data.railings, data.railingPosts || [], data.monuments || [],
       BEACH_ACCESS.rails || []);
     const solidMesh = new THREE.Mesh(solid, paint);
     solidMesh.name = 'Barandilla';
@@ -643,7 +653,6 @@ export async function buildStreetscape(GEO, terrain) {
       group.add(mesh);
     }
     for (const [x, y, z, r] of globes) place(promenade, x, y, z, 0, r);
-    for (const [x, z, r] of lit) pool(x, z, r);
   }
   const promenadeGlobes = instanced(new THREE.SphereGeometry(1, 12, 8), glass, promenade, 'Kontxa_lamp_globes', false);
 
@@ -652,7 +661,6 @@ export async function buildStreetscape(GEO, terrain) {
   for (let k = 0; k < data.lamps.length; k += 3) {
     const x = data.lamps[k] / 100, z = data.lamps[k + 1] / 100;
     place(lamps, x, terrain.heightAt(x, z) - 0.05, z, (data.lamps[k + 2] * Math.PI) / 180);
-    pool(x, z, 5.5);
   }
   const streetPosts = instanced(streetPostGeometry(), paint, lamps, 'Street_lamp_posts');
   const streetGlass = instanced(streetGlassGeometry(), glass, lamps, 'Street_lamp_glass', false);
@@ -662,8 +670,21 @@ export async function buildStreetscape(GEO, terrain) {
     const x = W[k] / 100, z = W[k + 1] / 100, yaw = (W[k + 2] * Math.PI) / 180;
     const ox = Math.sin(yaw), oz = Math.cos(yaw);
     place(wall, x, terrain.heightAt(x + ox * 1.5, z + oz * 1.5), z, yaw);
-    pool(x + ox * 1.8, z + oz * 1.8, 4);
   }
+  // the lamps placed along the streets no map has lamps for
+  const placedWall = placedLamps(STREETLIGHT.wall);
+  for (const [x, z, yaw] of placedWall) place(wall, x, terrain.heightAt(x + Math.sin(yaw) * 1.5, z + Math.cos(yaw) * 1.5), z, yaw);
+  const lanterns = [], columns = [];
+  for (const [x, z, yaw] of placedLamps(STREETLIGHT.lanterns)) place(lanterns, x, terrain.heightAt(x, z) - 0.05, z, yaw);
+  for (const list of STREETLIGHT.columns) {
+    for (const [x, z, yaw] of placedLamps(list)) place(columns, x, terrain.heightAt(x, z) - 0.05, z, yaw, list.height / COLUMN_H);
+  }
+  const postGeo = streetPostGeometry(), glassGeo = streetGlassGeometry();
+  const placed = [
+    instanced(postGeo, paint, lanterns, 'Placed_lantern_posts', false), instanced(glassGeo, glass, lanterns, 'Placed_lantern_glass', false),
+    instanced(columnGeometry(), paint, columns, 'Street_columns', false), instanced(columnGlassGeometry(), glass, columns, 'Street_column_glass', false)
+  ];
+  for (const mesh of placed) if (mesh) mesh.receiveShadow = true;
   const wallFrames = instanced(wallLanternGeometry(), paint, wall, 'Wall_lanterns', false);
   const wallGlass = instanced(wallGlassGeometry(), glass, wall, 'Wall_lantern_glass', false);
   const benches = [];
@@ -672,21 +693,22 @@ export async function buildStreetscape(GEO, terrain) {
     place(benches, x, terrain.heightAt(x, z) - 0.02, z, (data.benches[k + 2] * Math.PI) / 180);
   }
   const benchMesh = instanced(benchGeometry(), paint, benches, 'Benches');
-  const poolMesh = instanced(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), createPoolMaterial(), pools, 'Lamp_light_pools', false);
-  if (poolMesh) poolMesh.renderOrder = 1;
 
-  for (const mesh of [promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, poolMesh]) if (mesh) group.add(mesh);
+  for (const mesh of [promenadeGlobes, streetPosts, streetGlass, wallFrames, wallGlass, benchMesh, ...placed]) if (mesh) group.add(mesh);
   if (!group.children.length) return null;
 
-  const culled = [[streetPosts, CULL.streetPosts], [wallFrames, CULL.wallLanterns], [benchMesh, CULL.benches], [poolMesh, CULL.pools]]
-    .filter(([mesh]) => mesh).map(([mesh, d]) => new DistanceCulled(mesh, d));
+  // [mesh, its distance, that distance's share on the lowest quality tier]: there the placed lanterns' posts are left
+  // out and the columns and the far glass go at half and two thirds of their reach, on top of the tier's own scale
+  const culled = [[streetPosts, CULL.streetPosts, 1], [wallFrames, CULL.wallLanterns, 1], [benchMesh, CULL.benches, 1],
+    [placed[0], CULL.placedPosts, 0], [placed[1], CULL.placedGlass, 0.66], [placed[2], CULL.columns, 0.5], [placed[3], CULL.placedGlass, 0.66]]
+    .filter(([mesh]) => mesh).map(([mesh, d, low]) => Object.assign(new DistanceCulled(mesh, d), { low }));
   const last = new THREE.Vector3(Infinity, Infinity, Infinity);
   let scale = detail.distance;
   group.userData.update = (dt, elapsed, camera) => {
     if (camera.position.distanceToSquared(last) < RECULL * RECULL && scale === detail.distance) return;
     last.copy(camera.position);
     scale = detail.distance;
-    for (const c of culled) c.update(camera.position, scale);
+    for (const c of culled) c.update(camera.position, scale <= LOW_TIER ? scale * c.low : scale);
   };
   return group;
 }

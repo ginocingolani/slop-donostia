@@ -331,6 +331,8 @@ class LightingSystem {
     if (this.uFogHeight) this.uFogHeight.value = 900.0;
     this.sunDisc = 1;
     if (cityUniforms.uDaylight) cityUniforms.uDaylight.value = p.daylight ?? 1;
+    // the public lighting (js/donostia/street-light.js): off unless the preset says so
+    if (cityUniforms.uStreetLight) cityUniforms.uStreetLight.value = p.streetLight ?? 0;
     this.bakeEnvironmentMap();
   }
 
@@ -377,6 +379,7 @@ class LightingSystem {
     cityUniforms.uRoadWetness.value = look.roadWetness;
     if (cityUniforms.uCanyonBounce) cityUniforms.uCanyonBounce.value = look.canyonBounce;
     if (cityUniforms.uDaylight) cityUniforms.uDaylight.value = look.daylight;
+    if (cityUniforms.uStreetLight) cityUniforms.uStreetLight.value = look.streetLight ?? 0;
 
     this.scene.environmentIntensity = look.envIntensity;
   }

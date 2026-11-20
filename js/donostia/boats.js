@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { BOATS } from './data-boats.js';
+import { takeStreetLight } from './street-light.js';
 
 // js/donostia/boats.js
 // The boats moored in the port, where geoEuskadi's 2025 orthophoto shows them (tools/donostia/digitise-boats.mjs ->
@@ -709,7 +710,8 @@ export function createBoatMaterial(instances, seaLevel) {
   })();
   mat.roughnessNode = paint.w;
   mat.emissiveNode = vec3(1.0, 0.93, 0.78).mul(tint.w.mul(night().mul(7.0).add(0.15)));
-  return mat;
+  // the quays' lamps on the hulls, decks and the foot of the rigging (js/donostia/street-light.js)
+  return takeStreetLight(mat);
 }
 
 // the builder, hull, paints & instance layout js/donostia/ferries.js builds the island ferries with

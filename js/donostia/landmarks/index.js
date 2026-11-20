@@ -28,6 +28,7 @@ import * as aiete from './aiete.js';
 import * as konstituzio from './konstituzio-plaza.js';
 import * as maskorGain from './maskor-gain.js';
 import * as harresia from './harresia.js';
+import { takeStreetLightAll } from '../street-light.js';
 
 // js/donostia/landmarks/index.js
 // Registry of the hand-modelled landmarks. Each module builds one landmark from its GEO.landmarks sites; the 1:500
@@ -37,7 +38,7 @@ import * as harresia from './harresia.js';
 // by position: the Aquarium's, the tennis pavilion, the funicular's stations). A model may instead keep some buildings
 // changed (userData.replace: Map(index -> record), drawn by buildings.js in their place) and stand phantom neighbours
 // beside them (userData.phantoms: records never drawn), see buildFacadeCells in js/donostia/facade-mesh.js. Modules
-// never edit GEO.
+// never edit GEO. At night every model takes the street lamps' light where it stands (js/donostia/street-light.js).
 
 const MODELS = [
   [udaletxea, ['udaletxea']],
@@ -87,6 +88,9 @@ export function buildLandmarks(GEO, terrain) {
     }
     if (!model) continue;
     model.name ||= ids[0];
+    // the street lamps' light on its lower metres at night (js/donostia/street-light.js: every surface material of the
+    // model, the kit's shared ones once; its own floodlights and windows stay as they are, the lamps add to them)
+    takeStreetLightAll(model);
     group.add(model);
     const skipped = new Set(model.userData.skipped || []);
     for (const site of sites) if (!skipped.has(site.id)) for (const b of site.buildings || []) hidden.add(b);

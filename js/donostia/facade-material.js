@@ -6,6 +6,7 @@ import {
 } from 'three/tsl';
 import { cityUniforms } from '../city-uniforms.js';
 import { STYLE_PARAMS, WALL, SURF, COVER, FLAG } from './facade-style.js';
+import { streetLight, lamplit } from './street-light.js';
 
 // js/donostia/facade-material.js
 // Facade and roof shaders of Donostia's buildings (geometry & attributes: js/donostia/facade-mesh.js). One material
@@ -387,6 +388,10 @@ export function createFacadeMaterial() {
   const roughV = float(0.9).toVar('facadeRough');
   const metalV = float(0.0).toVar('facadeMetal');
   const reliefV = float(0.0).toVar('facadeRelief'); // height field (m) for the bump in the normal slot
+  // The public lighting on the wall (js/donostia/street-light.js; zero by day): what falls on the pavement 1.5 m in
+  // front of it, strongest on the ground floor and fading up the storeys as the lamps (4 to 9 m up) leave them behind
+  const lampV = vec3(0.0).toVar('facadeLamp');
+  const lamplight = streetLight(positionWorld.xz.add(nW.xz.mul(1.5))).mul(float(0.85).div(v.max(0.0).div(7.0).pow2().add(1.0)));
 
   // TSL keeps a shared node in the variable it was first assigned to: one first built inside a branch would be stale
   // wherever that branch didn't run. Everything the branches below share (and the pixel footprints, which want uniform
@@ -396,7 +401,7 @@ export function createFacadeMaterial() {
     sRom, sOld, sMod, sVil, sCon, sCiv, sLight, dU, dV, mpp, fw.x, fw.y, pier, bayW, cellH, cu, cv, storey, bayIdx, inBays,
     inUpper, inGround, aboveGround, isTop, nUp, fromTop, opening, cellId.x, salt.x, winZone, wx0, wx1, sill, head, inWY,
     win, isDoorBay, shutStyle, hasBal, balType, balX, balcony, underSlab, xm, ym, course, trimTint.x, isBrick, jointFade,
-    fineFade, mottle, fresnel, skyRefl.x, litProb, roomSeed, wallBase.x, accent.x
+    fineFade, mottle, fresnel, skyRefl.x, litProb, roomSeed, wallBase.x, accent.x, lamplight
   ];
 
   mat.colorNode = Fn(() => {
@@ -571,12 +576,13 @@ export function createFacadeMaterial() {
       col.assign(col.mul(float(1.0).sub(splash.mul(0.38).add(0.1).mul(wet))));
       roughV.assign(mix(roughV, roughV.mul(0.55), wet.mul(splash.mul(0.5).add(0.5))));
     });
+    lampV.assign(lamplit(col, lamplight));
     return col;
   })();
 
   mat.roughnessNode = roughV;
   mat.metalnessNode = metalV;
-  mat.emissiveNode = emitV.mul(float(1.0).sub(fresnel.mul(0.8))).mul(cityUniforms.uInteriorGlow);
+  mat.emissiveNode = emitV.mul(float(1.0).sub(fresnel.mul(0.8))).mul(cityUniforms.uInteriorGlow).add(lampV);
 
   // Relief (window reveals, balcony slabs, cornices & string courses, shutters, shopfronts) from the height the colour
   // pass leaves, faded out with distance before it shrinks to sparkling pixels
