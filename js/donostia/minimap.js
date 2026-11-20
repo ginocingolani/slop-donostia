@@ -6,15 +6,19 @@
 // district names are laid over it at screen resolution.
 // Adapted from upstream's js/nyc-map.js (MapView, the radar's cached ground, label placement, the player arrow); the
 // data comes from js/donostia/data-streets.js (tools/donostia/bake-streets.mjs). Nothing here runs at import time,
-// so node can load the index for tests.
+// so node can load the index for tests. The full map's own lines come from js/donostia/i18n.js; the names on the map
+// are the city's and stay as they are.
+
+import { t } from './i18n.js';
 
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 // the HUD's inscription letter (css/donostia.css --font-display), for the full map's auzo names
 const DISPLAY_FONT = 'Ateburu, "Donostia Display", Georgia, serif';
 const WATER = 7;
 const RADAR_SCALE = 0.32; // radar pixels per metre near the ground; it zooms out as the camera climbs
-const FULL_MIN_ZOOM = 0.03;
+const FULL_MIN_ZOOM = 0.03; // (a floor under the built extent's own limit, see confineMapView)
 const FULL_MAX_ZOOM = 3;
+const FULL_MARGIN = 120; // m of the surroundings shown around the built extent at the widest zoom
 
 // Map palette, in step with upstream's (css/style.css, js/nyc-map.js): graphite ground with the streets lighter than the
 // buildings between them (taller ones a shade lighter), muted parks, woods & sand, the sea darkening with depth
@@ -747,9 +751,27 @@ export class Radar {
 // Full map [M]: pan, zoom, search a street, click to fly there
 // ---------------------------------------------------------------------------------------------------------------------
 
+/**
+ * Keeps a full-map view { cx, cz, zoom } (centre in metres, px per metre) on a `w` x `h` px canvas within `bounds`
+ * { minX, maxX, minZ, maxZ }: the map that was built (the model's core, GEO.frame.core) and `margin` metres around
+ * it. The widest zoom is the one at which the whole of it just fits the canvas, and the view's edges never pass its
+ * edges; along the axis the canvas has to spare at the widest zoom the map sits centred. Answers a new view.
+ */
+export function confineMapView(view, bounds, w, h, margin = FULL_MARGIN) {
+  if (!bounds || !(w > 0) || !(h > 0)) return { ...view };
+  const minX = bounds.minX - margin, maxX = bounds.maxX + margin, minZ = bounds.minZ - margin, maxZ = bounds.maxZ + margin;
+  const fit = Math.min(w / (maxX - minX), h / (maxZ - minZ));
+  const zoom = Math.min(Math.max(FULL_MAX_ZOOM, fit), Math.max(view.zoom, fit, FULL_MIN_ZOOM));
+  const axis = (c, lo, hi, span) => (span >= hi - lo ? (lo + hi) / 2 : Math.min(hi - span / 2, Math.max(lo + span / 2, c)));
+  return { cx: axis(view.cx, minX, maxX, w / zoom), cz: axis(view.cz, minZ, maxZ, h / zoom), zoom };
+}
+
 export class FullMap {
-  constructor({ layers, index, god, describe, onFly, onToggle }) {
+  constructor({ layers, index, god, describe, onFly, onToggle, bounds }) {
     Object.assign(this, { layers, index, god, describe, onFly, onToggle });
+    // the built extent the view keeps to (GEO.frame.core); without one, the terrain's core grid
+    const core = layers.terrain?.core;
+    this.bounds = bounds || (core ? { minX: core.x0, maxX: core.x0 + core.w * core.res, minZ: core.z0, maxZ: core.z0 + core.h * core.res } : null);
     this.modal = document.getElementById('fullmap-modal');
     this.canvas = document.getElementById('fullmap-canvas');
     this.wrap = document.getElementById('fullmap-canvas-wrap');
@@ -767,7 +789,6 @@ export class FullMap {
     this.hoverText = '';
     this.queued = false;
     if (!this.modal || !this.canvas) return;
-    this.hoverDefault = this.elHover?.textContent || '';
     this.canvas.style.touchAction = 'none';
     // the dialog itself takes the focus when it opens (see toggle)
     if (!this.modal.hasAttribute('tabindex')) this.modal.tabIndex = -1;
@@ -836,7 +857,7 @@ export class FullMap {
         if (pinch) {
           // the world point under the previous midpoint follows the fingers, scaled by their spread
           const wx = this.cx + (pinch.mx - r.width / 2) / this.zoom, wz = this.cz + (pinch.my - r.height / 2) / this.zoom;
-          this.zoom = Math.min(FULL_MAX_ZOOM, Math.max(FULL_MIN_ZOOM, this.zoom * dist / Math.max(1, pinch.dist)));
+          this.zoom = this.clampZoom(this.zoom * dist / Math.max(1, pinch.dist));
           this.cx = wx - (mx - r.width / 2) / this.zoom;
           this.cz = wz - (my - r.height / 2) / this.zoom;
           this.request();
@@ -871,7 +892,7 @@ export class FullMap {
   toggle(open = !this.isOpen) {
     if (!this.modal || open === this.isOpen) return;
     if (open) {
-      // A keyboard user's place (say the Mapa button) to come back to; a mouse click leaves no focus to return to
+      // A keyboard user's place (say the Map button) to come back to; a mouse click leaves no focus to return to
       // (hud.js blurs clicked buttons), and none matches :focus-visible
       const active = document.activeElement;
       this.returnFocus = active instanceof HTMLElement && active !== document.body && active.matches(':focus-visible') ? active : null;
@@ -888,8 +909,8 @@ export class FullMap {
       this.cz = this.god.position.z;
       this.resize();
       this.request();
-      const here = this.describe(this.cx, this.cz);
-      if (this.elHere) this.elHere.textContent = here ? `Hemen zaude · You are at ${here}` : 'Donostia / San Sebastián';
+      this.here = this.describe(this.god.position.x, this.god.position.z);
+      this.relabel();
       // Focus moves into the dialog (screen readers announce it; Tab reaches the search next). The dialog rather
       // than the search box, so M still closes it, and rather than the close button, so Space doesn't. It fades in:
       // until its visibility turns on (the transition's first frame) it can't take the focus, so retry a few frames.
@@ -921,22 +942,38 @@ export class FullMap {
     return { w: this.canvas.width / this.dpr, h: this.canvas.height / this.dpr };
   }
 
+  // The widest zoom shows the whole built extent and no further (confineMapView); applied before a zoom about a point,
+  // so the place under the cursor or the fingers stays put right up to the limit
+  clampZoom(zoom) {
+    const { w, h } = this.size();
+    return confineMapView({ cx: this.cx, cz: this.cz, zoom: Math.min(FULL_MAX_ZOOM, zoom) }, this.bounds, w, h).zoom;
+  }
+
+  // the view back within the built extent, after whatever moved it
+  confine() {
+    const { w, h } = this.size();
+    Object.assign(this, confineMapView({ cx: this.cx, cz: this.cz, zoom: Math.min(FULL_MAX_ZOOM, Math.max(FULL_MIN_ZOOM, this.zoom)) }, this.bounds, w, h));
+  }
+
+  // the lines this map writes, in the language in force (hud.js calls it when the language changes)
+  relabel() {
+    if (this.elHere) this.elHere.textContent = this.here ? t('map.here', { place: this.here }) : 'Donostia / San Sebastián';
+    this.setHover(this.searchLine?.() || '');
+  }
+
   zoomBy(f, mx, my) {
     const { w, h } = this.size();
     if (mx === undefined) { mx = w / 2; my = h / 2; }
     const wx = this.cx + (mx - w / 2) / this.zoom, wz = this.cz + (my - h / 2) / this.zoom;
-    this.zoom = Math.min(FULL_MAX_ZOOM, Math.max(FULL_MIN_ZOOM, this.zoom * f));
+    this.zoom = this.clampZoom(this.zoom * f);
     this.cx = wx - (mx - w / 2) / this.zoom;
     this.cz = wz - (my - h / 2) / this.zoom;
     this.request();
   }
 
+  // the whole built extent: the widest zoom there is
   fitAll() {
-    const core = this.layers.terrain.core;
-    const { w, h } = this.size();
-    this.cx = core.x0 + (core.w * core.res) / 2;
-    this.cz = core.z0 + (core.h * core.res) / 2;
-    this.zoom = Math.max(FULL_MIN_ZOOM, Math.min(w / (core.w * core.res * 1.05), h / (core.h * core.res * 1.05)));
+    this.zoom = 0;
     this.request();
   }
 
@@ -949,6 +986,7 @@ export class FullMap {
     this.hits = text.trim() ? this.index.search(text) : [];
     this.highlight = this.hits.length ? new Set(this.hits) : null;
     this.highlightPath = null;
+    this.searchLine = null;
     if (this.highlight) {
       // every street that matches, in the search colour
       const path = new Path2D();
@@ -968,7 +1006,8 @@ export class FullMap {
         this.zoom = Math.max(0.08, Math.min(1.6, fit));
       }
       const [eu, es] = this.index.names[this.hits[0]];
-      this.setHover(`${eu}${es ? ` · ${es}` : ''} — Enter: fly there`);
+      this.searchLine = () => `${eu}${es ? ` · ${es}` : ''} — ${t('map.enterFly')}`;
+      this.setHover(this.searchLine());
     } else this.setHover('');
     this.request();
   }
@@ -976,20 +1015,23 @@ export class FullMap {
   hover(p) {
     const x = this.cx + (p.x - p.w / 2) / this.zoom, z = this.cz + (p.y - p.h / 2) / this.zoom;
     const here = this.describe(x, z);
-    this.setHover(here ? `${here} · Click to fly there` : 'Click to fly there');
+    this.setHover(here ? `${here} · ${t('map.clickFly')}` : t('map.clickFly'));
   }
 
   setHover(text) {
     // (fingers tap and pinch: the line a touch screen reads says so)
-    const t = text || (document.body.classList.contains('touch-enabled') ? 'Tap to fly there · Drag to pan · Pinch to zoom' : this.hoverDefault);
-    if (this.elHover && t !== this.hoverText) {
-      this.hoverText = t;
-      this.elHover.textContent = t;
+    const line = text || t(document.body.classList.contains('touch-enabled') ? 'map.hintTouch' : 'map.hint');
+    if (this.elHover && line !== this.hoverText) {
+      this.hoverText = line;
+      this.elHover.textContent = line;
     }
   }
 
+  // every change of the view comes through here: it is brought back within the built extent before it is drawn
   request() {
-    if (this.queued || !this.isOpen) return;
+    if (!this.isOpen) return;
+    this.confine();
+    if (this.queued) return;
     this.queued = true;
     requestAnimationFrame(() => {
       this.queued = false;
@@ -1003,6 +1045,17 @@ export class FullMap {
     const { w, h } = this.size();
     const v = new MapView(this.cx, this.cz, this.zoom, w, h, this.dpr);
     this.layers.drawGround(ctx, v);
+    // Where the canvas has room to spare at the widest zoom, the surroundings past the built extent step back under
+    // a veil: the map's own edge reads as the limit it is
+    const b = this.bounds;
+    if (b) {
+      v.world(ctx);
+      const veil = new Path2D();
+      veil.rect(b.minX - 1e5, b.minZ - 1e5, b.maxX - b.minX + 2e5, b.maxZ - b.minZ + 2e5);
+      veil.rect(b.minX, b.minZ, b.maxX - b.minX, b.maxZ - b.minZ);
+      ctx.fillStyle = 'rgba(9, 15, 22, 0.5)';
+      ctx.fill(veil, 'evenodd');
+    }
     if (this.highlightPath) {
       v.world(ctx);
       ctx.lineJoin = ctx.lineCap = 'round';
