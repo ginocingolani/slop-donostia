@@ -1,13 +1,12 @@
 import * as THREE from 'three/webgpu';
-import { TwoFingerGesture, TapTracker } from './touch.js';
 
 // js/donostia/god-camera.js
 // Free-flying "god mode" camera for exploring the map before the travel modes arrive: WASD moves along the view,
 // Space / E climbs, Q / C descends, Shift boosts, dragging looks around (arrow keys too) and the wheel scales the speed.
-// On touch screens one finger looks, two fingers move the camera (a pinch flies along the view, a two-finger drag
-// slides it sideways and up or down, as a map pans), a double tap flies to the place tapped and js/donostia/touch.js
-// feeds its flight stick & buttons into `touch`. Speed grows with the height above the ground; the camera never goes under the terrain or the sea, nor
-// further out than a little past the context grid's horizon hills. With `colliders` set (js/donostia/colliders.js) the
+// On touch screens a finger dragged on the view looks around, and js/donostia/touch.js feeds its flight stick &
+// buttons into `touch`: that is the whole touch scheme (no pinch, no two-finger pan, no double tap). Speed grows with
+// the height above the ground; the camera never goes under the terrain or the sea, nor further out than a little past
+// the context grid's horizon hills. With `colliders` set (js/donostia/colliders.js) the
 // buildings are solid: it slides along their walls and lands on their roofs, its moves cut into steps shorter than its
 // radius wherever it flies low enough to meet one, so no speed takes it through a wall.
 
@@ -45,8 +44,6 @@ export class GodCamera {
     this.keys = new Set();
     // flight stick & buttons (touch.js): forward / side in -1..1, up in -1..1, boost 0..1 (or on / off)
     this.touch = { forward: 0, side: 0, up: 0, boost: 0 };
-    this._pinch = 0; // pinch spread since the last frame (px)
-    this._pan = { x: 0, y: 0 }; // two-finger drag since the last frame (px)
     this._forward = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this.flight = null;
@@ -68,8 +65,9 @@ export class GodCamera {
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
 
+    // Each pointer down on the view, in the order they came. A mouse drag looks; of the fingers only the first one
+    // down does (a second finger on the view, say a thumb that missed the stick, neither turns nor moves anything)
     const pointers = new Map();
-    const two = new TwoFingerGesture(), taps = new TapTracker();
     // the page must not pan or zoom under the fingers
     this.dom.style.touchAction = 'none';
     // the right button would open the context menu over the view (and must not drag)
@@ -79,13 +77,6 @@ export class GodCamera {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dom.setPointerCapture(e.pointerId);
       this.flight = null;
-      if (e.pointerType === 'touch') {
-        if (pointers.size === 1) taps.down(e.clientX, e.clientY, e.timeStamp);
-        else taps.cancel();
-      }
-      // (two fingers move the camera; a third one stills it, until two are left again)
-      if (pointers.size === 2) two.start(...pointers.values());
-      else two.end();
     });
     this.dom.addEventListener('pointermove', (e) => {
       const prev = pointers.get(e.pointerId);
@@ -96,32 +87,12 @@ export class GodCamera {
       const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
       prev.x = e.clientX;
       prev.y = e.clientY;
-      if (pointers.size === 1) {
-        if (e.pointerType === 'touch') {
-          // a finger looks once it has left its slop: a tap doesn't nudge the view
-          taps.move(e.clientX, e.clientY);
-          if (!taps.dragging && taps.press) return;
-        }
-        const k = (e.pointerType === 'mouse' ? MOUSE_LOOK : TOUCH_LOOK) * (this.camera.fov / 55);
-        this.yaw -= dx * k;
-        this.pitch = THREE.MathUtils.clamp(this.pitch - dy * k, -1.5, 1.5);
-      } else if (pointers.size === 2 && two.last) {
-        const g = two.move(...pointers.values());
-        this._pinch += g.spread;
-        this._pan.x += g.panX;
-        this._pan.y += g.panY;
-      }
+      if (pointers.keys().next().value !== e.pointerId) return;
+      const k = (e.pointerType === 'mouse' ? MOUSE_LOOK : TOUCH_LOOK) * (this.camera.fov / 55);
+      this.yaw -= dx * k;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * k, -1.5, 1.5);
     });
-    const release = (e) => {
-      if (!pointers.delete(e.pointerId)) return;
-      if (pointers.size === 2) two.start(...pointers.values());
-      else two.end();
-      if (e.type !== 'pointerup') { taps.cancel(); return; }
-      // a double tap flies to the place tapped (the first tap, like any touch, has stopped a flight under way)
-      if (e.pointerType === 'touch' && !pointers.size && taps.up(e.clientX, e.clientY, e.timeStamp) === 'double' && this.enabled) {
-        this.flyToward(e.clientX, e.clientY);
-      }
-    };
+    const release = (e) => pointers.delete(e.pointerId);
     this.dom.addEventListener('pointerup', release);
     this.dom.addEventListener('pointercancel', release);
     this.dom.addEventListener('lostpointercapture', release);
@@ -151,38 +122,8 @@ export class GodCamera {
     this.velocity.set(0, 0, 0);
   }
 
-  /**
-   * Flies towards the place seen at a point of the view (client px): the ray through it is marched to the ground, the
-   * sea or the roofs, and the camera comes two thirds of the way, never nearer than 40 m nor from further than 400 m,
-   * looking at the place. False (and no flight) where the ray meets nothing: the sky, or the world's edge.
-   */
-  flyToward(clientX, clientY) {
-    const rect = this.dom.getBoundingClientRect();
-    if (!rect.width || !rect.height) return false;
-    const dir = new THREE.Vector3(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2, 0.5)
-      .unproject(this.camera).sub(this.position).normalize();
-    const p = new THREE.Vector3();
-    const surface = (x, z) => Math.max(0, this.terrain.heightAt(x, z), this.colliders ? this.colliders.clearance(x, z) : 0);
-    // (steps grow with the distance: a metre near the camera, some 60 m by the horizon; roofs count by their cell's
-    // highest, which is the scale a tap can aim at)
-    let hit = 0;
-    for (let t = 4; t < 9000; t += 1 + t * 0.02) {
-      p.copy(this.position).addScaledVector(dir, t);
-      if (p.y <= surface(p.x, p.z)) { hit = t; break; }
-    }
-    if (!hit) return false;
-    const to = this.position.clone().addScaledVector(dir, hit);
-    const from = to.clone().addScaledVector(dir, -THREE.MathUtils.clamp(hit / 3, 40, 400));
-    if (hit < 60) from.copy(this.position); // (already there: only turn to it)
-    from.y = Math.max(from.y, surface(from.x, from.z) + 12);
-    this.flyTo({ from: from.toArray(), to: to.toArray() }, THREE.MathUtils.clamp(0.6 + hit / 900, 0.8, 2.2));
-    return true;
-  }
-
   clearTouch() {
     Object.assign(this.touch, { forward: 0, side: 0, up: 0, boost: 0 });
-    this._pinch = 0;
-    this._pan.x = this._pan.y = 0;
   }
 
   update(dt) {
@@ -203,7 +144,7 @@ export class GodCamera {
       this._apply();
       return;
     }
-    if (!this.enabled) { this._pinch = this._pan.x = this._pan.y = 0; this._apply(); return; }
+    if (!this.enabled) { this._apply(); return; }
     const k = this.keys, t = this.touch;
     const fwd = THREE.MathUtils.clamp((k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) + t.forward, -1, 1);
     const side = THREE.MathUtils.clamp((k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + t.side, -1, 1);
@@ -219,20 +160,6 @@ export class GodCamera {
     const speed = THREE.MathUtils.clamp(5 + agl * 0.9, 5, 700) * this.speedScale * boost;
     const forward = this._forward.set(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
     const right = this._right.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    // a pinch moves the camera itself along the view, further per pixel the higher it flies
-    if (this._pinch) {
-      const d = this._pinch * THREE.MathUtils.clamp(0.2 + agl * 0.012, 0.2, 12) * this.speedScale;
-      this._move(forward.x * d, forward.y * d, forward.z * d);
-      this._pinch = 0;
-    }
-    // A two-finger drag slides the camera across the view, the city following the fingers as a map does: a px is
-    // what it spans on the ground ahead (about the height above it, in the middle of the view)
-    if (this._pan.x || this._pan.y) {
-      const perPx = (THREE.MathUtils.clamp(agl * 1.2, 4, 2500) * 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.dom.clientHeight);
-      const dx = -this._pan.x * perPx, dy = this._pan.y * perPx;
-      this._move(right.x * dx, dy, right.z * dx);
-      this._pan.x = this._pan.y = 0;
-    }
     const wish = forward.multiplyScalar(fwd).addScaledVector(right, side);
     wish.y += up;
     if (wish.lengthSq() > 1) wish.normalize();

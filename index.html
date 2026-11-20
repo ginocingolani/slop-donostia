@@ -1,11 +1,22 @@
 <!DOCTYPE html>
-<html lang="eu">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop Donostia</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23d9b26f'/%3E%3Ccircle cx='16' cy='16' r='12.4' fill='none' stroke='%2310233a' stroke-width='1.2' opacity='.55'/%3E%3Cpath fill='%2310233a' d='M16 16A9.5 9.5 0 0 1 16 6.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 11.25A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 24.23 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 16 25.5A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 20.75A9.5 9.5 0 0 1 16 16ZM16 16A9.5 9.5 0 0 1 7.77 11.25A9.5 9.5 0 0 1 16 16Z'/%3E%3C/svg%3E" />
   <meta name="description" content="Donostia / San Sebastián from the top of Igeldo to the end of Sagüés and south to Anoeta and the Hospital Universitario, built with three.js WebGPURenderer and TSL on the Basque LiDAR terrain, the municipal 1:500 map, b5m building heights and OpenStreetMap. A fork of mrdoob/slop-newyork." />
+  <!-- An installable web app (manifest.webmanifest): opened from the home screen it runs with no browser bars, which
+       is the one way to full screen an iPhone offers. The view runs under the status bar (black-translucent); the
+       layout keeps clear of the notch and the home indicator by the safe-area insets (css/donostia.css). The icons
+       are the HUD's rosette (icons/icon.svg). No service worker: the app needs the network anyway. -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#0a1726" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Slop Donostia" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js pinned to the r186.1 npm release (slop-newyork tracks @dev; jsDelivr cannot serve arbitrary three.js commits: the repo exceeds its 50 MB limit) -->
   <script type="importmap">
@@ -26,6 +37,7 @@
   <link rel="modulepreload" href="./js/donostia/data-streetscape.js" />
   <link rel="modulepreload" href="./js/donostia/data-streets.js" />
   <link rel="modulepreload" href="./js/donostia/minimap.js" />
+  <link rel="modulepreload" href="./js/donostia/i18n.js" />
   <link rel="modulepreload" href="./js/donostia/main.js" />
   <!-- main.js reports its own startup errors; this covers the module graph failing to load or run at all (three.js from
        the CDN, a data module, a browser without import maps), which would otherwise leave the loader at 'Starting…' -->
@@ -60,7 +72,7 @@
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M5.5 18.5 7 17M17 7l1.5-1.5"/></symbol>
       <symbol id="i-twilight" viewBox="0 0 24 24"><path d="M3 15.5h18M7.5 19h9M8 15.5a4 4 0 0 1 8 0M17.5 4v3.2M15.9 5.6h3.2M7 7.4v1.8M6.1 8.3h1.8"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z"/></symbol>
-      <!-- the real-time switch (Orain) and its readout: a clock, the weather, the tide and the waves -->
+      <!-- the real-time switch ("Now") and its readout: a clock, the weather, the tide and the waves -->
       <symbol id="i-live" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.2V12l3.3 2.1"/></symbol>
       <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.4 17.6h9.9a3.7 3.7 0 0 0 .4-7.4 5.4 5.4 0 0 0-10.3 1.3 3.1 3.1 0 0 0 0 6.1z"/></symbol>
       <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.4 14.2h9.9a3.5 3.5 0 0 0 .4-7 5.2 5.2 0 0 0-10 1.2 2.9 2.9 0 0 0-.3 5.8zM8.6 17.4l-1.1 2.4M12.6 17.4l-1.1 2.4M16.6 17.4l-1.1 2.4"/></symbol>
@@ -82,8 +94,7 @@
       <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m20 20-4.6-4.6"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
-      <!-- touch: the flight stick's switch, and the sheet of settings & everything the phone's bar has no room for -->
-      <symbol id="i-stick" viewBox="0 0 24 24"><circle cx="12" cy="6.6" r="3.1"/><path d="M12 9.7v6.1M5.2 19.6c0-2.1 3-3.8 6.8-3.8s6.8 1.7 6.8 3.8z"/></symbol>
+      <!-- the sheet of settings & everything the phone's bar has no room for -->
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.5 6.5h-4v11h11v-4M14 5.5h4.5V10M18.5 5.5l-7.5 7.5"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h8.6M17.4 7.5H20M4 16.5h2.6M11.4 16.5H20"/><circle cx="15" cy="7.5" r="2.4"/><circle cx="9" cy="16.5" r="2.4"/></symbol>
       <!-- The six-petal rosette drawn with a compass on the discoidal stelae, lintels and chests of the Basque Country:
@@ -101,17 +112,28 @@
       <svg class="rosette loader-rosette" aria-hidden="true"><use href="#i-rosette"/></svg>
       <div class="loader-title"><span class="brand-slop">Slop</span> Donostia</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
+      <!-- main.js writes its lines here in English; js/donostia/i18n.js says them in the language picked -->
       <div id="loading-status">Starting…</div>
       <!-- Shown by #loading-overlay[data-error='webgpu'] (css/donostia.css): js/donostia/main.js sets the attribute
            where the browser has no WebGPU, and any other data-error value stills the bar under its own message -->
       <div class="loader-note loader-webgpu">
-        <strong>WebGPU behar da · Hace falta WebGPU</strong>
-        <p>Slop Donostia is drawn with WebGPU, which this browser or device does not offer. Try the current Chrome, Edge or Samsung Internet (Android 12 or later), Safari on iOS / iPadOS 26 or later, or a desktop browser.</p>
+        <strong data-i18n="loading.webgpuTitle">WebGPU is needed</strong>
+        <p data-i18n="loading.webgpuNote">Slop Donostia is drawn with WebGPU, which this browser or device does not offer. Try the current Chrome, Edge or Samsung Internet (Android 12 or later), Safari on iOS / iPadOS 26 or later, or a desktop browser.</p>
       </div>
     </div>
   </div>
+  <!-- The language picked (js/donostia/i18n.js; English unless chosen otherwise) is on the page before the modules load -->
+  <script>
+    try {
+      const lang = localStorage.getItem('donostia-lang');
+      if (lang === 'eu' || lang === 'es') {
+        document.documentElement.lang = lang;
+        document.getElementById('loading-status').textContent = lang === 'eu' ? 'Abiarazten…' : 'Iniciando…';
+      }
+    } catch { /* storage unavailable */ }
+  </script>
 
-  <main id="canvas-container" aria-label="3D view of Donostia / San Sebastián"></main>
+  <main id="canvas-container" aria-label="3D view of Donostia / San Sebastián" data-i18n-attr="aria-label:view.label"></main>
 
   <header class="hud hud-top-left">
     <div class="panel brand">
@@ -119,9 +141,9 @@
       <div class="brand-titles">
         <div class="brand-heading">
           <h1><span class="brand-slop">Slop</span> Donostia</h1>
-          <a class="repo-link" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer" aria-label="Slop Donostia on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
+          <a class="repo-link" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer" aria-label="Slop Donostia on GitHub (opens in a new tab)" data-i18n-attr="aria-label:brand.github">GitHub <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="brand-subtitle">fork of <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">slop-newyork</a> · <span id="hud-fps" class="fps-ok">60</span> fps</div>
+        <div class="brand-subtitle"><span data-i18n="brand.fork">fork of</span> <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">slop-newyork</a> · <span id="hud-fps" class="fps-ok">60</span> fps</div>
       </div>
     </div>
   </header>
@@ -129,98 +151,108 @@
   <div class="hud hud-top-right">
     <div id="hud-toolbar" class="panel toolbar">
       <!-- the phone's bar folds the time of day behind this button (css/donostia.css, js/donostia/hud.js) -->
-      <button id="btn-time" class="tool-btn dock-only" type="button" aria-expanded="false" aria-controls="time-switch" title="Ordua · time of day" aria-label="Time of day">
-        <svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="dock-label">Ordua</span>
+      <button id="btn-time" class="tool-btn dock-only" type="button" aria-expanded="false" aria-controls="time-switch" title="Time of day" aria-label="Time of day" data-i18n-attr="title:time.label;aria-label:time.label">
+        <svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="dock-label">Golden hour</span>
       </button>
-      <div id="time-switch" class="time-switch" role="group" aria-label="Time of day">
-        <button class="time-btn active" data-time="golden" type="button" title="Ilunabarra · golden hour [1]"><svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="seg-label">Ilunabarra</span></button>
-        <button class="time-btn" data-time="midday" type="button" title="Eguerdia · midday [2]"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label">Eguerdia</span></button>
-        <button class="time-btn" data-time="twilight" type="button" title="Ordu urdina · blue hour [3]"><svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label">Ordu urdina</span></button>
-        <button class="time-btn" data-time="midnight" type="button" title="Gaua · night [4]"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span class="seg-label">Gaua</span></button>
-        <!-- real time (js/donostia/hud.js, live-sky.js): the city's clock, weather and sea now, over the four looks -->
-        <button id="btn-live" class="time-btn live-btn" type="button" role="switch" aria-checked="false" title="Orain · ahora · real time: Donostia's own clock, weather and sea, now [5]"><svg class="icon" aria-hidden="true"><use href="#i-live"/></svg><span class="seg-label">Orain</span></button>
+      <div id="time-switch" class="time-switch" role="group" aria-label="Time of day" data-i18n-attr="aria-label:time.label">
+        <button class="time-btn active" data-time="golden" type="button" title="Golden hour [1]" data-i18n-attr="title:time.goldenTitle"><svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="seg-label" data-i18n="time.golden">Golden hour</span></button>
+        <button class="time-btn" data-time="midday" type="button" title="Midday [2]" data-i18n-attr="title:time.middayTitle"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label" data-i18n="time.midday">Midday</span></button>
+        <button class="time-btn" data-time="twilight" type="button" title="Blue hour [3]" data-i18n-attr="title:time.twilightTitle"><svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label" data-i18n="time.twilight">Blue hour</span></button>
+        <button class="time-btn" data-time="midnight" type="button" title="Night [4]" data-i18n-attr="title:time.midnightTitle"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span class="seg-label" data-i18n="time.midnight">Night</span></button>
+        <!-- real time, "Now" (js/donostia/hud.js, live-sky.js): the city's clock, weather and sea now, over the four looks -->
+        <button id="btn-live" class="time-btn live-btn" type="button" role="switch" aria-checked="false" title="Real time: Donostia's own clock, weather and sea, now [5]" data-i18n-attr="title:time.liveTitle"><svg class="icon" aria-hidden="true"><use href="#i-live"/></svg><span class="seg-label" data-i18n="time.live">Now</span></button>
       </div>
       <span class="toolbar-divider" aria-hidden="true"></span>
-      <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Fly to a viewpoint">
-        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Joan</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Fly to a viewpoint" data-i18n-attr="title:tool.flyToTitle">
+        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label" data-i18n="tool.flyTo">Go to</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
       </button>
-      <button id="btn-open-map" class="tool-btn" type="button" title="Mapa · street map [M]" aria-pressed="false">
-        <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Mapa</span><kbd>M</kbd>
+      <button id="btn-open-map" class="tool-btn" type="button" title="Street map [M]" aria-pressed="false" data-i18n-attr="title:tool.mapTitle">
+        <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label" data-i18n="tool.map">Map</span><kbd>M</kbd>
       </button>
-      <!-- touch screens: the flight stick & its buttons, off until asked for (js/donostia/touch.js) -->
-      <button id="btn-fly" class="tool-btn icon-only touch-only" type="button" title="Hegan · flight stick: fly with the left thumb, look with the right" aria-label="Flight stick" aria-pressed="false">
-        <svg class="icon" aria-hidden="true"><use href="#i-stick"/></svg><span class="dock-label">Hegan</span>
+      <!-- the settings sheet: the quality control where js/donostia/quality.js is there, the language, and on touch
+           screens the tools the bar has no room for -->
+      <button id="btn-settings" class="tool-btn icon-only" type="button" popovertarget="settings-popover" title="Settings" aria-label="Settings" data-i18n-attr="title:tool.settings;aria-label:tool.settings">
+        <svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span class="dock-label" data-i18n="tool.settings">Settings</span>
       </button>
-      <!-- the settings sheet: the quality control where js/donostia/quality.js is there, and on touch screens the
-           tools the bar has no room for; hud.js shows the button when the sheet has something to offer -->
-      <button id="btn-settings" class="tool-btn icon-only" type="button" popovertarget="settings-popover" title="Aukerak · settings" aria-label="Settings" hidden>
-        <svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span class="dock-label">Gehiago</span>
-      </button>
-      <button id="btn-credits" class="tool-btn icon-only" type="button" popovertarget="credits-popover" title="Data sources & licences" aria-label="Data sources">
+      <button id="btn-credits" class="tool-btn icon-only" type="button" popovertarget="credits-popover" title="Data sources &amp; licences" aria-label="Data sources" data-i18n-attr="title:tool.creditsTitle;aria-label:tool.credits">
         <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>
       </button>
-      <button id="btn-toggle-hud" class="tool-btn icon-only" type="button" title="Clean view [H]" aria-label="Hide HUD" aria-pressed="false">
+      <button id="btn-toggle-hud" class="tool-btn icon-only" type="button" title="Clean view [H]" aria-label="Hide the interface" aria-pressed="false" data-i18n-attr="title:tool.cleanTitle;aria-label:tool.cleanLabel">
         <svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye-off"/></svg>
       </button>
     </div>
     <!-- under the toolbar while real time is on: the hour, the weather, the tide and the waves in Donostia now -->
-    <div id="live-readout" class="panel live-readout" role="group" aria-label="Donostia orain · ahora · now" hidden>
-      <span class="live-item live-clock" title="Orain · ahora · now (Europe/Madrid)"><span class="live-dot" aria-hidden="true"></span><span id="live-time" class="live-num">--:--</span></span>
+    <div id="live-readout" class="panel live-readout" role="group" aria-label="Donostia now" data-i18n-attr="aria-label:live.label" hidden>
+      <span class="live-item live-clock" title="Now (Europe/Madrid time)" data-i18n-attr="title:live.clockTitle"><span class="live-dot" aria-hidden="true"></span><span id="live-time" class="live-num">--:--</span></span>
       <span id="live-weather" class="live-item live-weather"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-sun"/></svg><span class="live-word"></span><span class="live-num"></span></span>
       <span id="live-tide" class="live-item live-tide"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-tide"/></svg><span class="live-num"></span><span class="live-sub"></span></span>
       <span id="live-waves" class="live-item live-waves"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-waves"/></svg><span class="live-num"></span></span>
-      <a class="live-credit" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" title="Weather &amp; sea data by Open-Meteo.com (CC BY 4.0)">Open-Meteo</a>
+      <a class="live-credit" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" title="Weather &amp; sea data by Open-Meteo.com (CC BY 4.0)" data-i18n-attr="title:live.creditTitle">Open-Meteo</a>
     </div>
   </div>
 
-  <div id="teleport-popover" class="popover" popover aria-label="Fly to">
-    <div class="pop-title">Joan · Ir a</div>
+  <div id="teleport-popover" class="popover" popover aria-label="Fly to" data-i18n-attr="aria-label:flyto.label">
+    <div class="pop-title" data-i18n="flyto.title">Go to</div>
     <div id="teleport-list"></div>
   </div>
 
-  <div id="settings-popover" class="popover settings" popover aria-label="Settings">
+  <div id="settings-popover" class="popover settings" popover aria-label="Settings" data-i18n-attr="aria-label:tool.settings">
     <!-- filled by js/donostia/hud.js from the quality module's tiers; hidden where there is none -->
     <div id="quality-control" hidden>
-      <div id="quality-title" class="pop-title">Kalitatea · Calidad</div>
+      <div id="quality-title" class="pop-title" data-i18n="settings.quality">Quality</div>
       <div id="quality-options" class="seg" role="group" aria-labelledby="quality-title"></div>
       <p id="quality-note" class="settings-note" aria-live="polite"></p>
     </div>
+    <!-- the interface's language (js/donostia/i18n.js): English unless chosen otherwise; hud.js fills the row -->
+    <div id="language-control">
+      <div id="language-title" class="pop-title" data-i18n="settings.language">Language</div>
+      <div id="language-options" class="seg" role="group" aria-labelledby="language-title"></div>
+    </div>
+    <!-- Full screen (js/donostia/hud.js): the button where the browser offers the Fullscreen API (Android, iPad,
+         desktop); on iPhone, which has none for pages, the line that says how instead; nothing when already running
+         from the home screen -->
+    <div id="fullscreen-control" hidden>
+      <button id="btn-fullscreen" class="pop-item more-item" type="button" aria-pressed="false" hidden><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg><span class="pop-name" data-i18n="screen.full">Full screen</span></button>
+      <p id="fullscreen-hint" class="settings-note" data-i18n="screen.hint" hidden>For full screen: Share › Add to Home Screen</p>
+    </div>
     <!-- touch screens only: what the bar leaves out -->
     <div class="settings-more">
-      <div class="pop-title">Gehiago · Más</div>
-      <button id="more-clean" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg><span class="pop-name">Bista garbia</span><span class="pop-sub">Clean view</span></button>
-      <button id="more-credits" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span class="pop-name">Datuak</span><span class="pop-sub">Data sources &amp; licences</span></button>
-      <a class="pop-item more-item" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg><span class="pop-name">GitHub</span><span class="pop-sub">Source code<span class="visually-hidden"> (opens in a new tab)</span></span></a>
+      <div class="pop-title" data-i18n="settings.more">More</div>
+      <button id="more-clean" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg><span class="pop-name" data-i18n="tool.clean">Clean view</span></button>
+      <button id="more-credits" class="pop-item more-item" type="button"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span class="pop-name" data-i18n="tool.credits">Data sources</span><span class="pop-sub" data-i18n="more.licences">Licences</span></button>
+      <a class="pop-item more-item" href="https://github.com/ginocingolani/slop-donostia/" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg><span class="pop-name">GitHub</span><span class="pop-sub"><span data-i18n="more.source">Source code</span><span class="visually-hidden" data-i18n="more.newTab"> (opens in a new tab)</span></span></a>
     </div>
   </div>
 
-  <div id="credits-popover" class="popover credits" popover aria-label="Data sources">
-    <div class="pop-title">Datuak · Datos</div>
-    <p>Terrain &amp; sea floor: Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi — LiDAR 2017 MDT &amp; isobaths (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
-    <p>Boats in the port: digitised on the 2025 orthophoto, Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi</p>
-    <p>Building heights: b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
-    <p>Buildings, streets &amp; ground: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
-    <p>Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
-    <p>Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
-    <p>The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
-    <p>Aitor Zabaleta's portrait on the tifo's banner at Anoeta: from a photo by <a href="https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan" target="_blank" rel="noopener noreferrer">Goiena.eus</a> via <a href="https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>, in greys (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>). The medallion it shows is the supporters’ work</p>
-    <p>Real time (Orain): weather &amp; sea data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>), its forecast and marine models; the sun's and the moon's places after the Astronomical Almanac and Meeus' <i>Astronomical Algorithms</i></p>
-    <p>Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
-    <p>Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
+  <div id="credits-popover" class="popover credits" popover aria-label="Data sources" data-i18n-attr="aria-label:tool.credits">
+    <div class="pop-title" data-i18n="credits.title">Data sources</div>
+    <p data-i18n-rich="credits.terrain">Terrain &amp; sea floor: Eusko Jaurlaritza / Gobierno Vasco, geoEuskadi — LiDAR 2017 MDT &amp; isobaths (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
+    <p data-i18n-rich="credits.boats">Boats in the port: digitised on the 2025 orthophoto, Eusko Jaurlaritza / Gobierno Vasco. geoEuskadi</p>
+    <p data-i18n-rich="credits.heights">Building heights: b5m, Gipuzkoako Foru Aldundia / Diputación Foral de Gipuzkoa (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>)</p>
+    <p data-i18n-rich="credits.ground">Buildings, streets &amp; ground: Donostiako Udala / Ayuntamiento de San Sebastián, cartografía municipal 1:500 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
+    <p data-i18n-rich="credits.districts">Neighbourhoods (auzoak): Donostiako Udala / Ayuntamiento de San Sebastián (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>)</p>
+    <p data-i18n-rich="credits.osm">Street &amp; place names, landmarks, water, bridges, street furniture: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> (<a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener noreferrer">ODbL</a>)</p>
+    <p data-i18n-rich="credits.derived">The data was reprojected, simplified, resampled and combined for Slop Donostia; the derived data is under ODbL / CC BY-SA 3.0 (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">details</a>).</p>
+    <p data-i18n-rich="credits.tifo">Aitor Zabaleta's portrait on the tifo's banner at Anoeta: from a photo by <a href="https://goiena.eus/debagoiena/1776352442099-debagoiendarrak-sevillan" target="_blank" rel="noopener noreferrer">Goiena.eus</a> via <a href="https://commons.wikimedia.org/wiki/File:Reala_Kopa_2026_Zabaleta.jpg" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>, in greys (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>). The medallion it shows is the supporters’ work</p>
+    <p data-i18n-rich="credits.live">Real time (Now): weather &amp; sea data by <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>), its forecast and marine models; the sun's and the moon's places after the Astronomical Almanac and Meeus' <i>Astronomical Algorithms</i></p>
+    <p data-i18n-rich="credits.lettering">Lettering: Ateburu, drawn for Slop Donostia from the Basque inscriptions in Louis Colas's <i>La tombe basque</i> (1923) (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/ateburu/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>); fallback Donostia Display, Marcellus by Astigmatic with the crowned A (<a href="https://github.com/ginocingolani/slop-donostia/blob/main/fonts/donostia-display/OFL.txt" target="_blank" rel="noopener noreferrer">SIL OFL 1.1</a>)</p>
+    <p data-i18n-rich="credits.code">Code: MIT, forked from <a href="https://github.com/mrdoob/slop-newyork" target="_blank" rel="noopener noreferrer">mrdoob/slop-newyork</a></p>
   </div>
 
-  <!-- Bottom left: the street-name plaques, over a card that reads where you are (auzoa, place) above the radar -->
+  <!-- Bottom left: the street-name plaques, over a card that reads where you are (auzoa, place) above the radar; on
+       touch screens the plaques go and the street is a plain line inside the card (css/donostia.css) -->
   <div class="hud hud-bottom-left">
     <div id="hud-location-signs"></div>
-    <aside id="minimap-card" class="panel radar-card" aria-label="Where you are, and the radar: click to fly there">
+    <aside id="minimap-card" class="panel radar-card" aria-label="Where you are, and the radar: click to fly there" data-i18n-attr="aria-label:where.label">
       <div id="hud-location" class="location" aria-live="off">
         <div class="location-place"><span id="hud-district"></span><span class="location-alt"><span id="hud-location-alt">0</span> m</span></div>
         <div id="hud-location-poi" class="location-poi" hidden></div>
+        <div id="hud-location-street" class="location-street" lang="eu" hidden></div>
       </div>
       <div class="radar">
-        <canvas id="minimap-canvas" title="Egin klik hara joateko · Click to fly there"></canvas>
+        <canvas id="minimap-canvas" title="Click to fly there" data-i18n-attr="title:radar.title"></canvas>
         <span class="radar-north" aria-hidden="true">N</span>
-        <button id="radar-expand" class="radar-expand" type="button" title="Mapa osoa · Full map [M]" aria-label="Open the full map">
+        <button id="radar-expand" class="radar-expand" type="button" title="Full map [M]" aria-label="Open the full map" data-i18n-attr="title:radar.expandTitle;aria-label:radar.expand">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#i-fit"/></svg>
         </button>
       </div>
@@ -229,54 +261,51 @@
 
   <footer class="hud hud-bottom-center">
     <div class="controls-hint">
-      <span class="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span class="hint-label">Fly</span></span>
-      <span class="hint"><kbd>E</kbd><kbd>Q</kbd><span class="hint-label">Up / down</span></span>
-      <span class="hint"><kbd>Shift</kbd><span class="hint-label">Fast</span></span>
-      <span class="hint"><kbd>Drag</kbd><span class="hint-label">Look</span></span>
-      <span class="hint"><kbd>Wheel</kbd><span class="hint-label">Speed</span></span>
-      <span class="hint"><kbd>M</kbd><span class="hint-label">Map</span></span>
+      <span class="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span class="hint-label" data-i18n="hint.fly">Fly</span></span>
+      <span class="hint"><kbd>E</kbd><kbd>Q</kbd><span class="hint-label" data-i18n="hint.upDown">Up / down</span></span>
+      <span class="hint"><kbd>Shift</kbd><span class="hint-label" data-i18n="hint.fast">Fast</span></span>
+      <span class="hint"><kbd data-i18n="key.drag">Drag</kbd><span class="hint-label" data-i18n="hint.look">Look</span></span>
+      <span class="hint"><kbd data-i18n="key.wheel">Wheel</kbd><span class="hint-label" data-i18n="hint.speed">Speed</span></span>
+      <span class="hint"><kbd>M</kbd><span class="hint-label" data-i18n="hint.map">Map</span></span>
     </div>
   </footer>
 
   <div class="hud hud-bottom-right">
-    <section class="panel cluster" aria-label="Camera telemetry">
+    <section class="panel cluster" aria-label="Camera telemetry" data-i18n-attr="aria-label:gauge.label">
       <div class="gauge">
         <div class="gauge-top">
-          <span class="gauge-label">Jainko-kamera</span>
-          <span class="gauge-alt"><span class="gauge-alt-label">Alt</span> <span id="hud-altitude">0</span> m</span>
+          <span class="gauge-label" data-i18n="gauge.camera">God camera</span>
+          <span class="gauge-alt"><span class="gauge-alt-label" data-i18n="gauge.alt">Alt</span> <span id="hud-altitude">0</span> m</span>
         </div>
         <div class="gauge-speed"><span id="hud-speed">0</span><span class="gauge-unit">km/h</span></div>
       </div>
     </section>
   </div>
 
-  <!-- What the fingers do, said once to a touch screen and again when the flight stick is switched (hud.js) -->
-  <p id="touch-hint" class="touch-hint" role="status" hidden></p>
-
-  <!-- The god camera's flight stick & buttons (js/donostia/touch.js): on touch screens once the toolbar's Hegan
-       button turns them on, hidden while the full map is open -->
-  <section id="touch-controls" aria-label="Touch controls" hidden>
+  <!-- The god camera's flight stick & buttons (js/donostia/touch.js): always there on touch screens, hidden while
+       the full map is open. The stick and a drag on the view are the whole scheme. -->
+  <section id="touch-controls" aria-label="Touch controls" data-i18n-attr="aria-label:touch.label" hidden>
     <div class="touch-movement">
-      <div id="touch-stick" role="group" aria-label="Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast">
+      <div id="touch-stick" role="group" aria-label="Flight stick: push up or down to fly forward or back, left or right to slide, past the rim to go fast" data-i18n-attr="aria-label:touch.stick">
         <span class="touch-stick-axis" aria-hidden="true"></span>
         <span id="touch-stick-knob" aria-hidden="true"></span>
       </div>
     </div>
-    <div class="touch-actions" role="group" aria-label="Hold to climb or descend; tap to switch the fast gear">
-      <button class="touch-action" data-touch-action="up" type="button" aria-label="Igo · Climb" aria-pressed="false">
-        <span aria-hidden="true">↑</span><span>Igo</span>
+    <div class="touch-actions" role="group" aria-label="Hold to climb or descend; tap to switch the fast gear" data-i18n-attr="aria-label:touch.actions">
+      <button class="touch-action" data-touch-action="up" type="button" aria-label="Climb" aria-pressed="false" data-i18n-attr="aria-label:touch.upLabel">
+        <span aria-hidden="true">↑</span><span data-i18n="touch.up">Up</span>
       </button>
-      <button class="touch-action" data-touch-action="down" type="button" aria-label="Jaitsi · Descend" aria-pressed="false">
-        <span aria-hidden="true">↓</span><span>Jaitsi</span>
+      <button class="touch-action" data-touch-action="down" type="button" aria-label="Descend" aria-pressed="false" data-i18n-attr="aria-label:touch.downLabel">
+        <span aria-hidden="true">↓</span><span data-i18n="touch.down">Down</span>
       </button>
-      <button class="touch-action touch-boost" data-touch-action="boost" type="button" aria-label="Azkar · Fast gear" aria-pressed="false">
-        <span aria-hidden="true">↟</span><span>Azkar</span>
+      <button class="touch-action touch-boost" data-touch-action="boost" type="button" aria-label="Fast gear" aria-pressed="false" data-i18n-attr="aria-label:touch.fastLabel">
+        <span aria-hidden="true">↟</span><span data-i18n="touch.fast">Fast</span>
       </button>
     </div>
   </section>
 
   <!-- Full map [M]: the radar's ground at any zoom; click to fly there -->
-  <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Donostia street map">
+  <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Street map of Donostia" data-i18n-attr="aria-label:map.label">
     <div id="fullmap-canvas-wrap" class="fullmap-canvas-wrap">
       <canvas id="fullmap-canvas"></canvas>
     </div>
@@ -284,26 +313,26 @@
       <div class="panel fullmap-title">
         <svg class="rosette" aria-hidden="true"><use href="#i-rosette"/></svg>
         <div>
-          <h2>Donostiako mapa</h2>
+          <h2 data-i18n="map.title">Map of Donostia</h2>
           <p id="fullmap-player-info" class="fullmap-subtitle">Donostia / San Sebastián</p>
         </div>
       </div>
       <label class="panel fullmap-search-wrap">
         <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
-        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Bilatu kalea · Search a street — Kale Nagusia, Boulevard…" aria-label="Search a street" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" />
+        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Search a street: Kale Nagusia, Boulevard…" aria-label="Search a street" data-i18n-attr="placeholder:map.search;aria-label:map.searchLabel" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" />
       </label>
-      <button id="close-fullmap-btn" class="panel tool-btn fullmap-close" type="button" title="Itxi · Close [M / Esc]">
-        <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg><span class="tool-label">Itxi</span><kbd>Esc</kbd>
+      <button id="close-fullmap-btn" class="panel tool-btn fullmap-close" type="button" title="Close [M / Esc]" data-i18n-attr="title:map.closeTitle">
+        <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg><span class="tool-label" data-i18n="map.close">Close</span><kbd>Esc</kbd>
       </button>
     </div>
     <div class="map-controls">
       <div class="panel map-zoom">
-        <button id="map-zoom-in" class="icon-btn" type="button" title="Hurbildu · Zoom in" aria-label="Zoom in"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
-        <button id="map-zoom-out" class="icon-btn" type="button" title="Urrundu · Zoom out" aria-label="Zoom out"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+        <button id="map-zoom-in" class="icon-btn" type="button" title="Zoom in" aria-label="Zoom in" data-i18n-attr="title:map.zoomIn;aria-label:map.zoomIn"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button id="map-zoom-out" class="icon-btn" type="button" title="Zoom out" aria-label="Zoom out" data-i18n-attr="title:map.zoomOut;aria-label:map.zoomOut"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
       </div>
       <div class="panel map-zoom">
-        <button id="map-center-player" class="icon-btn" type="button" title="Kamera · Around the camera" aria-label="Centre on the camera"><svg class="icon" aria-hidden="true"><use href="#i-locate"/></svg></button>
-        <button id="map-view-all" class="icon-btn" type="button" title="Hiria · Igeldo to Ulia" aria-label="Show the whole city"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
+        <button id="map-center-player" class="icon-btn" type="button" title="Centre on the camera" aria-label="Centre on the camera" data-i18n-attr="title:map.centre;aria-label:map.centre"><svg class="icon" aria-hidden="true"><use href="#i-locate"/></svg></button>
+        <button id="map-view-all" class="icon-btn" type="button" title="Show the whole city" aria-label="Show the whole city" data-i18n-attr="title:map.whole;aria-label:map.whole"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
       </div>
     </div>
     <div class="fullmap-footer">
@@ -311,7 +340,7 @@
         <span id="fullmap-hover-info">Click to fly there · Drag to pan · Scroll or pinch to zoom</span>
       </div>
       <!-- the map draws the 1:500 ground, the LiDAR relief, b5m heights & OSM names, and hides the credits button -->
-      <small class="map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · Donostiako Udala (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>) · geoEuskadi, b5m (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>) · <a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer">data licences</a></small>
+      <small class="map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · Donostiako Udala (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>) · geoEuskadi, b5m (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>) · <a href="https://github.com/ginocingolani/slop-donostia/blob/main/tools/donostia/README.md#licences" target="_blank" rel="noopener noreferrer" data-i18n="map.licences">data licences</a></small>
     </div>
   </section>
 </body>

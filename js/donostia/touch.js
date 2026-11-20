@@ -1,23 +1,19 @@
 // js/donostia/touch.js
-// Touch input for the god camera (js/donostia/god-camera.js), in two layers.
+// Touch input for the god camera (js/donostia/god-camera.js). The whole scheme is two thumbs: the left one flies on
+// the flight stick, the right one looks by dragging on the view (that part is god-camera.js's own pointer handling).
+// The stick and its buttons are always there on a touch screen: there is nothing to turn on, and no other gesture to
+// learn.
 //
-// The view itself always answers the fingers, with nothing drawn over the city: one finger looks around, two fingers
-// move the camera (a pinch flies along the view, a two-finger drag slides it sideways and up or down, the way a map
-// pans) and a double tap flies to the place tapped. That is the whole scheme a first-time visitor needs, with the
-// fly-to list for the long hops.
+// The stick flies forward / back and sideways; two buttons climb and descend while held, and a third latches the
+// fast gear. The stick is relative: wherever the thumb lands on the pad is neutral and the push from there is the
+// input, so it needs no aim; pushed past its rim it shifts smoothly into the fast gear, and pushed further still its
+// centre trails the thumb, so turning back answers at once. Every control captures its pointer: a finger that slides
+// off its control keeps it until it lifts, and a second or third finger never disturbs the first.
 //
-// The flight stick is the second layer, for those who want to fly: off until the toolbar's Hegan button turns it on
-// (remembered per browser). The left thumb flies forward / back and sideways on the stick, the right thumb looks on
-// the view, and three buttons climb, descend and latch the fast gear. The stick is relative: wherever the thumb lands
-// on the pad is neutral and the push from there is the input, so it needs no aim; pushed past its rim it shifts
-// smoothly into the fast gear, and pushed further still its centre trails the thumb, so turning back answers at once.
-// Every control captures its pointer: a finger that slides off its control keeps it until it lifts, and a second or
-// third finger never disturbs the first.
-//
-// The arithmetic (stickResponse, trailOrigin, TwoFingerGesture, TapTracker) is free of the DOM and is tested in
-// tests/donostia-touch.test.mjs. initTouchControls(god, { onChange }) -> { setEnabled(on), reset(), available, flying }
-// wires the stick & buttons, shows them on coarse pointers (or after the first touch on hybrid devices) and sets
-// body.touch-enabled / body.touch-fly for the touch layout (css/donostia.css).
+// The arithmetic (stickResponse, trailOrigin) is free of the DOM and is tested in tests/donostia-touch.test.mjs.
+// initTouchControls(god, { onChange }) -> { setEnabled(on), reset(), available } wires the stick & buttons, shows them
+// on coarse pointers (or after the first touch on hybrid devices) and sets body.touch-enabled for the touch layout
+// (css/donostia.css). setEnabled(false) hides them and lets go (the full map covers the view).
 
 export const STICK = {
   radius: 48, // px from neutral to the rim: full speed
@@ -25,7 +21,7 @@ export const STICK = {
   curve: 1.6, // response exponent: fine control near the centre, full speed only at the rim
   overdrive: 0.6 // of the radius past the rim: the fast gear, 0 at the rim to 1 at its end
 };
-const FLY_KEY = 'donostia-touch-fly'; // localStorage: '1' while the flight stick is on
+const OLD_FLY_KEY = 'donostia-touch-fly'; // localStorage: the stick's switch of an earlier version, cleared here
 
 /**
  * The stick's answer to a thumb `dx`, `dy` px from where it landed: `x`, `y` the direction (screen axes, unit length
@@ -54,103 +50,20 @@ export function trailOrigin(origin, point, radius = STICK.radius) {
   return { x: origin.x + dx * k, y: origin.y + dy * k };
 }
 
-/**
- * Two fingers on the view: `move(a, b)` answers how far (px) their spread grew and their midpoint travelled since the
- * last call. Each waits for its own slop, so two fingers set down don't move the camera, and whichever starts first
- * makes the other wait three times as long: a pan doesn't creep forward, a pinch doesn't slide sideways.
- */
-export class TwoFingerGesture {
-  constructor(slop = 8) {
-    this.slop = slop;
-    this.last = null;
-  }
-
-  start(a, b) {
-    this.last = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
-    this.spread = 0;
-    this.pan = 0;
-    this.pinching = this.panning = false;
-  }
-
-  end() {
-    this.last = null;
-  }
-
-  move(a, b) {
-    if (!this.last) { this.start(a, b); return { spread: 0, panX: 0, panY: 0 }; }
-    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const out = { spread: d - this.last.d, panX: mx - this.last.mx, panY: my - this.last.my };
-    this.last = { d, mx, my };
-    this.spread += out.spread;
-    this.pan += Math.hypot(out.panX, out.panY);
-    if (!this.pinching && Math.abs(this.spread) > this.slop * (this.panning ? 3 : 1)) this.pinching = true;
-    if (!this.panning && this.pan > this.slop * (this.pinching ? 3 : 1)) this.panning = true;
-    if (!this.pinching) out.spread = 0;
-    if (!this.panning) out.panX = out.panY = 0;
-    return out;
-  }
-}
-
-/**
- * Taps on the view: a touch that lifts within `time` ms without leaving its `slop` is a tap, and a second one close
- * to the first, soon after, a double tap. `up()` answers 'tap', 'double' or null; `dragging` says the finger has left
- * its slop (the look only starts then, so a tap doesn't nudge the view).
- */
-export class TapTracker {
-  constructor({ slop = 8, time = 280, gap = 320, reach = 36 } = {}) {
-    Object.assign(this, { slop, time, gap, reach });
-    this.press = null;
-    this.lastTap = null;
-  }
-
-  down(x, y, t) {
-    this.press = { x, y, t, moved: false };
-  }
-
-  move(x, y) {
-    const p = this.press;
-    if (p && !p.moved && Math.hypot(x - p.x, y - p.y) > this.slop) p.moved = true;
-  }
-
-  get dragging() {
-    return Boolean(this.press?.moved);
-  }
-
-  // a second finger, a cancel: whatever was pressed is no tap
-  cancel() {
-    this.press = null;
-    this.lastTap = null;
-  }
-
-  up(x, y, t) {
-    const p = this.press;
-    this.press = null;
-    if (!p || p.moved || t - p.t > this.time) { this.lastTap = null; return null; }
-    const last = this.lastTap;
-    if (last && t - last.t <= this.gap && Math.hypot(x - last.x, y - last.y) <= this.reach) {
-      this.lastTap = null;
-      return 'double';
-    }
-    this.lastTap = { x, y, t };
-    return 'tap';
-  }
-}
-
 export function initTouchControls(god, { onChange } = {}) {
   const root = document.getElementById('touch-controls');
   const stick = document.getElementById('touch-stick');
   const knob = document.getElementById('touch-stick-knob');
-  const flyButton = document.getElementById('btn-fly');
-  const none = { setEnabled() {}, reset() {}, available: false, flying: false };
+  const none = { setEnabled() {}, reset() {}, available: false };
   if (!root || !stick || !knob) return none;
   const buttons = [...root.querySelectorAll('[data-touch-action]')];
   const held = new Map(); // pointerId -> { button, action }
   const media = window.matchMedia('(any-pointer: coarse)');
   let stickPointer = null, origin = null, radius = STICK.radius, overdrive = 0;
-  let enabled = true, available = false, touchSeen = false, flying = false, fastGear = false;
-  try { flying = localStorage.getItem(FLY_KEY) === '1'; } catch { /* storage unavailable */ }
+  let enabled = true, available = false, touchSeen = false, fastGear = false;
+  try { localStorage.removeItem(OLD_FLY_KEY); } catch { /* storage unavailable */ }
 
-  const canInteract = () => enabled && available && flying && !document.hidden;
+  const canInteract = () => enabled && available && !document.hidden;
   const releaseCapture = (el, id) => { if (el.hasPointerCapture(id)) el.releasePointerCapture(id); };
   // the fast gear: latched by its button, or as far in as the stick is pushed past its rim
   const applyBoost = () => { god.touch.boost = Math.max(fastGear ? 1 : 0, overdrive); };
@@ -253,11 +166,8 @@ export function initTouchControls(god, { onChange } = {}) {
   stick.addEventListener('contextmenu', (e) => e.preventDefault());
 
   const show = () => {
-    const on = available && flying;
     document.body.classList.toggle('touch-enabled', available);
-    document.body.classList.toggle('touch-fly', on);
-    root.hidden = !enabled || !on;
-    flyButton?.setAttribute('aria-pressed', String(on));
+    root.hidden = !enabled || !available;
   };
   const updateAvailability = () => {
     const now = media.matches || touchSeen;
@@ -267,13 +177,6 @@ export function initTouchControls(god, { onChange } = {}) {
     show();
     if (changed) onChange?.(available);
   };
-  flyButton?.addEventListener('click', () => {
-    flying = !flying;
-    try { localStorage.setItem(FLY_KEY, flying ? '1' : '0'); } catch { /* storage unavailable */ }
-    if (!flying) { fastGear = false; reset(); }
-    show();
-    onChange?.(available);
-  });
   media.addEventListener('change', updateAvailability);
   // hybrid devices can report a fine pointer until their first touch; capture runs before the controls' handlers
   document.addEventListener('pointerdown', (e) => {
@@ -300,7 +203,6 @@ export function initTouchControls(god, { onChange } = {}) {
       show();
     },
     reset,
-    get available() { return available; },
-    get flying() { return available && flying; }
+    get available() { return available; }
   };
 }
