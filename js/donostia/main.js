@@ -405,16 +405,21 @@ function createCompiler(renderer, world, camera, passes) {
   // The objects of a job that compileAsync() has to see: one of each kind for plain meshes (three keys a shader by
   // the material, the vertex layout, the winding and whether the object receives shadows, and the others' draws find
   // it in its cache), every instanced mesh (keyed by the mesh), every multi-material one
+  const kindOf = (o) => {
+    if (o.isInstancedMesh || o.count > 1 || Array.isArray(o.material)) return null;
+    const g = o.geometry;
+    let kind = `${o.type},${o.receiveShadow},${o.castShadow},${g.index ? 'i' : ''},${o.matrixWorld.determinant() < 0}`;
+    for (const name of Object.keys(g.attributes).sort()) {
+      const a = g.attributes[name];
+      kind += `,${name}:${a.itemSize}:${a.normalized ? 'n' : ''}:${a.data ? a.data.stride : ''}:${a.offset || ''}`;
+    }
+    return kind;
+  };
   const units = (job) => {
     const kinds = new Set();
     return job.objects.filter((o) => {
-      if (o.isInstancedMesh || o.count > 1 || Array.isArray(o.material)) return true;
-      const g = o.geometry;
-      let kind = `${o.type},${o.receiveShadow},${o.castShadow},${g.index ? 'i' : ''},${o.matrixWorld.determinant() < 0}`;
-      for (const name of Object.keys(g.attributes).sort()) {
-        const a = g.attributes[name];
-        kind += `,${name}:${a.itemSize}:${a.normalized ? 'n' : ''}:${a.data ? a.data.stride : ''}:${a.offset || ''}`;
-      }
+      const kind = kindOf(o);
+      if (kind === null) return true;
       if (kinds.has(kind)) return false;
       kinds.add(kind);
       return true;
@@ -518,25 +523,40 @@ function createCompiler(renderer, world, camera, passes) {
       const p = place(o, camera.position);
       return p.seen && !p.spread && (p.distance < NEAR || p.size > LARGE);
     }));
-    for (const job of wanted) job.busy = job.first = true;
-    // (the scene pass first: the sun's shadow map exists once a lit material has been built)
-    const all = wanted.flatMap(units);
-    let done = 0, total = all.length;
-    const pool = async (list, shadows) => {
+    // What a first-view job holds that is not shown now stays with it where a shown object of its kind compiles (the
+    // terrain's other levels of detail: they must be there the moment the camera moves) and is otherwise another job,
+    // for the background (the props beyond their draw distance, each an instanced mesh with a shader build of its
+    // own: on a desktop a sixth of the compile's time)
+    for (const job of wanted) {
+      job.busy = job.first = true;
+      const now = job.objects.filter(shown), kinds = new Set(now.map(kindOf));
+      const later = job.objects.filter((o) => !now.includes(o) && !(kindOf(o) !== null && kinds.has(kindOf(o))));
+      if (!later.length) continue;
+      const waiting = new Set(later);
+      // (the shown ones first: they are the ones compiled)
+      job.objects = [...now, ...job.objects.filter((o) => !now.includes(o) && !waiting.has(o))];
+      jobs.push({ objects: later, done: false, busy: false, everywhere: job.everywhere });
+    }
+    // (a job's objects in turn, as its first build serves the rest; the jobs side by side)
+    const groups = wanted.map(units);
+    let done = 0, total = groups.reduce((n, group) => n + group.length, 0);
+    const pool = async (lists, shadows) => {
       let next = 0;
       const worker = async () => {
-        while (next < list.length && mine === run) {
-          const o = list[next++];
-          await nextTask();
-          await precompile(o, shadows);
-          onProgress(++done / total);
+        while (next < lists.length && mine === run) {
+          for (const o of lists[next++]) {
+            await nextTask();
+            await precompile(o, shadows);
+            onProgress(++done / total);
+          }
         }
       };
       await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
     };
-    await pool(all, false);
-    const casters = all.filter(castsShadows);
-    total += casters.length;
+    await pool(groups, false);
+    // (then the shadow map's, which exists once a lit material has been built)
+    const casters = groups.map((group) => group.filter(castsShadows)).filter((group) => group.length);
+    total += casters.reduce((n, group) => n + group.length, 0);
     await pool(casters, true);
     if (mine !== run) return;
     for (const job of wanted) finish(job);
